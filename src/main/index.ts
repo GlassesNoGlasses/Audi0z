@@ -43,9 +43,11 @@ function createWindow(): BrowserWindow {
   })
 
   // Local-only app: never open new windows, never navigate away from the bundled renderer.
+  // Reloading the current URL stays allowed — cancelling it would also kill vite's HMR
+  // `full-reload`, which is implemented as `location.reload()`.
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-  mainWindow.webContents.on('will-navigate', (event) => {
-    event.preventDefault()
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (url !== mainWindow.webContents.getURL()) event.preventDefault()
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
