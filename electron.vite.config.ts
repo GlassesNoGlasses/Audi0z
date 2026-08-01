@@ -1,3 +1,4 @@
+import react from '@vitejs/plugin-react'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 
 /**
@@ -10,8 +11,11 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
  * main/preload bundles so their real files stay on disk — ffmpeg-static resolves a binary path
  * relative to its own package directory, which only works when it is not bundled.
  *
- * The renderer uses esbuild's automatic JSX runtime rather than @vitejs/plugin-react: React Fast
- * Refresh is the only thing given up, and it keeps the dependency surface minimal.
+ * `@vitejs/plugin-react` owns the renderer's JSX transform and gives it React Fast Refresh, so a
+ * component edit hot-swaps instead of reloading the window. It also pre-bundles the JSX runtime,
+ * which is why there is no explicit `esbuild.jsx` or `optimizeDeps` block here.
+ *
+ * Pinned to plugin-react 5.x on purpose: 6.x requires vite 8, and this project pins vite 7.
  */
 export default defineConfig({
   main: {
@@ -21,14 +25,6 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
-    esbuild: {
-      jsx: 'automatic',
-      jsxImportSource: 'react'
-    },
-    // Vite's dependency scanner cannot see the JSX runtime imports esbuild injects, so without
-    // this the first `dev` load discovers them late and forces a full reload.
-    optimizeDeps: {
-      include: ['react', 'react-dom/client', 'react/jsx-runtime', 'react/jsx-dev-runtime']
-    }
+    plugins: [react()]
   }
 })
