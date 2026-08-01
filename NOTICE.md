@@ -9,9 +9,13 @@ The `ffmpeg-static` npm package downloads a prebuilt `ffmpeg` binary at install 
 packaged app ships that binary (it is unpacked from the asar archive via `asarUnpack`).
 
 Those prebuilt binaries are **GPL builds of FFmpeg** (they are compiled with GPL-licensed
-components enabled). FFmpeg itself is licensed under the LGPL v2.1 or later, but GPL builds are
-covered by the **GPL v2.1 or later**. Distributing the app therefore carries GPL obligations,
-including making the corresponding source of FFmpeg available to recipients.
+components enabled). FFmpeg's own code is licensed under the LGPL v2.1 or later, but a build that
+enables GPL components is covered as a whole by the **GPL v2 or later** — and by the **GPL v3 or
+later** if any GPL-v3-only component is enabled. Check the `ffmpeg.LICENSE` file shipped inside
+`node_modules/ffmpeg-static/` for the exact terms of the binary a given build embeds.
+
+Distributing the app therefore carries GPL obligations, including making the corresponding source
+of FFmpeg available to recipients.
 
 - FFmpeg project: https://ffmpeg.org
 - FFmpeg license/legal: https://ffmpeg.org/legal.html
