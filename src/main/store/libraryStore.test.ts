@@ -198,3 +198,40 @@ describe('cache isolation', () => {
     await expect(store.getSong(added.id)).resolves.toEqual(added)
   })
 })
+
+/**
+ * The cache is process-lifetime: a store loads `library.json` once and never re-reads it. These
+ * two tests pin that behaviour down, because it is what forces the composition root to hand ONE
+ * store instance to every reader and mutator of a library directory — the importer behind
+ * `library:add` included.
+ */
+describe('one instance per directory', () => {
+  it('does not show a second instance the writes of the first', async () => {
+    const first = createLibraryStore(lib.root)
+    const second = createLibraryStore(lib.root)
+    // Both instances take their snapshot before anything is written.
+    expect(await first.list()).toEqual([])
+    expect(await second.list()).toEqual([])
+
+    const added = await first.add(draft({ title: 'written by the first instance' }))
+
+    expect(await first.list()).toEqual([added])
+    expect((await readLibraryFile(lib.root)).songs).toHaveLength(1)
+    // The write reached the disk, but the second instance is stale for the rest of the session.
+    expect(await second.list()).toEqual([])
+    await expect(second.getSong(added.id)).resolves.toBeUndefined()
+  })
+
+  it('lets a stale second instance overwrite what the first instance wrote', async () => {
+    const first = createLibraryStore(lib.root)
+    const second = createLibraryStore(lib.root)
+    await first.list()
+    await second.list()
+
+    await first.add(draft({ title: 'first' }))
+    const fromSecond = await second.add(draft({ title: 'second' }))
+
+    // The second instance persists its own snapshot, so the first instance's song is gone.
+    expect((await readLibraryFile(lib.root)).songs).toEqual([fromSecond])
+  })
+})

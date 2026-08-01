@@ -51,6 +51,9 @@ function cloneSong(song: Song): Song {
 
 export const createLibraryStore: CreateLibraryStore = (dir) => {
   const filePath = libraryJsonPath(dir)
+  // Loaded once and kept for the life of the process: this cache never re-reads the file, so every
+  // reader and every mutator of a given library directory must share ONE store instance. A second
+  // instance over the same dir will not see the first one's writes.
   const load = loadOnce(async () => {
     const file = await readJsonFile(filePath, isLibraryFile, emptyLibrary)
     return file.songs

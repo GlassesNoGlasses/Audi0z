@@ -34,7 +34,15 @@ export interface LibraryIpcDeps {
   settingsStore: SettingsStore
   /** Absolute path of the library's `audio/` directory. */
   audioDir: string
-  /** Copies/transcodes a source file into the library and records it (WP3's importer). */
+  /**
+   * Copies/transcodes a source file into the library and records it (WP3's importer) — the
+   * importer calls `libraryStore.add` itself, which is why this handler does not.
+   *
+   * **The importer MUST be wired with the exact same `LibraryStore` instance passed above.** A
+   * store keeps a process-lifetime in-memory copy of `library.json` and never reloads it, so a
+   * second `createLibraryStore(dir)` over the same directory would write the import to disk while
+   * `library:list` keeps serving its own stale copy for the rest of the session.
+   */
   importSong(request: AddSongRequest): Promise<Song>
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
