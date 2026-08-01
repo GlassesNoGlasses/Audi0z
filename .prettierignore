@@ -1,10 +1,8 @@
-*.claude
-PLAN.txt
 node_modules/
 out/
 dist/
-resources/bin/
 coverage/
+resources/bin/
 playwright-report/
 test-results/
-.DS_Store
+package-lock.json
