@@ -23,9 +23,14 @@ describe('buildTranscodeArgs', () => {
       'libopus',
       '-b:a',
       '128k',
+      '-f',
+      'opus',
       '/out/target.opus'
     ])
     expect(args.indexOf('/in/source.wav')).toBeLessThan(args.indexOf('/out/target.opus'))
+    // `-f opus` is not decoration: the output is staged as `<name>.opus.part`, and without an
+    // explicit format ffmpeg would try to infer the container from `.part` and give up.
+    expect(args.indexOf('-f')).toBeLessThan(args.indexOf('/out/target.opus'))
   })
 })
 

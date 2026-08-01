@@ -167,6 +167,36 @@ describe('createDownloader', () => {
     expect(seen).toEqual([])
   })
 
+  it('survives a progress listener that throws, and keeps feeding the others', async () => {
+    const progress: DownloadProgress = {
+      stage: 'downloading',
+      percent: 50,
+      bytes: 2048,
+      totalBytes: 4096
+    }
+    const d = deps({
+      download: vi.fn(async ({ outTemplate, onProgress }: DownloadJob) => {
+        onProgress?.(progress)
+        return writeDownloaded(outTemplate)
+      })
+    })
+    const downloader = createDownloader(d)
+    // This fan-out runs synchronously inside the child's stdout handler, so an unguarded throw
+    // would reach uncaughtException and take the main process down with it.
+    const throwing = vi.fn(() => {
+      throw new Error('renderer window has been destroyed')
+    })
+    const seen: DownloadProgress[] = []
+    downloader.onProgress(throwing)
+    downloader.onProgress((p) => seen.push(p))
+
+    await expect(downloader.start(REQUEST)).resolves.toEqual(SONG)
+
+    expect(throwing).toHaveBeenCalledTimes(2)
+    expect(seen).toEqual([progress, { stage: 'saving', percent: null }])
+    expect(d.importFile).toHaveBeenCalledTimes(1)
+  })
+
   it('delegates probe to the injected prober', async () => {
     const d = deps()
     const downloader = createDownloader(d)

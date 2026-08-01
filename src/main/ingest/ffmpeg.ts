@@ -30,6 +30,10 @@ export function resolveFfmpegPath({
 /**
  * Audio only (`-vn`, so cover art never becomes a video stream), metadata stripped, Opus 128k.
  * `-nostdin` matters because the child's stdin is ignored — ffmpeg must not wait on it.
+ *
+ * `-f opus` is required, not belt-and-braces: the output is staged as `<name>.opus.part`, and
+ * ffmpeg infers the container from the file extension, so `.part` would fail the run outright with
+ * "Unable to find a suitable output format".
  */
 export function buildTranscodeArgs(src: string, dst: string): string[] {
   return [
@@ -45,6 +49,8 @@ export function buildTranscodeArgs(src: string, dst: string): string[] {
     'libopus',
     '-b:a',
     '128k',
+    '-f',
+    'opus',
     dst
   ]
 }

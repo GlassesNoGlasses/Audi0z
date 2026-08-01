@@ -129,6 +129,8 @@ describe('registerIngestIpc', () => {
     ['a non-object', 'https://example.test/v/1'],
     ['a missing url', { ...VALID_REQUEST, url: undefined }],
     ['an empty url', { ...VALID_REQUEST, url: '  ' }],
+    ['an option-shaped url', { ...VALID_REQUEST, url: '--config-locations=/tmp/x' }],
+    ['a non-http url', { ...VALID_REQUEST, url: 'ftp://example.test/x' }],
     ['a non-string title', { ...VALID_REQUEST, title: 7 }],
     ['non-array tags', { ...VALID_REQUEST, tags: 'edit' }],
     ['non-string tags', { ...VALID_REQUEST, tags: ['ok', 3] }],
@@ -140,14 +142,32 @@ describe('registerIngestIpc', () => {
     expect(downloader.start).not.toHaveBeenCalled()
   })
 
+  // yt-dlp takes the URL as a positional arg and the frozen arg lists carry no `--` terminator, so
+  // an option-shaped string would be parsed as a flag rather than fetched.
   it.each([
     ['undefined', undefined],
     ['an empty string', '   '],
-    ['a number', 42]
+    ['a number', 42],
+    ['an option-shaped string', '--config-locations=/tmp/x'],
+    ['a short option', '-o/tmp/pwned'],
+    ['an ftp url', 'ftp://example.test/x'],
+    ['a file url', 'file:///etc/passwd'],
+    ['a scheme-less host', 'example.test/v/1'],
+    ['a padded url', '  https://example.test/v/1']
   ])('rejects a probe for %s', async (_label, payload) => {
     const { downloader, invoke } = setup()
 
     await expect(invoke(IPC.download.probe, payload)).rejects.toThrow()
     expect(downloader.probe).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['https', 'https://example.test/v/1'],
+    ['http', 'http://example.test/v/1']
+  ])('accepts a plain %s url', async (_label, url) => {
+    const { downloader, invoke } = setup()
+
+    await expect(invoke(IPC.download.probe, url)).resolves.toMatchObject({ sourceUrl: url })
+    expect(downloader.probe).toHaveBeenCalledWith(url)
   })
 })

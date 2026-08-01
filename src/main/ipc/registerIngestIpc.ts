@@ -29,9 +29,17 @@ function invalid(message: string): Error {
   return error
 }
 
+/**
+ * http(s) only, and the scheme must start the string.
+ *
+ * yt-dlp takes the URL as a positional argument and the frozen arg lists carry no `--` terminator,
+ * so an option-shaped value (`--config-locations=/tmp/x`) would reach argv as a *flag* rather than
+ * as something to fetch. Anchoring on `https?://` rules that out along with `file://` and friends.
+ * Leading whitespace is not trimmed away — a padded URL is simply rejected.
+ */
 function assertUrl(value: unknown): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw invalid('url must be a non-empty string')
+  if (typeof value !== 'string' || !/^https?:\/\//.test(value)) {
+    throw invalid('url must be an http(s) URL')
   }
   return value
 }

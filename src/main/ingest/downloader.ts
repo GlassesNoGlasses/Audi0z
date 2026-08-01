@@ -55,8 +55,25 @@ export function createDownloader(deps: DownloaderDeps): Downloader {
   const listeners = new Set<(progress: DownloadProgress) => void>()
   if (deps.onProgress) listeners.add(deps.onProgress)
 
+  /**
+   * Listener failures are swallowed, deliberately.
+   *
+   * This fan-out runs synchronously inside the child's stdout handler, so an unguarded throw would
+   * not reject the download — it would reach `uncaughtException` and take the whole main process
+   * down over a progress tick. The sink's contract already says it must not throw
+   * (`IngestIpcDeps.sendProgress`), so a throw here is that listener's bug, and one bad listener
+   * must not starve the others. Nothing is logged: the main process has no logger seam yet, and
+   * console noise from a packaged app helps nobody — if progress reporting ever needs diagnosing,
+   * a `onListenerError` dep is the honest way to add it.
+   */
   const emit = (progress: DownloadProgress): void => {
-    for (const listener of [...listeners]) listener(progress)
+    for (const listener of [...listeners]) {
+      try {
+        listener(progress)
+      } catch {
+        // See above: keep going.
+      }
+    }
   }
 
   let running: AbortController | null = null
