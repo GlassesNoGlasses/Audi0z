@@ -1,0 +1,37 @@
+appId: com.duolume.mymusiclibrary
+productName: my-music-library
+directories:
+  buildResources: build
+  output: dist
+# Only the build output and the manifest; electron-builder packs production node_modules on top.
+files:
+  - out/**
+  - package.json
+# ffmpeg-static ships a real executable; it cannot run from inside the asar archive.
+asarUnpack:
+  - '**/node_modules/ffmpeg-static/**'
+mac:
+  target:
+    - dmg
+  category: public.app-category.music
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # v1 ships unsigned.
+  identity: null
+  extraResources:
+    - from: resources/bin/darwin/
+      to: bin/
+win:
+  target:
+    - nsis
+  extraResources:
+    - from: resources/bin/win32/
+      to: bin/
+linux:
+  target:
+    - AppImage
+  category: AudioVideo
+  extraResources:
+    - from: resources/bin/linux/
+      to: bin/
