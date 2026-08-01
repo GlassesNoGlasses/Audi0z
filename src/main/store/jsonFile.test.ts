@@ -2,7 +2,13 @@ import { readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
-import { RENAME_RETRY_DELAY_MS, readJsonFile, renameWithRetry, writeJsonFile } from './jsonFile'
+import {
+  RENAME_RETRY_DELAY_MS,
+  loadOnce,
+  readJsonFile,
+  renameWithRetry,
+  writeJsonFile
+} from './jsonFile'
 
 interface Doc {
   version: 1
@@ -149,6 +155,40 @@ describe('writeJsonFile', () => {
     await expect(writeJsonFile(file, circular)).rejects.toThrow()
 
     expect((await readdir(lib.root)).filter((name) => name.includes('.tmp-'))).toEqual([])
+  })
+})
+
+describe('loadOnce', () => {
+  it('reads once however many times it is called', async () => {
+    const read = vi.fn(async () => ['value'])
+    const load = loadOnce(read)
+
+    expect(await load()).toEqual(['value'])
+    expect(await load()).toEqual(['value'])
+
+    expect(read).toHaveBeenCalledTimes(1)
+  })
+
+  it('shares a single read between concurrent callers', async () => {
+    const read = vi.fn(async () => ({ loaded: true }))
+    const load = loadOnce(read)
+
+    const [first, second] = await Promise.all([load(), load()])
+
+    expect(read).toHaveBeenCalledTimes(1)
+    expect(first).toBe(second)
+  })
+
+  it('does not cache a failed read', async () => {
+    const read = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error('disk gone'))
+      .mockResolvedValueOnce('second try')
+    const load = loadOnce(read)
+
+    await expect(load()).rejects.toThrow('disk gone')
+    await expect(load()).resolves.toBe('second try')
+    expect(read).toHaveBeenCalledTimes(2)
   })
 })
 

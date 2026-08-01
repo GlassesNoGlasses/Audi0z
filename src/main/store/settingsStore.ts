@@ -1,6 +1,6 @@
 import type { Settings } from '../../shared/types'
 import { settingsJsonPath } from '../paths'
-import { readJsonFile, writeJsonFile } from './jsonFile'
+import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreateSettingsStore } from './storeTypes'
 
 /**
@@ -46,21 +46,7 @@ function merge(current: Settings, patch: Partial<Settings>): Settings {
 
 export const createSettingsStore: CreateSettingsStore = (dir) => {
   const filePath = settingsJsonPath(dir)
-  let settings: Settings | null = null
-  let loading: Promise<Settings> | null = null
-
-  async function load(): Promise<Settings> {
-    if (settings !== null) return settings
-    if (loading === null) {
-      loading = readJsonFile(filePath, isSettings, makeDefaults)
-      void loading.catch(() => {
-        loading = null
-      })
-    }
-    const loaded = await loading
-    if (settings === null) settings = loaded
-    return settings
-  }
+  const load = loadOnce(() => readJsonFile(filePath, isSettings, makeDefaults))
 
   return {
     async get() {
@@ -68,10 +54,11 @@ export const createSettingsStore: CreateSettingsStore = (dir) => {
     },
 
     async set(patch) {
-      const next = merge(await load(), patch)
-      settings = next
-      await writeJsonFile(filePath, next)
-      return { ...next }
+      const current = await load()
+      // Mutated in place so the cached object stays the one `load` hands out.
+      Object.assign(current, merge(current, patch))
+      await writeJsonFile(filePath, current)
+      return { ...current }
     }
   }
 }

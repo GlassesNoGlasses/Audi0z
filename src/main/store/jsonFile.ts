@@ -95,6 +95,31 @@ async function quarantine(filePath: string, raw: Buffer): Promise<void> {
 }
 
 /**
+ * Reads once, then hands back the same value forever — how the stores keep an in-memory copy of
+ * their document without paying for the disk on every call.
+ *
+ * Concurrent first calls share one read. A failed read is not cached, so a transient disk error
+ * does not poison the store for the rest of the session.
+ */
+export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
+  let value: T | null = null
+  let pending: Promise<T> | null = null
+
+  return async function loaded(): Promise<T> {
+    if (value !== null) return value
+    if (pending === null) {
+      pending = read()
+      void pending.catch(() => {
+        pending = null
+      })
+    }
+    const result = await pending
+    if (value === null) value = result
+    return value
+  }
+}
+
+/**
  * Serialises `data` and replaces `filePath` atomically.
  *
  * Concurrent calls for the same path queue behind each other (last caller wins) so two stores

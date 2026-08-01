@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { Playlist, PlaylistsFile } from '../../shared/types'
 import { playlistsJsonPath } from '../paths'
 import { NotFoundError } from './errors'
-import { readJsonFile, writeJsonFile } from './jsonFile'
+import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreatePlaylistStore } from './storeTypes'
 
 /**
@@ -44,23 +44,10 @@ function clonePlaylist(playlist: Playlist): Playlist {
 
 export const createPlaylistStore: CreatePlaylistStore = (dir) => {
   const filePath = playlistsJsonPath(dir)
-  let playlists: Playlist[] | null = null
-  let loading: Promise<Playlist[]> | null = null
-
-  async function load(): Promise<Playlist[]> {
-    if (playlists !== null) return playlists
-    if (loading === null) {
-      loading = readJsonFile(filePath, isPlaylistsFile, emptyPlaylists).then(
-        (file) => file.playlists
-      )
-      void loading.catch(() => {
-        loading = null
-      })
-    }
-    const loaded = await loading
-    if (playlists === null) playlists = loaded
-    return playlists
-  }
+  const load = loadOnce(async () => {
+    const file = await readJsonFile(filePath, isPlaylistsFile, emptyPlaylists)
+    return file.playlists
+  })
 
   async function persist(current: Playlist[]): Promise<void> {
     const file: PlaylistsFile = { version: 1, playlists: current }

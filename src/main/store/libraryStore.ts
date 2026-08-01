@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import type { LibraryFile, Song } from '../../shared/types'
 import { libraryJsonPath } from '../paths'
 import { NotFoundError } from './errors'
-import { readJsonFile, writeJsonFile } from './jsonFile'
+import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreateLibraryStore } from './storeTypes'
 
 /**
@@ -51,22 +51,10 @@ function cloneSong(song: Song): Song {
 
 export const createLibraryStore: CreateLibraryStore = (dir) => {
   const filePath = libraryJsonPath(dir)
-  let songs: Song[] | null = null
-  let loading: Promise<Song[]> | null = null
-
-  async function load(): Promise<Song[]> {
-    if (songs !== null) return songs
-    if (loading === null) {
-      loading = readJsonFile(filePath, isLibraryFile, emptyLibrary).then((file) => file.songs)
-      // A failed load must not poison the store forever — let the next call try the disk again.
-      void loading.catch(() => {
-        loading = null
-      })
-    }
-    const loaded = await loading
-    if (songs === null) songs = loaded
-    return songs
-  }
+  const load = loadOnce(async () => {
+    const file = await readJsonFile(filePath, isLibraryFile, emptyLibrary)
+    return file.songs
+  })
 
   async function persist(current: Song[]): Promise<void> {
     const file: LibraryFile = { version: 1, songs: current }
