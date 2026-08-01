@@ -1,9 +1,8 @@
-import type { PlaybackState } from './types'
-
 /**
  * Read-only views over `PlaybackState`. Played flags are per-queue, so every read is scoped to the
  * queue that is currently selected.
  */
+import type { PlaybackState } from './types'
 
 const NOTHING_PLAYED: Readonly<Record<string, true>> = {}
 

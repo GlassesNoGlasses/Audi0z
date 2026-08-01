@@ -1,12 +1,11 @@
-import { isPlayed, playedInCurrentQueue } from './selectors'
-import type { NextSelection, PlaybackAction, PlaybackState, Rng } from './types'
-
 /**
  * The playback rulebook, as pure functions: state in, state out. No React, no DOM, no timers, and
  * no randomness beyond the injected `Rng`.
  */
+import { isPlayed, playedInCurrentQueue } from './selectors'
+import type { NextSelection, PlaybackAction, PlaybackState, Rng } from './types'
 
-/** Actually-played ids kept for `transport/prev`; older entries fall off the end. */
+/** How many played ids `history` keeps for `transport/prev`; the oldest fall off the front. */
 const HISTORY_LIMIT = 100
 
 type PlayedByQueue = PlaybackState['playedByQueue']
