@@ -60,6 +60,18 @@ export function mockApiControls(api: Api): MockApiControls {
   return controls
 }
 
+/**
+ * Nothing may leave the mock while still sharing an array with its internal state — a caller that
+ * mutates the `tags` of a returned song would otherwise silently rewrite the fake library.
+ */
+function cloneSong(song: SongDto): SongDto {
+  return { ...song, tags: [...song.tags] }
+}
+
+function clonePlaylist(playlist: Playlist): Playlist {
+  return { ...playlist, songIds: [...playlist.songIds] }
+}
+
 function extensionOf(sourcePath: string): string {
   const match = /\.[A-Za-z0-9]+$/.exec(sourcePath)
   return match ? match[0].toLowerCase() : '.mp3'
@@ -85,8 +97,8 @@ function makeEmitter<Args extends unknown[]>(): {
 
 export function createMockApi(seed: MockApiSeed = {}): Api {
   const state: MockApiState = {
-    songs: seed.songs ? [...seed.songs] : [],
-    playlists: seed.playlists ? [...seed.playlists] : [],
+    songs: (seed.songs ?? []).map(cloneSong),
+    playlists: (seed.playlists ?? []).map(clonePlaylist),
     settings: { ...DEFAULT_MOCK_SETTINGS, ...seed.settings }
   }
 
@@ -130,12 +142,12 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
     }
     state.songs.push(song)
     libraryChanged.emit()
-    return song
+    return cloneSong(song)
   }
 
   const api: Api = {
     library: {
-      list: vi.fn(async () => state.songs.map((song) => ({ ...song }))),
+      list: vi.fn(async () => state.songs.map(cloneSong)),
       add: vi.fn(async (req) =>
         insertSong({
           title: req.title,
@@ -149,7 +161,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         if (patch.title !== undefined) song.title = patch.title
         if (patch.tags !== undefined) song.tags = [...patch.tags]
         libraryChanged.emit()
-        return { ...song }
+        return cloneSong(song)
       }),
       remove: vi.fn(async (songId) => {
         findSong(songId)
@@ -164,7 +176,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
       })
     },
     playlists: {
-      list: vi.fn(async () => state.playlists.map((playlist) => ({ ...playlist }))),
+      list: vi.fn(async () => state.playlists.map(clonePlaylist)),
       create: vi.fn(async (name) => {
         const playlist: Playlist = {
           id: id('playlist'),
@@ -175,7 +187,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
           createdAt: new Date(0).toISOString()
         }
         state.playlists.push(playlist)
-        return { ...playlist }
+        return clonePlaylist(playlist)
       }),
       remove: vi.fn(async (playlistId) => {
         findPlaylist(playlistId)
@@ -184,24 +196,24 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
       rename: vi.fn(async (playlistId, name) => {
         const playlist = findPlaylist(playlistId)
         playlist.name = name
-        return { ...playlist }
+        return clonePlaylist(playlist)
       }),
       addSong: vi.fn(async (playlistId, songId) => {
         const playlist = findPlaylist(playlistId)
         findSong(songId)
         if (!playlist.songIds.includes(songId)) playlist.songIds.push(songId)
-        return { ...playlist }
+        return clonePlaylist(playlist)
       }),
       removeSong: vi.fn(async (playlistId, songId) => {
         const playlist = findPlaylist(playlistId)
         playlist.songIds = playlist.songIds.filter((sid) => sid !== songId)
-        return { ...playlist }
+        return clonePlaylist(playlist)
       }),
       setPlaybackOptions: vi.fn(async (playlistId, opts) => {
         const playlist = findPlaylist(playlistId)
         if (opts.shuffle !== undefined) playlist.shuffle = opts.shuffle
         if (opts.repeat !== undefined) playlist.repeat = opts.repeat
-        return { ...playlist }
+        return clonePlaylist(playlist)
       })
     },
     files: {

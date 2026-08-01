@@ -35,6 +35,45 @@ describe('createMockApi', () => {
     await expect(api.settings.get()).resolves.toMatchObject({ volume: 0.25, version: 1 })
   })
 
+  it('never hands out an array it still holds a reference to', async () => {
+    const api = createMockApi({ songs: [song('a')], playlists: [playlist('p', ['a'])] })
+
+    const [listedSong] = await api.library.list()
+    listedSong.tags.push('injected')
+    const [listedPlaylist] = await api.playlists.list()
+    listedPlaylist.songIds.push('bogus')
+
+    const added = await api.library.add({
+      sourcePath: '/tmp/x.wav',
+      title: 'x',
+      tags: ['keep'],
+      compress: false
+    })
+    added.tags.push('injected')
+
+    const updated = await api.library.update('a', { tags: ['fresh'] })
+    updated.tags.push('injected')
+
+    await expect(api.library.list()).resolves.toMatchObject([
+      { id: 'a', tags: ['fresh'] },
+      { tags: ['keep'] }
+    ])
+    await expect(api.playlists.list()).resolves.toMatchObject([{ songIds: ['a'] }])
+  })
+
+  it('does not let seeded objects and mock state alias each other', async () => {
+    const seeded = song('a')
+    const seededPlaylist = playlist('p', ['a'])
+    const api = createMockApi({ songs: [seeded], playlists: [seededPlaylist] })
+
+    await api.library.update('a', { tags: ['added-inside'] })
+    seeded.tags.push('added-outside')
+    seededPlaylist.songIds.push('added-outside')
+
+    await expect(api.library.list()).resolves.toMatchObject([{ tags: ['added-inside'] }])
+    await expect(api.playlists.list()).resolves.toMatchObject([{ songIds: ['a'] }])
+  })
+
   it('removes a song from every playlist that referenced it', async () => {
     const api = createMockApi({ songs: [song('a')], playlists: [playlist('p', ['a'])] })
 
