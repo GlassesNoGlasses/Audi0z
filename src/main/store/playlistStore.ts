@@ -33,9 +33,7 @@ function isPlaylist(value: unknown): value is Playlist {
 function isPlaylistsFile(value: unknown): value is PlaylistsFile {
   if (typeof value !== 'object' || value === null) return false
   const file = value as Partial<PlaylistsFile>
-  return (
-    file.version === 1 && Array.isArray(file.playlists) && file.playlists.every(isPlaylist)
-  )
+  return file.version === 1 && Array.isArray(file.playlists) && file.playlists.every(isPlaylist)
 }
 
 const emptyPlaylists = (): PlaylistsFile => ({ version: 1, playlists: [] })

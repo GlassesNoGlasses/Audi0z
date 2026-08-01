@@ -43,9 +43,7 @@ describe('create', () => {
 
     await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([created])
 
-    const file = JSON.parse(
-      await readFile(playlistsJsonPath(lib.root), 'utf8')
-    ) as PlaylistsFile
+    const file = JSON.parse(await readFile(playlistsJsonPath(lib.root), 'utf8')) as PlaylistsFile
     expect(file.version).toBe(1)
   })
 

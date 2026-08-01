@@ -99,15 +99,12 @@ describe('resolveAudioPath', () => {
     )
   })
 
-  it.each([
-    ['../../etc/passwd'],
-    ['..'],
-    [''],
-    ['/etc/passwd'],
-    ['sub/../../escape.wav']
-  ])('refuses to escape the audio directory (%s)', (fileName) => {
-    expect(resolveAudioPath('/library/audio', fileName)).toBeNull()
-  })
+  it.each([['../../etc/passwd'], ['..'], [''], ['/etc/passwd'], ['sub/../../escape.wav']])(
+    'refuses to escape the audio directory (%s)',
+    (fileName) => {
+      expect(resolveAudioPath('/library/audio', fileName)).toBeNull()
+    }
+  )
 
   it('does not treat a sibling directory with a shared prefix as inside', () => {
     expect(resolveAudioPath('/library/audio', '../audio-other/song.wav')).toBeNull()
