@@ -259,6 +259,25 @@ describe(IPC.library.remove, () => {
     expect((await harness.playlistStore.list())[0]?.songIds).toEqual([added.id])
   })
 
+  /**
+   * `shell.trashItem` rejects for a path that is not there, so trashing first would make exactly
+   * the rows the UI marks "File missing" the ones that can never be removed.
+   */
+  it('removes the row without trashing when the file is already gone', async () => {
+    const harness = setup()
+    const added = await harness.libraryStore.add(draftSong())
+    const playlist = await harness.playlistStore.create('P')
+    await harness.playlistStore.addSong(playlist.id, added.id)
+    harness.fileExists.mockResolvedValue(false)
+
+    await harness.invoke(IPC.library.remove, added.id)
+
+    expect(harness.trashItem).not.toHaveBeenCalled()
+    expect(harness.fileExists).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
+    expect(await harness.libraryStore.list()).toEqual([])
+    expect((await harness.playlistStore.list())[0]?.songIds).toEqual([])
+  })
+
   it('throws NotFound without trashing anything for an unknown id', async () => {
     const harness = setup()
 

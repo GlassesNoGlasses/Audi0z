@@ -46,6 +46,12 @@ export interface LibraryIpcDeps {
   importSong(request: AddSongRequest): Promise<Song>
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
+  /**
+   * **Must not reject** — an unreadable path is `false`, never a rejection. `library:list` runs one
+   * of these per song inside a `Promise.all`, so a single rejection would fail the whole listing,
+   * and `library:remove` reads it to decide whether there is anything left to trash. The wired
+   * implementation (`wiring.fileExists`) catches everything for exactly this reason.
+   */
   fileExists(absPath: string): Promise<boolean>
   revealInFolder(absPath: string): void
 }
@@ -170,10 +176,16 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
    * Delete is trash-first: the library row and the playlist references only go once the file has
    * actually reached the OS trash. If trashing fails (user cancelled, permission denied) the error
    * propagates untouched and the library is exactly as it was.
+   *
+   * A file that is already gone is skipped rather than trashed. `shell.trashItem` rejects for a
+   * path that does not exist, so trashing unconditionally would make the rows the UI marks
+   * "File missing" the only ones the user can never remove — leaving `library.json` as the sole
+   * way out. The row still goes: that is what the user asked for.
    */
   ipc.handle(IPC.library.remove, async (_event, id: unknown): Promise<void> => {
     const song = await requireSong(id)
-    await deps.trashItem(audioPathOf(song))
+    const absPath = audioPathOf(song)
+    if (await deps.fileExists(absPath)) await deps.trashItem(absPath)
     await deps.libraryStore.remove(song.id)
     await deps.playlistStore.cascadeRemoveSong(song.id)
   })
