@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,21 +36,45 @@ describe('resolveResourcesBinDir', () => {
       resolveResourcesBinDir({
         isPackaged: true,
         resourcesPath: '/Applications/mml.app/Contents/Resources',
-        appPath: '/Applications/mml.app/Contents/Resources/app.asar',
+        mainDir: '/Applications/mml.app/Contents/Resources/app.asar/out/main',
         platform: 'darwin'
       })
     ).toBe(path.join('/Applications/mml.app/Contents/Resources', 'bin'))
   })
 
-  it('reads the per-platform checkout directory in development', () => {
+  /**
+   * Derived from the bundle's own location rather than from `app.getAppPath()`, which is the
+   * directory of whatever script electron was pointed at: `electron .` (what `npm run dev` spawns)
+   * gives the repo root, but `electron out/main/index.js` — how the e2e harness and anyone running
+   * the build directly start the app — gives `<repo>/out/main`, and the old form then looked for
+   * `<repo>/out/main/resources/bin/<platform>`, which does not exist.
+   */
+  it('reads the per-platform checkout directory, however electron was launched', () => {
     expect(
       resolveResourcesBinDir({
         isPackaged: false,
         resourcesPath: '/ignored',
-        appPath: '/repo',
+        mainDir: path.join('/repo', 'out', 'main'),
         platform: 'win32'
       })
     ).toBe(path.join('/repo', 'resources', 'bin', 'win32'))
+  })
+
+  it('agrees with where package.json says the main bundle is built', async () => {
+    const repoRoot = process.cwd()
+    const manifest = JSON.parse(
+      await readFile(path.join(repoRoot, 'package.json'), 'utf8')
+    ) as Record<string, string>
+    const mainDir = path.dirname(path.resolve(repoRoot, manifest.main))
+
+    expect(
+      resolveResourcesBinDir({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        mainDir,
+        platform: 'darwin'
+      })
+    ).toBe(path.join(repoRoot, 'resources', 'bin', 'darwin'))
   })
 })
 

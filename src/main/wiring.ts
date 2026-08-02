@@ -23,26 +23,35 @@ export interface ResourcesBinDirOptions {
   isPackaged: boolean
   /** `process.resourcesPath`. */
   resourcesPath: string
-  /** `app.getAppPath()` — the repository root during development. */
-  appPath: string
+  /** The built main bundle's own directory — `__dirname`, which is `<repo>/out/main` unpackaged. */
+  mainDir: string
   platform: NodeJS.Platform
 }
+
+/** `out/main` -> the repository root. See `electron.vite.config.ts` for the build layout. */
+const MAIN_BUNDLE_DEPTH = ['..', '..']
 
 /**
  * Where the bundled `yt-dlp` lives.
  *
  * electron-builder copies `resources/bin/<platform>/` to `<Resources>/bin` (see the
  * `extraResources` blocks), so the per-platform directory only exists in a checkout.
+ *
+ * Unpackaged, the checkout is found by walking up from the bundle rather than from
+ * `app.getAppPath()`: that returns the directory of whatever script electron was pointed at, so it
+ * is the repo root for `electron .` (what `npm run dev` spawns) but `<repo>/out/main` for
+ * `electron out/main/index.js` — which is how the e2e harness, and anyone running the build
+ * directly, start the app. `__dirname` is the same either way.
  */
 export function resolveResourcesBinDir({
   isPackaged,
   resourcesPath,
-  appPath,
+  mainDir,
   platform
 }: ResourcesBinDirOptions): string {
   return isPackaged
     ? path.join(resourcesPath, 'bin')
-    : path.join(appPath, 'resources', 'bin', platform)
+    : path.join(mainDir, ...MAIN_BUNDLE_DEPTH, 'resources', 'bin', platform)
 }
 
 /** The slice of `BrowserWindow` a push channel needs. */

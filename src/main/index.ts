@@ -137,7 +137,7 @@ void app.whenReady().then(() => {
   const resourcesBinDir = resolveResourcesBinDir({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
-    appPath: app.getAppPath(),
+    mainDir: __dirname,
     platform: process.platform
   })
   // Resolved per call: a self-update lands a newer copy in userData that must win from then on.
