@@ -74,19 +74,54 @@ function parseDump(stdout: string[]): Record<string, unknown> {
   throw new Error('yt-dlp did not return JSON on stdout')
 }
 
+/**
+ * How long a probe may run before it is killed.
+ *
+ * Nothing in the UI can cancel a probe — `download:cancel` only reaches a running download — so an
+ * extractor that hangs (a dead host, a captcha wall, a stalled TLS handshake) would leave the Add
+ * dialog waiting on a promise that never settles. Generous enough for a slow extractor on a slow
+ * connection; short enough that the user gets an answer.
+ */
+export const PROBE_TIMEOUT_MS = 30_000
+
 export interface ProbeOptions {
   url: string
   run: RunLines
   binPath: string
+  /** Wall-clock bound on the whole probe. Defaults to `PROBE_TIMEOUT_MS`. */
+  timeoutMs?: number
 }
 
-export async function probe({ url, run, binPath }: ProbeOptions): Promise<ProbeResult> {
+export async function probe({
+  url,
+  run,
+  binPath,
+  timeoutMs = PROBE_TIMEOUT_MS
+}: ProbeOptions): Promise<ProbeResult> {
   const stdout: string[] = []
-  const { code, stderrTail } = await run({
-    bin: binPath,
-    args: buildProbeArgs(url),
-    onStdout: (line) => stdout.push(line)
-  })
+  // The timeout is spent as an abort so the child is actually killed, not merely stopped waiting on.
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  timer.unref?.()
+
+  let code: number
+  let stderrTail: string[]
+  try {
+    ;({ code, stderrTail } = await run({
+      bin: binPath,
+      args: buildProbeArgs(url),
+      onStdout: (line) => stdout.push(line),
+      signal: controller.signal
+    }))
+  } catch (error) {
+    // The runner reports an abort in its own words; the user needs to know it was the clock.
+    if (controller.signal.aborted) {
+      throw ytDlpError(`yt-dlp probe timed out after ${Math.round(timeoutMs / 1000)}s`, [])
+    }
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
   if (code !== 0) throw ytDlpError(`yt-dlp probe failed (exit ${code})`, stderrTail)
 
   const dump = parseDump(stdout)

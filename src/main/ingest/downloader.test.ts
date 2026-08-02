@@ -48,7 +48,6 @@ describe('createDownloader', () => {
       importFile: vi.fn(async () => SONG),
       download: vi.fn(async ({ outTemplate }: DownloadJob) => writeDownloaded(outTemplate)),
       probe: vi.fn(async (url: string) => ({ title: 'Probed', sourceUrl: url })),
-      onProgress: vi.fn(),
       ...overrides
     }
   }
@@ -137,7 +136,7 @@ describe('createDownloader', () => {
     expect(await readdir(tempDir)).toEqual([])
   })
 
-  it('forwards download progress to the injected sink and to subscribers', async () => {
+  it('forwards download progress to every subscriber until it unsubscribes', async () => {
     const progress: DownloadProgress = {
       stage: 'downloading',
       percent: 50,
@@ -156,7 +155,6 @@ describe('createDownloader', () => {
 
     await downloader.start(REQUEST)
 
-    expect(d.onProgress).toHaveBeenCalledWith(progress)
     expect(seen[0]).toEqual(progress)
     // The save step has no percentage of its own, but the UI needs to know the stage changed.
     expect(seen.at(-1)).toEqual({ stage: 'saving', percent: null })

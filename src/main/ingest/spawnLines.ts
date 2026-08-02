@@ -16,6 +16,12 @@ export interface RunLinesOptions {
   onStderr?: (line: string) => void
   /** Aborting kills the child and rejects the promise with an `AbortError`. */
   signal?: AbortSignal
+  /**
+   * How long an aborted child gets to exit on SIGTERM before it is sent SIGKILL. Defaults to
+   * `KILL_GRACE_MS`; production has no reason to change it, and the escalation test would
+   * otherwise have to sit through the real wait.
+   */
+  killGraceMs?: number
 }
 
 export interface RunLinesResult {
@@ -28,6 +34,15 @@ export interface RunLinesResult {
 export type RunLines = (opts: RunLinesOptions) => Promise<RunLinesResult>
 
 export const STDERR_TAIL_LINES = 20
+
+/**
+ * How long a cancelled child has to honour SIGTERM before SIGKILL settles it.
+ *
+ * Without the escalation a child that ignores SIGTERM never fires `close`, so this promise never
+ * settles — and `downloader`'s `finally` never clears `running`, leaving every later download
+ * rejecting with BUSY for the life of the main process, with nothing in the UI able to clear it.
+ */
+export const KILL_GRACE_MS = 5000
 
 function abortError(bin: string): Error {
   const error = new Error(`aborted: ${bin}`)
@@ -64,7 +79,14 @@ function lineSplitter(onLine: (line: string) => void): {
   }
 }
 
-export const runLines: RunLines = ({ bin, args, onStdout, onStderr, signal }) =>
+export const runLines: RunLines = ({
+  bin,
+  args,
+  onStdout,
+  onStderr,
+  signal,
+  killGraceMs = KILL_GRACE_MS
+}) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(abortError(bin))
@@ -87,8 +109,13 @@ export const runLines: RunLines = ({ bin, args, onStdout, onStderr, signal }) =>
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (chunk: string) => stderr.push(chunk))
 
+    // Armed on abort, cleared the moment the child settles. `unref` as well as `clearTimeout`:
+    // neither this timer nor a missed clear may be what keeps the process alive.
+    let killTimer: NodeJS.Timeout | null = null
     const onAbort = (): void => {
       child.kill()
+      killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs)
+      killTimer.unref?.()
     }
     signal?.addEventListener('abort', onAbort, { once: true })
 
@@ -97,6 +124,7 @@ export const runLines: RunLines = ({ bin, args, onStdout, onStderr, signal }) =>
       if (settled) return
       settled = true
       signal?.removeEventListener('abort', onAbort)
+      if (killTimer) clearTimeout(killTimer)
       finish()
     }
 

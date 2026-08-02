@@ -7,8 +7,8 @@ import type { ImportRequest } from './importer'
 /**
  * One download at a time, into a throwaway temp directory, then straight into the library.
  *
- * Every collaborator is injected — yt-dlp, the importer, even the progress sink — so the whole
- * flow, including cancellation, is testable without a single child process.
+ * Every collaborator is injected — yt-dlp, the importer — and progress leaves through a
+ * subscription, so the whole flow, including cancellation, is testable without a child process.
  */
 
 /** What `ytdlp.download` needs once its binary/ffmpeg paths are bound. */
@@ -25,8 +25,6 @@ export interface DownloaderDeps {
   importFile(req: ImportRequest): Promise<Song>
   download(job: DownloadJob): Promise<string>
   probe(url: string): Promise<ProbeResult>
-  /** Progress sink registered up front; more can be added with `downloader.onProgress`. */
-  onProgress?: (progress: DownloadProgress) => void
 }
 
 export interface Downloader {
@@ -43,7 +41,14 @@ interface CodedError extends Error {
   code: string
 }
 
-/** Name *and* code, because IPC serialisation keeps the name and callers reach for the code. */
+/**
+ * Name *and* code, for the two audiences.
+ *
+ * In-process callers (`withErrorReport`, which lets a `Cancelled` pass unreported) read `name` or
+ * `code` directly. The renderer gets neither: `ipcMain.handle` serialises a rejection into a plain
+ * `Error` whose own `name` is `Error`, pasting the original name into the *message* instead — which
+ * is why `renderer/lib/errors.ts` has to match on the message text.
+ */
 function codedError(code: string, message: string): CodedError {
   const error = new Error(message) as CodedError
   error.name = code
@@ -53,7 +58,6 @@ function codedError(code: string, message: string): CodedError {
 
 export function createDownloader(deps: DownloaderDeps): Downloader {
   const listeners = new Set<(progress: DownloadProgress) => void>()
-  if (deps.onProgress) listeners.add(deps.onProgress)
 
   /**
    * Listener failures are swallowed, deliberately.
