@@ -1,4 +1,5 @@
 import { useState, type ReactElement } from 'react'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { errorMessage } from '../lib/errors'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -6,6 +7,9 @@ export function SettingsDialog(): ReactElement {
   const { settings } = useAppState()
   const dispatch = useAppDispatch()
   const [updating, setUpdating] = useState(false)
+
+  const close = (): void => dispatch({ type: 'dialog/closed' })
+  useEscapeKey(close)
 
   const fail = (error: unknown): void =>
     dispatch({ type: 'toast/pushed', message: errorMessage(error) })
@@ -48,7 +52,7 @@ export function SettingsDialog(): ReactElement {
           <button type="button" disabled={updating} onClick={updateYtDlp}>
             Update yt-dlp
           </button>
-          <button type="button" onClick={() => dispatch({ type: 'dialog/closed' })}>
+          <button type="button" onClick={close}>
             Close
           </button>
         </div>

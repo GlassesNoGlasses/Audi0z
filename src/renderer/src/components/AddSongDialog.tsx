@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react'
 import type { DownloadProgress } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { errorMessage, isBusy, isCancelled } from '../lib/errors'
 import { parseTags, titleFromPath } from '../lib/text'
 import { useAppDispatch, useAppState } from '../state/AppContext'
@@ -44,7 +45,14 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   )
   const [tags, setTags] = useState('')
   const [compress, setCompress] = useState(settings.compressByDefault)
+  /** Anything in flight: the form must not be submitted twice or edited out from under a request. */
   const [busy, setBusy] = useState(false)
+  /**
+   * A *download* in flight, which is narrower than `busy` and is the only thing `download.cancel()`
+   * can reach. Tracked apart from `busy` because the action row swaps the close button for
+   * "Cancel download": doing that for every busy state left a slow probe with no way out at all.
+   */
+  const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
 
   // Subscribed for the dialog's whole life, not just while a download runs: the first progress
@@ -54,6 +62,14 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   const close = (): void => dispatch({ type: 'dialog/closed' })
   const fail = (error: unknown): void =>
     dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+
+  function cancelDownload(): void {
+    void window.api.download.cancel().catch(fail)
+  }
+
+  // Escape does whatever the button next to it does — cancels a running download rather than
+  // walking away and orphaning it, and otherwise closes.
+  useEscapeKey(() => (downloading ? cancelDownload() : close()))
 
   function chooseFiles(): void {
     setBusy(true)
@@ -99,6 +115,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
 
   function download(): void {
     setBusy(true)
+    setDownloading(true)
     setProgress(null)
     void window.api.download
       .start({ url: url.trim(), title: title.trim(), tags: parseTags(tags), compress })
@@ -118,6 +135,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
       })
       .finally(() => {
         setBusy(false)
+        setDownloading(false)
         setProgress(null)
       })
   }
@@ -207,13 +225,8 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
           ) : null}
 
           <div className="dialog-actions">
-            {mode === 'url' && busy ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void window.api.download.cancel().catch(fail)
-                }}
-              >
+            {downloading ? (
+              <button type="button" onClick={cancelDownload}>
                 Cancel download
               </button>
             ) : (
