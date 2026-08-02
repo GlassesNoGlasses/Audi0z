@@ -132,6 +132,21 @@ describe(IPC.library.list, () => {
     expect(harness.fileExists).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
   })
 
+  /**
+   * The id is a uuid in practice, but `library.json` is hand-editable and `mediaProtocol` decodes
+   * what it finds in the path — so it has to be encoded on the way out or the two disagree.
+   */
+  it('percent-encodes the song id into the media url', async () => {
+    const harness = setup()
+    const id = 'a b#c?d&e'
+    await harness.libraryStore.add(draftSong({ id }))
+
+    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
+
+    expect(dto.url).toBe(`media://audio/${encodeURIComponent(id)}`)
+    expect(decodeURIComponent(new URL(dto.url).pathname.slice(1))).toBe(id)
+  })
+
   it('reports exists:false when the backing file is gone', async () => {
     const harness = setup()
     await harness.libraryStore.add(draftSong())

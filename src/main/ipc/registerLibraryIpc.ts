@@ -151,10 +151,14 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return song
   }
 
+  /**
+   * The id is encoded because `mediaProtocol` decodes it: ids are uuids in practice, but
+   * `library.json` is hand-editable, and the two halves have to agree whatever is in there.
+   */
   async function toDto(song: Song): Promise<SongDto> {
     const resolved = resolveAudioPath(deps.audioDir, song.fileName)
     const exists = resolved === null ? false : await deps.fileExists(resolved)
-    return { ...song, exists, url: `${MEDIA_SCHEME}://audio/${song.id}` }
+    return { ...song, exists, url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}` }
   }
 
   ipc.handle(IPC.library.list, async (): Promise<SongDto[]> => {

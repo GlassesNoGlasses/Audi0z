@@ -34,7 +34,22 @@ export function isCancelled(error: unknown): boolean {
   return /cancell?ed/i.test(errorMessage(error))
 }
 
-/** The OS refused to move the file to the trash, so the song is still in the library. */
+/**
+ * The OS refused to move the file to the trash, so the song is still in the library.
+ *
+ * The match is broad on purpose, and it is worth being honest about what that costs. There is no
+ * structured signal to test: `shell.trashItem` rejects with whatever text the platform produced
+ * ("Failed to move item … to trash" on macOS, different wording on Windows and on each Linux
+ * desktop), and IPC has already flattened the error to a message by the time this runs. Matching
+ * the one word all of them share is the only thing that works everywhere.
+ *
+ * The cost is a false positive: an unrelated failure during a delete whose message happens to
+ * mention "trash" — a path with `Trash` in it, say — gets the same "the song is still in your
+ * library" suffix. That suffix is true for *every* failed delete, since `library:remove` only
+ * touches the stores after the trash step, so a false positive appends a sentence that is
+ * accurate anyway. Being wrong the other way (missing a real trash failure) is what would
+ * actually mislead, which is why this errs wide.
+ */
 export function isTrashFailure(error: unknown): boolean {
   return /trash/i.test(errorMessage(error))
 }

@@ -36,9 +36,13 @@ function invalid(message: string): Error {
  * so an option-shaped value (`--config-locations=/tmp/x`) would reach argv as a *flag* rather than
  * as something to fetch. Anchoring on `https?://` rules that out along with `file://` and friends.
  * Leading whitespace is not trimmed away — a padded URL is simply rejected.
+ *
+ * Case-insensitive on the scheme only: RFC 3986 schemes are, and a link pasted out of a document
+ * or an email client arrives as `HTTPS://` often enough that rejecting it reads as the app not
+ * understanding the URL. The anchor still does the work that matters.
  */
 function assertUrl(value: unknown): string {
-  if (typeof value !== 'string' || !/^https?:\/\//.test(value)) {
+  if (typeof value !== 'string' || !/^https?:\/\//i.test(value)) {
     throw invalid('url must be an http(s) URL')
   }
   return value
@@ -62,9 +66,12 @@ function assertDownloadRequest(value: unknown): DownloadRequest {
 /**
  * A freshly imported song is on disk by definition, so `exists` is true and the media URL follows
  * straight from the id. (WP2's library IPC builds the same DTO for songs read back from the store.)
+ *
+ * The id is encoded because `mediaProtocol` decodes it: ids are uuids in practice, but
+ * `library.json` is hand-editable, and the two halves have to agree whatever is in there.
  */
 function toSongDto(song: Song): SongDto {
-  return { ...song, exists: true, url: `${MEDIA_SCHEME}://audio/${song.id}` }
+  return { ...song, exists: true, url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}` }
 }
 
 /** Returns the progress-forwarding unsubscribe, for teardown in tests and on window replacement. */
