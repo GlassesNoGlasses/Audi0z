@@ -1,0 +1,172 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AppError } from '../shared/types'
+import {
+  createWindowSender,
+  fileExists,
+  resolveResourcesBinDir,
+  withErrorReport,
+  type RendererTarget
+} from './wiring'
+
+describe('fileExists', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'mml-wiring-'))
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('answers for a file that is there and one that is not', async () => {
+    const present = path.join(dir, 'here.txt')
+    await writeFile(present, 'x')
+    await expect(fileExists(present)).resolves.toBe(true)
+    await expect(fileExists(path.join(dir, 'gone.txt'))).resolves.toBe(false)
+  })
+})
+
+describe('resolveResourcesBinDir', () => {
+  it('reads out of the app bundle once packaged', () => {
+    expect(
+      resolveResourcesBinDir({
+        isPackaged: true,
+        resourcesPath: '/Applications/mml.app/Contents/Resources',
+        mainDir: '/Applications/mml.app/Contents/Resources/app.asar/out/main',
+        platform: 'darwin'
+      })
+    ).toBe(path.join('/Applications/mml.app/Contents/Resources', 'bin'))
+  })
+
+  /**
+   * Derived from the bundle's own location rather than from `app.getAppPath()`, which is the
+   * directory of whatever script electron was pointed at: `electron .` (what `npm run dev` spawns)
+   * gives the repo root, but `electron out/main/index.js` — how the e2e harness and anyone running
+   * the build directly start the app — gives `<repo>/out/main`, and the old form then looked for
+   * `<repo>/out/main/resources/bin/<platform>`, which does not exist.
+   */
+  it('reads the per-platform checkout directory, however electron was launched', () => {
+    expect(
+      resolveResourcesBinDir({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        mainDir: path.join('/repo', 'out', 'main'),
+        platform: 'win32'
+      })
+    ).toBe(path.join('/repo', 'resources', 'bin', 'win32'))
+  })
+
+  it('agrees with where package.json says the main bundle is built', async () => {
+    const repoRoot = process.cwd()
+    const manifest = JSON.parse(
+      await readFile(path.join(repoRoot, 'package.json'), 'utf8')
+    ) as Record<string, string>
+    const mainDir = path.dirname(path.resolve(repoRoot, manifest.main))
+
+    expect(
+      resolveResourcesBinDir({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        mainDir,
+        platform: 'darwin'
+      })
+    ).toBe(path.join(repoRoot, 'resources', 'bin', 'darwin'))
+  })
+})
+
+describe('createWindowSender', () => {
+  function fakeWindow(): {
+    window: RendererTarget
+    send: ReturnType<typeof vi.fn>
+    destroy(): void
+    destroyContents(): void
+  } {
+    const send = vi.fn()
+    let destroyed = false
+    let contentsDestroyed = false
+    return {
+      window: {
+        isDestroyed: () => destroyed,
+        webContents: { isDestroyed: () => contentsDestroyed, send }
+      },
+      send,
+      destroy: () => {
+        destroyed = true
+      },
+      destroyContents: () => {
+        contentsDestroyed = true
+      }
+    }
+  }
+
+  it('resolves the window on every call, so it works for a window created later', () => {
+    let target: ReturnType<typeof fakeWindow> | null = null
+    const sendTo = createWindowSender(() => target?.window ?? null)
+
+    sendTo('event:x', { a: 1 })
+
+    target = fakeWindow()
+    sendTo('event:x', { a: 2 })
+    expect(target.send).toHaveBeenCalledExactlyOnceWith('event:x', { a: 2 })
+  })
+
+  it('stays quiet once the window or its contents are gone', () => {
+    const target = fakeWindow()
+    const sendTo = createWindowSender(() => target.window)
+
+    target.destroy()
+    sendTo('event:x', 1)
+    expect(target.send).not.toHaveBeenCalled()
+
+    const other = fakeWindow()
+    const sendToOther = createWindowSender(() => other.window)
+    other.destroyContents()
+    sendToOther('event:x', 1)
+    expect(other.send).not.toHaveBeenCalled()
+  })
+
+  it('never throws, whatever the send does', () => {
+    const target = fakeWindow()
+    target.send.mockImplementation(() => {
+      throw new Error('window went away mid-send')
+    })
+    const sendTo = createWindowSender(() => target.window)
+    expect(() => sendTo('event:x', 1)).not.toThrow()
+  })
+})
+
+describe('withErrorReport', () => {
+  it('passes the result straight through', async () => {
+    const report = vi.fn()
+    const wrapped = withErrorReport('import', report, async (n: number) => n * 2)
+    await expect(wrapped(21)).resolves.toBe(42)
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  it('reports the failure and still rejects with the original error', async () => {
+    const report = vi.fn<(error: AppError) => void>()
+    const boom = new Error('disk on fire')
+    const wrapped = withErrorReport('trash', report, async () => {
+      throw boom
+    })
+
+    await expect(wrapped()).rejects.toBe(boom)
+    expect(report).toHaveBeenCalledWith({ source: 'trash', message: 'disk on fire' })
+  })
+
+  it('says nothing about a cancellation the user asked for', async () => {
+    const report = vi.fn()
+    const cancelled = new Error('download cancelled')
+    cancelled.name = 'Cancelled'
+    const wrapped = withErrorReport('ytdlp', report, async () => {
+      throw cancelled
+    })
+
+    await expect(wrapped()).rejects.toBe(cancelled)
+    expect(report).not.toHaveBeenCalled()
+  })
+})
