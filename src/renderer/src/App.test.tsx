@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mockApiControls } from '../../../tests/support/mockApi'
 import {
   audioElement,
@@ -65,6 +65,37 @@ describe('App shell', () => {
 
     expect(nowPlaying()).toBe('Alpha Mix')
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+  })
+
+  /**
+   * Main reports the trash failure on its error channel AND rejects the `invoke`, and its report
+   * lands first. The renderer's own message is the only one that says the song survived, so it has
+   * to be shown alongside main's rather than collapsed into it.
+   */
+  it('says the song survived when the trash refuses it', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
+    const controls = mockApiControls(api)
+    vi.mocked(api.library.remove).mockRejectedValue(
+      new Error(
+        "Error invoking remote method 'library:remove': Error: Failed to move item to trash"
+      )
+    )
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    // Main gets there first, exactly as `withErrorReport` does in the real process.
+    act(() => {
+      controls.emitError({ source: 'trash', message: 'Failed to move item to trash' })
+    })
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    const toasts = await screen.findAllByRole('alert')
+    expect(toasts.map((toast) => toast.textContent)).toEqual([
+      expect.stringContaining('Failed to move item to trash'),
+      expect.stringContaining('the song is still in your library')
+    ])
+    expect(songTitles()).toEqual(['Alpha Mix'])
   })
 })
 

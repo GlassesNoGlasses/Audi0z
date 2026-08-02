@@ -110,22 +110,29 @@ describe('appReducer', () => {
     expect(dismissed.toasts.map((t) => t.message)).toEqual(['network on fire'])
   })
 
-  it('does not report the same failure twice, however it is worded', () => {
-    // Main forwards a bare message on its error channel; the renderer's own catch adds context.
+  it('keeps every report, so a failure that happens twice is said twice', () => {
+    // Main forwards a bare message on its error channel and the renderer's own catch adds context:
+    // both are shown. Collapsing them would have to guess which one matters, and a repeat of the
+    // same failure would then produce no feedback at all.
     const fromMain = reducer(seeded(), {
       type: 'toast/pushed',
       message: 'Failed to move item to trash'
     })
-    const fromInvoke = reducer(fromMain, {
+    const withContext = reducer(fromMain, {
       type: 'toast/pushed',
       message: 'Failed to move item to trash — the song is still in your library.'
     })
-    const exact = reducer(fromInvoke, {
+    const again = reducer(withContext, {
       type: 'toast/pushed',
       message: 'Failed to move item to trash'
     })
 
-    expect(exact.toasts).toHaveLength(1)
+    expect(again.toasts.map((t) => t.message)).toEqual([
+      'Failed to move item to trash',
+      'Failed to move item to trash — the song is still in your library.',
+      'Failed to move item to trash'
+    ])
+    expect(new Set(again.toasts.map((t) => t.id)).size).toBe(3)
   })
 
   it('records the search query and the selected view', () => {

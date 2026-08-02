@@ -11,8 +11,8 @@
 const INVOKE_PREFIX = /^Error invoking remote method '[^']*':\s*/
 /**
  * The error's class name, which electron pastes in front of the message it serialises
- * (`YtDlpError: …`, `BUSY: …`). Dropping it leaves exactly what the main process's own error
- * channel sends for the same failure, so the two never show up as two different toasts.
+ * (`YtDlpError: …`, `BUSY: …`). It is an implementation detail of the main process, and dropping
+ * it leaves the sentence the user is meant to read.
  */
 const NAME_PREFIX = /^[A-Z][A-Za-z0-9_]*:[ \t]+/
 

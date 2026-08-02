@@ -180,27 +180,20 @@ export function createAppReducer(
         return { ...state, dialog: action.dialog }
       case 'dialog/closed':
         return state.dialog === null ? state : { ...state, dialog: null }
-      case 'toast/pushed': {
-        // One failure, one line on screen. The same problem usually arrives twice — once as the
-        // rejected `invoke` (which the renderer may add context to) and once on the main process's
-        // error channel — so a message already contained in a live toast, or containing one, is
-        // treated as that same report rather than stacked underneath it.
-        if (state.toasts.some((toast) => overlaps(toast.message, action.message))) return state
+      // Every report gets its own line. A failure often produces two — main's own on the error
+      // channel and the rejected `invoke`, which the renderer may have added context to — and only
+      // the caller knows which one carries the useful half, so neither is thrown away. It also
+      // means a failure that happens twice is reported twice, instead of looking ignored.
+      case 'toast/pushed':
         return {
           ...state,
           toasts: [...state.toasts, { id: state.nextToastId, message: action.message }],
           nextToastId: state.nextToastId + 1
         }
-      }
       case 'toast/dismissed':
         return { ...state, toasts: state.toasts.filter((toast) => toast.id !== action.id) }
     }
   }
-}
-
-/** Whether two toast messages are two reports of the same thing. */
-function overlaps(a: string, b: string): boolean {
-  return a.includes(b) || b.includes(a)
 }
 
 function toggleOff(set: ReadonlySet<string>, value: string): ReadonlySet<string> {

@@ -21,7 +21,7 @@ describe('errorMessage', () => {
     expect(errorMessage(busy)).toBe('a download is already running')
   })
 
-  it('strips the serialised error name, leaving what main would have sent itself', () => {
+  it('strips the serialised error name, leaving the sentence meant for the user', () => {
     expect(errorMessage(trash)).toBe('Failed to move item to trash')
     expect(errorMessage(new Error('YtDlpError: yt-dlp download failed (exit 1)'))).toBe(
       'yt-dlp download failed (exit 1)'
