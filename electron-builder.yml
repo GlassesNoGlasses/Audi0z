@@ -10,6 +10,8 @@ files:
 # ffmpeg-static ships a real executable; it cannot run from inside the asar archive.
 asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
+# Applies the macOS ad-hoc signature; a no-op on every other platform. See mac.identity below.
+afterPack: build/adhocSign.js
 mac:
   target:
     - dmg
@@ -17,17 +19,28 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # Ad-hoc signed, not unsigned. v1 ships without a Developer ID, but `identity: null` skips
-  # codesign altogether — and packaging rewrites Info.plist and renames the executable, which
-  # breaks the seal Electron ships with. An arm64 bundle whose signature no longer matches is
-  # refused outright by macOS ("the app is damaged"), so an ad-hoc signature is the minimum that
-  # launches at all. It grants no Gatekeeper trust: the first launch still needs right-click Open.
+  # Ad-hoc signed, not unsigned — but signed by the afterPack hook above, not by electron-builder.
   #
-  # `hardenedRuntime: true` plus an ad-hoc identity means library validation would reject the
-  # pre-signed Electron framework and the bundled yt-dlp/ffmpeg binaries, which carry a different
-  # Team ID — `com.apple.security.cs.disable-library-validation` in build/entitlements.mac.plist
-  # is what makes the combination work, and must stay.
-  identity: '-'
+  # Why a signature at all: packaging rewrites Info.plist and renames the executable, which breaks
+  # the seal Electron ships with. An arm64 bundle whose signature no longer matches is refused
+  # outright by macOS ("the app is damaged"), so an ad-hoc signature is the minimum that launches at
+  # all. It grants no Gatekeeper trust: the first launch still needs right-click Open.
+  #
+  # Why not `identity: '-'`: in electron-builder 26.15.3 the dash never reaches the ad-hoc branch.
+  # It is first passed to the keychain identity search as a substring qualifier, and the
+  # non-Apple-certificate fallback matches any `security find-identity` line containing "-" — so a
+  # self-signed "gdb-cert" debugging cert on the build machine hijacks it and `codesign --sign
+  # gdb-cert` fails with "no identity found". Which cert wins depends on the machine's keychain, so
+  # the setting is not reproducible. Signing is skipped here instead (`identity: null`) and
+  # build/adhocSign.js runs `codesign --sign -` on the packed .app, where the dash is unambiguous.
+  #
+  # `hardenedRuntime` and the entitlements keys above are kept for the day this ships under a real
+  # Developer ID, but they do nothing while `identity: null`: electron-builder never signs, and the
+  # hook signs without the hardened runtime. That is fine for v1 — no hardened runtime means no
+  # library validation to reject the pre-signed Electron framework or the bundled yt-dlp/ffmpeg
+  # binaries. Turning hardenedRuntime back on will require the entitlements to be applied with it,
+  # `com.apple.security.cs.disable-library-validation` included.
+  identity: null
   extraResources:
     - from: resources/bin/darwin/
       to: bin/
