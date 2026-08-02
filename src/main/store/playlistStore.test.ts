@@ -1,0 +1,216 @@
+import { readFile, writeFile } from 'node:fs/promises'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
+import { playlistsJsonPath } from '../paths'
+import type { Playlist, PlaylistsFile, Song } from '../../shared/types'
+import { NotFoundError } from './errors'
+import { createLibraryStore } from './libraryStore'
+import { createPlaylistStore } from './playlistStore'
+
+function song(title: string): Song {
+  return { id: '', fileName: `${title}.wav`, title, tags: [], addedAt: '', compressed: false }
+}
+
+let lib: TmpLibrary
+
+beforeEach(async () => {
+  lib = await createTmpLibrary()
+})
+
+afterEach(async () => {
+  await lib.cleanup()
+})
+
+describe('create', () => {
+  it('assigns an id and createdAt and starts empty, unshuffled and unrepeated', async () => {
+    const store = createPlaylistStore(lib.root)
+
+    const created = await store.create('Late night')
+
+    expect(created).toEqual({
+      id: expect.stringMatching(/^[0-9a-f-]{36}$/) as unknown as string,
+      name: 'Late night',
+      songIds: [],
+      shuffle: false,
+      repeat: false,
+      createdAt: expect.any(String) as unknown as string
+    })
+    expect(new Date(created.createdAt).toISOString()).toBe(created.createdAt)
+  })
+
+  it('persists across a re-open and writes a versioned file', async () => {
+    const created = await createPlaylistStore(lib.root).create('Gym')
+
+    await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([created])
+
+    const file = JSON.parse(await readFile(playlistsJsonPath(lib.root), 'utf8')) as PlaylistsFile
+    expect(file.version).toBe(1)
+  })
+
+  it('starts empty when playlists.json is corrupt', async () => {
+    await writeFile(playlistsJsonPath(lib.root), '{ broken', 'utf8')
+
+    await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([])
+  })
+})
+
+describe('rename', () => {
+  it('renames and persists', async () => {
+    const store = createPlaylistStore(lib.root)
+    const created = await store.create('Old')
+
+    const renamed = await store.rename(created.id, 'New')
+
+    expect(renamed).toEqual({ ...created, name: 'New' })
+    await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([renamed])
+  })
+
+  it('throws NotFound for an unknown playlist', async () => {
+    await expect(createPlaylistStore(lib.root).rename('missing', 'x')).rejects.toBeInstanceOf(
+      NotFoundError
+    )
+  })
+})
+
+describe('addSong', () => {
+  it('adds a song once, however many times it is added', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+
+    await store.addSong(playlist.id, 'song-1')
+    const twice = await store.addSong(playlist.id, 'song-1')
+
+    expect(twice.songIds).toEqual(['song-1'])
+  })
+
+  it('preserves insertion order', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+
+    await store.addSong(playlist.id, 'a')
+    await store.addSong(playlist.id, 'b')
+    const third = await store.addSong(playlist.id, 'c')
+
+    expect(third.songIds).toEqual(['a', 'b', 'c'])
+    await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([third])
+  })
+
+  it('throws NotFound for an unknown playlist', async () => {
+    const store = createPlaylistStore(lib.root)
+
+    await expect(store.addSong('missing', 'song-1')).rejects.toBeInstanceOf(NotFoundError)
+    await expect(store.addSong('missing', 'song-1')).rejects.toMatchObject({ name: 'NotFound' })
+  })
+})
+
+describe('removeSong', () => {
+  it('removes only the given song and persists', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+    await store.addSong(playlist.id, 'a')
+    await store.addSong(playlist.id, 'b')
+
+    const after = await store.removeSong(playlist.id, 'a')
+
+    expect(after.songIds).toEqual(['b'])
+    await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([after])
+  })
+
+  it('throws NotFound for an unknown playlist', async () => {
+    await expect(createPlaylistStore(lib.root).removeSong('missing', 'a')).rejects.toBeInstanceOf(
+      NotFoundError
+    )
+  })
+})
+
+describe('remove', () => {
+  it('drops the playlist and leaves the library untouched', async () => {
+    const library = createLibraryStore(lib.root)
+    const kept = await library.add(song('kept'))
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+    await store.addSong(playlist.id, kept.id)
+
+    await store.remove(playlist.id)
+
+    expect(await store.list()).toEqual([])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([kept])
+  })
+
+  it('is a no-op for an unknown playlist', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+
+    await expect(store.remove('missing')).resolves.toBeUndefined()
+    expect(await store.list()).toEqual([playlist])
+  })
+})
+
+describe('cascadeRemoveSong', () => {
+  it('strips the id from every playlist and leaves the others intact', async () => {
+    const store = createPlaylistStore(lib.root)
+    const first = await store.create('First')
+    const second = await store.create('Second')
+    const third = await store.create('Third')
+    await store.addSong(first.id, 'doomed')
+    await store.addSong(first.id, 'keeper')
+    await store.addSong(second.id, 'doomed')
+    await store.addSong(third.id, 'keeper')
+
+    await store.cascadeRemoveSong('doomed')
+
+    const byName = new Map((await store.list()).map((p) => [p.name, p]))
+    expect(byName.get('First')?.songIds).toEqual(['keeper'])
+    expect(byName.get('Second')?.songIds).toEqual([])
+    expect(byName.get('Third')?.songIds).toEqual(['keeper'])
+    const reopened = await createPlaylistStore(lib.root).list()
+    expect(reopened.map((p) => p.songIds)).toEqual([['keeper'], [], ['keeper']])
+  })
+
+  it('is a no-op when no playlist references the song', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+    await store.addSong(playlist.id, 'a')
+
+    await store.cascadeRemoveSong('not-there')
+
+    expect((await store.list())[0]?.songIds).toEqual(['a'])
+  })
+})
+
+describe('setPlaybackOptions', () => {
+  it('persists shuffle and repeat independently', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+
+    const shuffled = await store.setPlaybackOptions(playlist.id, { shuffle: true })
+    expect(shuffled).toEqual({ ...playlist, shuffle: true })
+
+    const repeated = await store.setPlaybackOptions(playlist.id, { repeat: true })
+    expect(repeated).toEqual({ ...playlist, shuffle: true, repeat: true })
+
+    const unshuffled = await store.setPlaybackOptions(playlist.id, { shuffle: false })
+    expect(unshuffled).toEqual({ ...playlist, shuffle: false, repeat: true })
+
+    await expect(createPlaylistStore(lib.root).list()).resolves.toEqual([unshuffled])
+  })
+
+  it('throws NotFound for an unknown playlist', async () => {
+    await expect(
+      createPlaylistStore(lib.root).setPlaybackOptions('missing', { shuffle: true })
+    ).rejects.toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe('cache isolation', () => {
+  it('does not let callers mutate the store through returned playlists', async () => {
+    const store = createPlaylistStore(lib.root)
+    const created: Playlist = await store.create('P')
+    await store.addSong(created.id, 'a')
+
+    const listed = await store.list()
+    listed[0]?.songIds.push('injected')
+
+    expect((await store.list())[0]?.songIds).toEqual(['a'])
+  })
+})
