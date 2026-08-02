@@ -90,6 +90,15 @@ export async function readJsonFile<T>(
   return parsed
 }
 
+/**
+ * Puts the unreadable bytes aside before the caller carries on with a default.
+ *
+ * There is exactly one `.bak` slot, and this deliberately overwrites whatever was in it. The
+ * alternative — `.bak.1`, `.bak.2`, … — accumulates copies of a file that is already broken, in a
+ * directory the user browses, and the *newest* corruption is the one that explains what just
+ * happened. A quarantined copy worth keeping is worth moving somewhere else before the next
+ * corruption, which is a thing a person can do and a thing this function should not guess at.
+ */
 async function quarantine(filePath: string, raw: Buffer): Promise<void> {
   await writeFile(`${filePath}.bak`, raw)
 }

@@ -7,6 +7,7 @@ import {
   createWindowSender,
   fileExists,
   resolveResourcesBinDir,
+  runStartup,
   withErrorReport,
   type RendererTarget
 } from './wiring'
@@ -136,6 +137,71 @@ describe('createWindowSender', () => {
     })
     const sendTo = createWindowSender(() => target.window)
     expect(() => sendTo('event:x', 1)).not.toThrow()
+  })
+})
+
+describe('runStartup', () => {
+  function fakeShell() {
+    return { showErrorBox: vi.fn<(title: string, content: string) => void>(), quit: vi.fn() }
+  }
+
+  it('stays out of the way when startup succeeds', async () => {
+    const shell = fakeShell()
+    const startup = vi.fn()
+
+    await runStartup(startup, shell)
+
+    expect(startup).toHaveBeenCalledTimes(1)
+    expect(shell.showErrorBox).not.toHaveBeenCalled()
+    expect(shell.quit).not.toHaveBeenCalled()
+  })
+
+  /**
+   * Everything that can fail before the first window exists — an unwritable library root, a
+   * bogus `MML_LIBRARY_DIR`, an unsupported platform's ffmpeg — used to surface as an unhandled
+   * rejection: no window, no message, an app that simply never appeared.
+   */
+  it('shows what went wrong and quits when startup throws', async () => {
+    const shell = fakeShell()
+
+    await runStartup(() => {
+      throw new Error('EACCES: permission denied, mkdir /read-only/my-music-library')
+    }, shell)
+
+    expect(shell.showErrorBox).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining('start'),
+      expect.stringContaining('EACCES: permission denied')
+    )
+    expect(shell.quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('catches an async failure too', async () => {
+    const shell = fakeShell()
+
+    await runStartup(async () => {
+      await Promise.resolve()
+      throw new Error('library.json is a directory')
+    }, shell)
+
+    expect(shell.showErrorBox).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('library.json is a directory')
+    )
+    expect(shell.quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('still says something when what was thrown is not an Error', async () => {
+    const shell = fakeShell()
+
+    await runStartup(() => {
+      throw 'just a string'
+    }, shell)
+
+    expect(shell.showErrorBox).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.stringContaining('just a string')
+    )
+    expect(shell.quit).toHaveBeenCalledTimes(1)
   })
 })
 

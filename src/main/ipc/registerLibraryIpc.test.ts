@@ -132,6 +132,21 @@ describe(IPC.library.list, () => {
     expect(harness.fileExists).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
   })
 
+  /**
+   * The id is a uuid in practice, but `library.json` is hand-editable and `mediaProtocol` decodes
+   * what it finds in the path — so it has to be encoded on the way out or the two disagree.
+   */
+  it('percent-encodes the song id into the media url', async () => {
+    const harness = setup()
+    const id = 'a b#c?d&e'
+    await harness.libraryStore.add(draftSong({ id }))
+
+    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
+
+    expect(dto.url).toBe(`media://audio/${encodeURIComponent(id)}`)
+    expect(decodeURIComponent(new URL(dto.url).pathname.slice(1))).toBe(id)
+  })
+
   it('reports exists:false when the backing file is gone', async () => {
     const harness = setup()
     await harness.libraryStore.add(draftSong())
@@ -257,6 +272,25 @@ describe(IPC.library.remove, () => {
     expect(await harness.libraryStore.list()).toEqual([added])
     expect(cascade).not.toHaveBeenCalled()
     expect((await harness.playlistStore.list())[0]?.songIds).toEqual([added.id])
+  })
+
+  /**
+   * `shell.trashItem` rejects for a path that is not there, so trashing first would make exactly
+   * the rows the UI marks "File missing" the ones that can never be removed.
+   */
+  it('removes the row without trashing when the file is already gone', async () => {
+    const harness = setup()
+    const added = await harness.libraryStore.add(draftSong())
+    const playlist = await harness.playlistStore.create('P')
+    await harness.playlistStore.addSong(playlist.id, added.id)
+    harness.fileExists.mockResolvedValue(false)
+
+    await harness.invoke(IPC.library.remove, added.id)
+
+    expect(harness.trashItem).not.toHaveBeenCalled()
+    expect(harness.fileExists).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
+    expect(await harness.libraryStore.list()).toEqual([])
+    expect((await harness.playlistStore.list())[0]?.songIds).toEqual([])
   })
 
   it('throws NotFound without trashing anything for an unknown id', async () => {

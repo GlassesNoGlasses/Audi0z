@@ -1,7 +1,7 @@
 import type { IpcMain } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import { IPC, IPC_EVENTS } from '../../shared/ipc'
-import type { DownloadProgress, Song } from '../../shared/types'
+import type { DownloadProgress, Song, SongDto } from '../../shared/types'
 import { registerIngestIpc } from './registerIngestIpc'
 
 const SONG: Song = {
@@ -52,10 +52,10 @@ function setup() {
 
   const unsubscribe = registerIngestIpc(ipc, deps)
 
-  const invoke = async (channel: string, ...args: unknown[]): Promise<unknown> => {
+  const invoke = async <T = unknown>(channel: string, ...args: unknown[]): Promise<T> => {
     const handler = handlers.get(channel)
     if (!handler) throw new Error(`no handler registered for ${channel}`)
-    return handler({}, ...args)
+    return (await handler({}, ...args)) as T
   }
 
   const emitProgress = (p: DownloadProgress): void => {
@@ -161,13 +161,40 @@ describe('registerIngestIpc', () => {
     expect(downloader.probe).not.toHaveBeenCalled()
   })
 
+  // RFC 3986 schemes are case-insensitive, and a URL pasted out of a document or an email client
+  // arrives capitalised often enough that rejecting it reads as the app not understanding the link.
   it.each([
     ['https', 'https://example.test/v/1'],
-    ['http', 'http://example.test/v/1']
+    ['http', 'http://example.test/v/1'],
+    ['uppercase HTTPS', 'HTTPS://example.test/v/1'],
+    ['mixed-case HtTp', 'HtTp://example.test/v/1']
   ])('accepts a plain %s url', async (_label, url) => {
     const { downloader, invoke } = setup()
 
     await expect(invoke(IPC.download.probe, url)).resolves.toMatchObject({ sourceUrl: url })
     expect(downloader.probe).toHaveBeenCalledWith(url)
+  })
+
+  it('accepts an uppercase scheme on a download request too', async () => {
+    const { downloader, invoke } = setup()
+    const request = { ...VALID_REQUEST, url: 'HTTPS://example.test/v/1' }
+
+    await expect(invoke(IPC.download.start, request)).resolves.toMatchObject({ id: SONG.id })
+    expect(downloader.start).toHaveBeenCalledWith(request)
+  })
+
+  /**
+   * The id is a uuid in practice, but `library.json` is hand-editable and `mediaProtocol` decodes
+   * what it finds in the path — so it has to be encoded on the way out or the two disagree.
+   */
+  it('percent-encodes the song id into the media url', async () => {
+    const { downloader, invoke } = setup()
+    const id = 'a b#c?d&e'
+    downloader.start.mockResolvedValue({ ...SONG, id })
+
+    const dto = await invoke<SongDto>(IPC.download.start, VALID_REQUEST)
+
+    expect(dto.url).toBe(`media://audio/${encodeURIComponent(id)}`)
+    expect(decodeURIComponent(new URL(dto.url).pathname.slice(1))).toBe(id)
   })
 })

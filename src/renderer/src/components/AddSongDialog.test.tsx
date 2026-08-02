@@ -93,6 +93,67 @@ describe('AddSongDialog — url source', () => {
     expect(screen.getByText('Downloading… 42%')).toBeInTheDocument()
   })
 
+  /**
+   * A probe has no cancel path of its own — `download.cancel()` only reaches a running download —
+   * so swapping the close button out for "Cancel download" while one is in flight left a hung
+   * probe with no way out of the dialog at all.
+   */
+  it('still offers a way out while a probe is in flight', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    vi.mocked(api.download.probe).mockImplementation(() => new Promise(() => undefined))
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+
+    expect(screen.queryByRole('button', { name: 'Cancel download' })).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Add song' })).toBeNull()
+    expect(api.download.cancel).not.toHaveBeenCalled()
+  })
+
+  it('closes on Escape while a probe is in flight', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    vi.mocked(api.download.probe).mockImplementation(() => new Promise(() => undefined))
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Add song' })).toBeNull()
+  })
+
+  /**
+   * Matching the button it stands in for: a running download is cancelled rather than orphaned,
+   * and the dialog stays up so the user can see what happened and try again.
+   */
+  it('cancels the download rather than closing when Escape lands mid-download', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    vi.mocked(api.download.start).mockImplementation(() => new Promise(() => undefined))
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Some Remix')
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(screen.getByRole('button', { name: 'Cancel download' })).toBeInTheDocument()
+
+    await user.keyboard('{Escape}')
+
+    expect(api.download.cancel).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('dialog', { name: 'Add song' })).toBeInTheDocument()
+  })
+
   it('keeps the dialog open and shows the failure when the download rejects', async () => {
     const user = userEvent.setup()
     const api = seedApi()

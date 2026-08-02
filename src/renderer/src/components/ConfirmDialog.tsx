@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 
 export interface ConfirmDialogProps {
   message: string
@@ -14,6 +15,9 @@ export function ConfirmDialog({
   onConfirm,
   onCancel
 }: ConfirmDialogProps): ReactElement {
+  // Escape is the cancel, never the confirm: nothing destructive happens by keystroke.
+  useEscapeKey(onCancel)
+
   return (
     <div className="dialog-backdrop">
       <div className="dialog" role="dialog" aria-modal="true" aria-label="Confirm">

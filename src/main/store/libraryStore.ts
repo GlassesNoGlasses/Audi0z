@@ -75,8 +75,15 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
     },
 
     /**
-     * The importer builds the whole record, but id and `addedAt` are the store's business: it
-     * backfills either one that arrives empty or missing so no caller can invent a duplicate id.
+     * `id` and `addedAt` are backfilled only when they arrive empty or missing — a convenience for
+     * a caller that has no reason to care what they are.
+     *
+     * A caller that *does* supply an id keeps it verbatim, and that is required rather than merely
+     * tolerated: the importer mints the uuid itself and names the audio file after it
+     * (`<id><ext>`), so an id regenerated here would no longer match the file on disk, and
+     * `media://audio/<id>` would resolve to a song whose `fileName` points at nothing. Uniqueness
+     * is therefore the caller's to guarantee, not this store's — the importer gets it from
+     * `randomUUID`, and nothing else in the app adds rows.
      */
     async add(song) {
       const current = await load()

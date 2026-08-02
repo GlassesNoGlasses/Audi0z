@@ -28,8 +28,14 @@ export function useApiEvents(dispatch: Dispatch<AppAction>): void {
     const unsubscribeChanged = window.api.events.onLibraryChanged(() => {
       void refreshLibrary(dispatch)
     })
+    // Through `errorMessage` like every other call site: one failure reported on both paths has to
+    // arrive as the same string, or the reducer's duplicate collapse cannot see that it is one.
+    // (Nothing was serialised on this path, so only the trim and the empty-message fallback
+    // normally bite. A main-side message that opened with a `ClassName: ` of its own would lose
+    // it — none of the ones this app produces do; yt-dlp's `ERROR:` lines arrive below a summary
+    // line, not at the front.)
     const unsubscribeError = window.api.events.onError((error) => {
-      dispatch({ type: 'toast/pushed', message: error.message })
+      dispatch({ type: 'toast/pushed', message: errorMessage(error.message) })
     })
     return () => {
       unsubscribeChanged()

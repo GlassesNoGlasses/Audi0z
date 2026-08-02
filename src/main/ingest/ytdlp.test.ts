@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import type { DownloadProgress } from '../../shared/types'
-import type { RunLines } from './spawnLines'
+import type { RunLines, RunLinesResult } from './spawnLines'
 import {
   buildDownloadArgs,
   buildProbeArgs,
@@ -102,6 +102,38 @@ describe('probe', () => {
     const run = fakeRun([], 1, ['ERROR: Unsupported URL: https://example.test/watch?v=1'])
 
     await expect(probe({ url, run, binPath: '/bin/yt-dlp' })).rejects.toThrow(/Unsupported URL/)
+  })
+
+  /**
+   * A probe has no cancel button behind it — `download:cancel` only reaches a running download —
+   * so an extractor that hangs would otherwise leave the Add dialog waiting forever.
+   */
+  it('aborts and rejects when yt-dlp outlives the timeout', async () => {
+    const run: RunLines = vi.fn(
+      ({ signal }) =>
+        new Promise<RunLinesResult>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('aborted: /bin/yt-dlp')
+            error.name = 'AbortError'
+            reject(error)
+          })
+        })
+    )
+
+    await expect(probe({ url, run, binPath: '/bin/yt-dlp', timeoutMs: 10 })).rejects.toThrow(
+      /timed out/i
+    )
+  })
+
+  it('leaves the timeout unarmed once the probe answers', async () => {
+    const run = fakeRun([JSON.stringify({ title: 'Quick' })])
+
+    await expect(probe({ url, run, binPath: '/bin/yt-dlp', timeoutMs: 5 })).resolves.toMatchObject({
+      title: 'Quick'
+    })
+    // Long enough that a timer left running would have fired by now — and the abort it triggers
+    // would surface as an unhandled rejection rather than a passing test.
+    await new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
 

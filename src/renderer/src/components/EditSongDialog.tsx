@@ -1,4 +1,5 @@
 import { useState, type FormEvent, type ReactElement } from 'react'
+import { useEscapeKey } from '../hooks/useEscapeKey'
 import { errorMessage } from '../lib/errors'
 import { parseTags } from '../lib/text'
 import { useAppDispatch, useAppState } from '../state/AppContext'
@@ -16,9 +17,12 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
   const [tags, setTags] = useState(song?.tags.join(', ') ?? '')
   const [saving, setSaving] = useState(false)
 
-  if (!song) return null
-
   const close = (): void => dispatch({ type: 'dialog/closed' })
+
+  // Before the early return below: a hook may not sit behind a conditional.
+  useEscapeKey(close)
+
+  if (!song) return null
 
   function submit(event: FormEvent): void {
     event.preventDefault()

@@ -17,8 +17,17 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
-  # v1 ships unsigned.
-  identity: null
+  # Ad-hoc signed, not unsigned. v1 ships without a Developer ID, but `identity: null` skips
+  # codesign altogether — and packaging rewrites Info.plist and renames the executable, which
+  # breaks the seal Electron ships with. An arm64 bundle whose signature no longer matches is
+  # refused outright by macOS ("the app is damaged"), so an ad-hoc signature is the minimum that
+  # launches at all. It grants no Gatekeeper trust: the first launch still needs right-click Open.
+  #
+  # `hardenedRuntime: true` plus an ad-hoc identity means library validation would reject the
+  # pre-signed Electron framework and the bundled yt-dlp/ffmpeg binaries, which carry a different
+  # Team ID — `com.apple.security.cs.disable-library-validation` in build/entitlements.mac.plist
+  # is what makes the combination work, and must stay.
+  identity: '-'
   extraResources:
     - from: resources/bin/darwin/
       to: bin/

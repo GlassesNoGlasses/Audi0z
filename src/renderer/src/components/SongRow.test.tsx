@@ -76,6 +76,33 @@ describe('SongRow', () => {
     expect(nowPlaying()).toBe('Nothing playing')
   })
 
+  it('closes the edit dialog on Escape, leaving the song untouched', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Alpha Mix' }))
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), ' (slowed)')
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Edit song' })).toBeNull()
+    expect(api.library.update).not.toHaveBeenCalled()
+    expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
+  })
+
+  it('closes the confirmation on Escape without deleting anything', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Confirm' })).toBeNull()
+    expect(api.library.remove).not.toHaveBeenCalled()
+    expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
+  })
+
   it('adds a song to a playlist', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs, playlists: [playlist('p1', 'Mixes', [])] })

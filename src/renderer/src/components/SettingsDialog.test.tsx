@@ -31,4 +31,15 @@ describe('SettingsDialog', () => {
     expect(api.ytdlp.update).toHaveBeenCalled()
     expect(await screen.findByRole('alert')).toHaveTextContent('yt-dlp updated to 0.0.0-mock')
   })
+
+  it('closes on Escape', async () => {
+    const user = userEvent.setup()
+    seedApi()
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
+  })
 })
