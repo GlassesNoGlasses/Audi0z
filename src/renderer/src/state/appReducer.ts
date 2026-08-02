@@ -180,11 +180,21 @@ export function createAppReducer(
         return { ...state, dialog: action.dialog }
       case 'dialog/closed':
         return state.dialog === null ? state : { ...state, dialog: null }
-      // Every report gets its own line. A failure often produces two — main's own on the error
-      // channel and the rejected `invoke`, which the renderer may have added context to — and only
-      // the caller knows which one carries the useful half, so neither is thrown away. It also
-      // means a failure that happens twice is reported twice, instead of looking ignored.
+      /**
+       * Every report that says something new gets its own line. A failure often produces two —
+       * main's own on the error channel and the rejected `invoke`, which the renderer may have
+       * added context to — and only the caller knows which one carries the useful half, so
+       * neither is thrown away.
+       *
+       * An *exact* duplicate is the exception. Both paths normalise through `errorMessage`, so a
+       * failure the renderer had nothing to add to arrives as the same string twice; a second
+       * identical line adds no information and pushes the ones that do off the top of the stack
+       * (multi-line ffmpeg stderr fills it fast). The comparison is against what is on screen,
+       * not a history: once a toast is dismissed the same failure can say so again, so a retry
+       * that fails the same way is never silent.
+       */
       case 'toast/pushed':
+        if (state.toasts.some((toast) => toast.message === action.message)) return state
         return {
           ...state,
           toasts: [...state.toasts, { id: state.nextToastId, message: action.message }],

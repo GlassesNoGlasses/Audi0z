@@ -97,6 +97,30 @@ describe('App shell', () => {
     ])
     expect(songTitles()).toEqual(['Alpha Mix'])
   })
+
+  /**
+   * The other half of the same pathway: when the renderer has nothing to add, both reports
+   * normalise to the same sentence, and saying it twice only pushes the useful lines off the top.
+   */
+  it('says a failure once when main and the rejected invoke report it identically', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
+    const controls = mockApiControls(api)
+    vi.mocked(api.library.remove).mockRejectedValue(
+      new Error("Error invoking remote method 'library:remove': Error: library.json is read-only")
+    )
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    act(() => {
+      controls.emitError({ source: 'trash', message: 'library.json is read-only' })
+    })
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1))
+    expect(screen.getByRole('alert')).toHaveTextContent('library.json is read-only')
+    expect(songTitles()).toEqual(['Alpha Mix'])
+  })
 })
 
 describe('test harness', () => {

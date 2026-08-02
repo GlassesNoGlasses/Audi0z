@@ -425,11 +425,19 @@ input[type='range'] {
 
 /* ---------- toasts ---------- */
 
+/*
+ * The stack grows upwards from a fixed bottom edge, so without a bound it grows straight off the
+ * top of the window — and a multi-line ffmpeg or yt-dlp stderr tail gets there in two or three
+ * toasts, taking the dismiss buttons with it. Capped and scrolled instead: whatever does not fit
+ * stays reachable.
+ */
 .toast-host {
   bottom: 84px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: calc(100vh - 132px);
+  overflow-y: auto;
   position: fixed;
   right: 16px;
   width: min(360px, 60vw);
@@ -442,6 +450,8 @@ input[type='range'] {
   border: 1px solid var(--danger);
   border-radius: var(--radius);
   display: flex;
+  /* A flex column that scrolls would otherwise squash its children instead of overflowing. */
+  flex-shrink: 0;
   gap: 8px;
   padding: 10px 12px;
 }

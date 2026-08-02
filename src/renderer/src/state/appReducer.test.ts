@@ -110,10 +110,9 @@ describe('appReducer', () => {
     expect(dismissed.toasts.map((t) => t.message)).toEqual(['network on fire'])
   })
 
-  it('keeps every report, so a failure that happens twice is said twice', () => {
+  it('keeps a report that says something the ones on screen do not', () => {
     // Main forwards a bare message on its error channel and the renderer's own catch adds context:
-    // both are shown. Collapsing them would have to guess which one matters, and a repeat of the
-    // same failure would then produce no feedback at all.
+    // both are shown. Collapsing them would have to guess which one matters.
     const fromMain = reducer(seeded(), {
       type: 'toast/pushed',
       message: 'Failed to move item to trash'
@@ -122,17 +121,34 @@ describe('appReducer', () => {
       type: 'toast/pushed',
       message: 'Failed to move item to trash — the song is still in your library.'
     })
-    const again = reducer(withContext, {
-      type: 'toast/pushed',
-      message: 'Failed to move item to trash'
-    })
 
-    expect(again.toasts.map((t) => t.message)).toEqual([
+    expect(withContext.toasts.map((t) => t.message)).toEqual([
       'Failed to move item to trash',
-      'Failed to move item to trash — the song is still in your library.',
-      'Failed to move item to trash'
+      'Failed to move item to trash — the song is still in your library.'
     ])
-    expect(new Set(again.toasts.map((t) => t.id)).size).toBe(3)
+    expect(new Set(withContext.toasts.map((t) => t.id)).size).toBe(2)
+  })
+
+  it('collapses a report identical to one already on screen', () => {
+    // Both paths normalise through `errorMessage`, so one failure reported by main *and* by the
+    // rejected invoke arrives as the same string twice. A second identical line adds nothing and
+    // pushes the useful ones off the top of the stack.
+    const once = reducer(seeded(), { type: 'toast/pushed', message: 'ffmpeg exited with code 1' })
+    const twice = reducer(once, { type: 'toast/pushed', message: 'ffmpeg exited with code 1' })
+
+    expect(twice).toBe(once)
+    expect(twice.toasts.map((t) => t.message)).toEqual(['ffmpeg exited with code 1'])
+  })
+
+  it('shows the same message again once the first one has been dismissed', () => {
+    // The collapse is against what is on screen, not a history: a retry that fails the same way
+    // must still produce feedback rather than looking ignored.
+    const once = reducer(seeded(), { type: 'toast/pushed', message: 'disk on fire' })
+    const dismissed = reducer(once, { type: 'toast/dismissed', id: once.toasts[0].id })
+    const again = reducer(dismissed, { type: 'toast/pushed', message: 'disk on fire' })
+
+    expect(again.toasts.map((t) => t.message)).toEqual(['disk on fire'])
+    expect(again.toasts[0].id).not.toBe(once.toasts[0].id)
   })
 
   it('records the search query and the selected view', () => {
