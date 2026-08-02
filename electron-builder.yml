@@ -12,6 +12,15 @@ asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
 # Applies the macOS ad-hoc signature; a no-op on every other platform. See mac.identity below.
 afterPack: build/adhocSign.js
+# This app ships no auto-updater, so there is no update metadata worth generating — but the key has
+# to say so explicitly. Left unset, electron-builder still builds `latest-mac.yml` after the dmg: it
+# sniffs the environment for a publish token (GITHUB_TOKEN is enough) and resolves a github publish
+# config from the repository. When the repository is not detectable — inside a git worktree `.git`
+# is a pointer file, so "Cannot detect repository by .git/config" — that resolution yields `[null]`,
+# which slips past createUpdateInfoTasks' empty-array guard and makes computeChannelNames
+# dereference `null.channel`. The dmg is written and the build then exits 1. An explicit null
+# returns early in PublishManager before any of that.
+publish: null
 mac:
   target:
     - dmg
