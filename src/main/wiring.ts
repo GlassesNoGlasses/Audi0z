@@ -84,6 +84,39 @@ export function createWindowSender(
   }
 }
 
+/** The slice of `electron`'s `dialog` and `app` a failed startup needs. */
+export interface StartupShell {
+  showErrorBox(title: string, content: string): void
+  quit(): void
+}
+
+/** Shown when the app cannot get far enough to have a window to complain in. */
+const STARTUP_FAILURE_TITLE = 'my-music-library could not start'
+
+/**
+ * Runs the startup sequence, and turns anything it throws into something the user can read.
+ *
+ * Everything before the first window — resolving and creating the library root, locating ffmpeg,
+ * honouring `MML_LIBRARY_DIR` — can fail on a read-only path, a bad override or an unsupported
+ * platform. Inside `app.whenReady().then(...)` those became unhandled rejections: no window, no
+ * message, an app that simply never appeared and left the user nothing to act on. A native error
+ * box is the only surface available at that point, and there is nothing to do afterwards but quit.
+ */
+export async function runStartup(
+  startup: () => void | Promise<void>,
+  shell: StartupShell
+): Promise<void> {
+  try {
+    await startup()
+  } catch (error) {
+    shell.showErrorBox(
+      STARTUP_FAILURE_TITLE,
+      error instanceof Error ? error.message : String(error)
+    )
+    shell.quit()
+  }
+}
+
 /**
  * Wraps an operation so its failures reach the renderer's toast host as well as its caller.
  *

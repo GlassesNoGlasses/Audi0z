@@ -16,7 +16,13 @@ import { audioDir, ensureDirs, resolveLibraryRoot } from './paths'
 import { createLibraryStore } from './store/libraryStore'
 import { createPlaylistStore } from './store/playlistStore'
 import { createSettingsStore } from './store/settingsStore'
-import { createWindowSender, fileExists, resolveResourcesBinDir, withErrorReport } from './wiring'
+import {
+  createWindowSender,
+  fileExists,
+  resolveResourcesBinDir,
+  runStartup,
+  withErrorReport
+} from './wiring'
 
 /**
  * Must run before `app.whenReady()`: the renderer streams audio from `media://audio/<id>` and the
@@ -81,7 +87,13 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-void app.whenReady().then(() => {
+/**
+ * Composition, and nothing else — every decision in here lives in `wiring.ts` or in a module with
+ * its own tests. It runs inside `runStartup`, so a failure on the way to the first window (a
+ * read-only library root, a bad `MML_LIBRARY_DIR`, no ffmpeg for this platform) is shown rather
+ * than lost as an unhandled rejection.
+ */
+function startup(): void {
   electronApp.setAppUserModelId('com.duolume.mymusiclibrary')
 
   app.on('browser-window-created', (_event, window) => {
@@ -206,7 +218,14 @@ void app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
-})
+}
+
+void app.whenReady().then(() =>
+  runStartup(startup, {
+    showErrorBox: (title, content) => dialog.showErrorBox(title, content),
+    quit: () => app.quit()
+  })
+)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
