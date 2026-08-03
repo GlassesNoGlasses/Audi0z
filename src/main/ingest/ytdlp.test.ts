@@ -8,6 +8,7 @@ import {
   download,
   parseProgressLine,
   probe,
+  PROBE_TIMEOUT_MS,
   resolveYtDlpPath,
   updateYtDlp
 } from './ytdlp'
@@ -123,6 +124,16 @@ describe('probe', () => {
     await expect(probe({ url, run, binPath: '/bin/yt-dlp', timeoutMs: 10 })).rejects.toThrow(
       /timed out/i
     )
+  })
+
+  /**
+   * The default budget is dominated by process startup, not the network: the bundled PyInstaller
+   * onefile binary needs ~25s just to reach `--version`, and real probes measured 26.4s and 28.9s.
+   * A 30s default failed a release gate; this pins the floor so it cannot be tightened back into
+   * coin-flip territory without the measurements being revisited.
+   */
+  it('defaults to a budget well clear of the measured cold-start cost', () => {
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000)
   })
 
   it('leaves the timeout unarmed once the probe answers', async () => {

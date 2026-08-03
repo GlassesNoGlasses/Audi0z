@@ -81,8 +81,14 @@ function parseDump(stdout: string[]): Record<string, unknown> {
  * extractor that hangs (a dead host, a captcha wall, a stalled TLS handshake) would leave the Add
  * dialog waiting on a promise that never settles. Generous enough for a slow extractor on a slow
  * connection; short enough that the user gets an answer.
+ *
+ * The budget is dominated by process startup, not by the network: the bundled `yt-dlp_macos` is a
+ * PyInstaller onefile binary that unpacks itself on every launch, and `--version` alone — no
+ * network at all — measures 25.2s wall (2.2s CPU) on a cold start. Real probes measured 26.4s and
+ * 28.9s, so the previous 30s budget was a coin flip and did in fact fail a release gate. 90s keeps
+ * roughly 3x headroom over the measured worst case.
  */
-export const PROBE_TIMEOUT_MS = 30_000
+export const PROBE_TIMEOUT_MS = 90_000
 
 export interface ProbeOptions {
   url: string
