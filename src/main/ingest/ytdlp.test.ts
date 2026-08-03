@@ -8,6 +8,7 @@ import {
   download,
   parseProgressLine,
   probe,
+  PROBE_TIMEOUT_MS,
   resolveYtDlpPath,
   updateYtDlp
 } from './ytdlp'
@@ -125,6 +126,16 @@ describe('probe', () => {
     )
   })
 
+  /**
+   * The default budget is dominated by process startup, not the network: the bundled PyInstaller
+   * onefile binary needs ~25s just to reach `--version`, and real probes measured 26.4s and 28.9s.
+   * A 30s default failed a release gate; this pins the floor so it cannot be tightened back into
+   * coin-flip territory without the measurements being revisited.
+   */
+  it('defaults to a budget well clear of the measured cold-start cost', () => {
+    expect(PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000)
+  })
+
   it('leaves the timeout unarmed once the probe answers', async () => {
     const run = fakeRun([JSON.stringify({ title: 'Quick' })])
 
@@ -153,6 +164,7 @@ describe('buildDownloadArgs', () => {
       'bestaudio[ext=m4a]/bestaudio/best',
       '--ffmpeg-location',
       '/opt/ffmpeg',
+      '--progress',
       '--progress-template',
       'PROGRESS:%(progress.downloaded_bytes)s/%(progress.total_bytes)s',
       '--print',
@@ -161,6 +173,23 @@ describe('buildDownloadArgs', () => {
       '/tmp/job/download.%(ext)s',
       'https://example.test/v/1'
     ])
+  })
+
+  /**
+   * `--print` implies `--quiet`, which silences `--progress-template` — without `--progress` the
+   * real binary emits zero PROGRESS lines and the renderer's progress bar never moves. The mocked
+   * `download` tests cannot catch that (they inject PROGRESS lines at the `runLines` seam), so the
+   * pairing is pinned here against future edits to this arg list.
+   */
+  it('keeps --progress paired with --print so the progress template survives --quiet', () => {
+    const args = buildDownloadArgs({
+      url: 'https://example.test/v/1',
+      outTemplate: '/tmp/job/download.%(ext)s',
+      ffmpegDir: '/opt/ffmpeg'
+    })
+
+    expect(args).toContain('--print')
+    expect(args).toContain('--progress')
   })
 })
 
