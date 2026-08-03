@@ -143,6 +143,14 @@ export interface BuildDownloadArgsOptions {
   ffmpegDir: string
 }
 
+/**
+ * `--progress` and `--print` must stay together: `--print` implies `--quiet`, and `--quiet`
+ * suppresses the `--progress-template` output entirely, so without `--progress` the real binary
+ * emits zero PROGRESS lines and the renderer's progress bar never moves. Measured against the
+ * bundled yt-dlp 2026.07.04 on a real download: 0 progress lines without the flag, 13 with it, and
+ * `after_move:filepath` still prints either way. The WP3 plan's arg list omitted `--progress`; the
+ * real-download release gate caught it, so this list is the plan's template plus that fix.
+ */
 export function buildDownloadArgs({
   url,
   outTemplate,
@@ -156,6 +164,7 @@ export function buildDownloadArgs({
     'bestaudio[ext=m4a]/bestaudio/best',
     '--ffmpeg-location',
     ffmpegDir,
+    '--progress',
     '--progress-template',
     'PROGRESS:%(progress.downloaded_bytes)s/%(progress.total_bytes)s',
     '--print',
