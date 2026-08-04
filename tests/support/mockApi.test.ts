@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Playlist, SongDto } from '../../src/shared/types'
-import { createMockApi, mockApiControls } from './mockApi'
+import type { Playlist, Tag } from '../../src/shared/types'
+import { createMockApi, mockApiControls, type MockApiSeedSong } from './mockApi'
 
-const song = (id: string): SongDto => ({
+const song = (id: string, extra: Partial<MockApiSeedSong> = {}): MockApiSeedSong => ({
   id,
   fileName: `${id}.mp3`,
   title: `Song ${id}`,
@@ -10,8 +10,11 @@ const song = (id: string): SongDto => ({
   addedAt: '2026-01-01T00:00:00.000Z',
   compressed: false,
   exists: true,
-  url: `media://audio/${id}`
+  url: `media://audio/${id}`,
+  ...extra
 })
+
+const tag = (id: string, name: string): Tag => ({ id, name, color: '#123456' })
 
 const playlist = (id: string, songIds: string[]): Playlist => ({
   id,
@@ -131,5 +134,132 @@ describe('createMockApi', () => {
 
   it('refuses to hand out controls for something it did not create', () => {
     expect(() => mockApiControls({} as ReturnType<typeof createMockApi>)).toThrow(/createMockApi/)
+  })
+})
+
+describe('song size and duration', () => {
+  it('gives a seeded song a plausible size and no duration until one is recorded', async () => {
+    const api = createMockApi({ songs: [song('a')] })
+
+    const [listed] = await api.library.list()
+
+    expect(listed.sizeBytes).toBe(4_000_000)
+    expect(listed).not.toHaveProperty('durationSec')
+  })
+
+  it('keeps a size the seed asked for, including a missing file', async () => {
+    const api = createMockApi({
+      songs: [song('a', { sizeBytes: 17 }), song('b', { exists: false, sizeBytes: null })]
+    })
+
+    await expect(api.library.list()).resolves.toMatchObject([
+      { sizeBytes: 17 },
+      { sizeBytes: null }
+    ])
+  })
+
+  it('records a probed durationSec through library.update', async () => {
+    const api = createMockApi({ songs: [song('a')] })
+
+    await expect(api.library.update('a', { durationSec: 214 })).resolves.toMatchObject({
+      durationSec: 214
+    })
+    await expect(api.library.list()).resolves.toMatchObject([{ durationSec: 214 }])
+  })
+})
+
+describe('library.compress', () => {
+  it('marks the song compressed, renames the file and shrinks the reported size', async () => {
+    const api = createMockApi({ songs: [song('a', { sizeBytes: 5_000_001 })] })
+
+    const compressed = await api.library.compress('a')
+
+    expect(compressed).toMatchObject({
+      compressed: true,
+      fileName: 'a.opus',
+      sizeBytes: 2_000_000
+    })
+    await expect(api.library.list()).resolves.toMatchObject([{ compressed: true }])
+  })
+
+  it('rejects for an unknown song', async () => {
+    const api = createMockApi()
+
+    await expect(api.library.compress('nope')).rejects.toThrow(/nope/)
+  })
+})
+
+describe('library.showFolder', () => {
+  it('records the request', async () => {
+    const api = createMockApi()
+
+    await api.library.showFolder()
+
+    expect(api.library.showFolder).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('tags', () => {
+  it('serves the seeded registry and creates new tags with a colour', async () => {
+    const api = createMockApi({ tags: [tag('t1', 'slowed')] })
+
+    await expect(api.tags.list()).resolves.toEqual([tag('t1', 'slowed')])
+
+    const created = await api.tags.create('  reverb  ')
+
+    expect(created.name).toBe('reverb')
+    expect(created.color).toMatch(/^#[0-9a-f]{6}$/)
+    await expect(api.tags.list()).resolves.toHaveLength(2)
+  })
+
+  it('refuses an empty name and a duplicate whatever its case', async () => {
+    const api = createMockApi({ tags: [tag('t1', 'slowed')] })
+
+    await expect(api.tags.create('   ')).rejects.toThrow()
+    await expect(api.tags.create('SLOWED')).rejects.toThrow(/already exists/)
+    await expect(api.tags.list()).resolves.toHaveLength(1)
+  })
+
+  it('renames the tag on every song that carries it', async () => {
+    const api = createMockApi({
+      tags: [tag('t1', 'slowed')],
+      songs: [song('a', { tags: ['slowed', 'edit'] }), song('b', { tags: ['edit'] })]
+    })
+
+    const renamed = await api.tags.rename('t1', 'slow')
+
+    expect(renamed).toMatchObject({ id: 't1', name: 'slow' })
+    await expect(api.library.list()).resolves.toMatchObject([
+      { tags: ['slow', 'edit'] },
+      { tags: ['edit'] }
+    ])
+  })
+
+  it('drops the tag from every song when it is removed', async () => {
+    const api = createMockApi({
+      tags: [tag('t1', 'slowed')],
+      songs: [song('a', { tags: ['slowed', 'edit'] })]
+    })
+
+    await api.tags.remove('t1')
+
+    await expect(api.tags.list()).resolves.toEqual([])
+    await expect(api.library.list()).resolves.toMatchObject([{ tags: ['edit'] }])
+  })
+
+  it('is a no-op when removing a tag that is not there', async () => {
+    const api = createMockApi({ tags: [tag('t1', 'slowed')] })
+
+    await expect(api.tags.remove('gone')).resolves.toBeUndefined()
+    await expect(api.tags.list()).resolves.toHaveLength(1)
+  })
+
+  it('never hands out a tag it still holds a reference to', async () => {
+    const api = createMockApi({ tags: [tag('t1', 'slowed')] })
+
+    const [listed] = await api.tags.list()
+    listed.name = 'injected'
+
+    await expect(api.tags.list()).resolves.toMatchObject([{ name: 'slowed' }])
   })
 })

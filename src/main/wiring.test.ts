@@ -6,6 +6,7 @@ import type { AppError } from '../shared/types'
 import {
   createWindowSender,
   fileExists,
+  fileSize,
   resolveResourcesBinDir,
   runStartup,
   withErrorReport,
@@ -28,6 +29,49 @@ describe('fileExists', () => {
     await writeFile(present, 'x')
     await expect(fileExists(present)).resolves.toBe(true)
     await expect(fileExists(path.join(dir, 'gone.txt'))).resolves.toBe(false)
+  })
+})
+
+/**
+ * `library:list` runs one of these per song inside a `Promise.all`, and its result is what decides
+ * whether the row renders as present — so a rejection has to be impossible, not merely unlikely.
+ */
+describe('fileSize', () => {
+  let dir: string
+
+  beforeEach(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'mml-wiring-size-'))
+  })
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('reports the byte count of a file that is there', async () => {
+    const present = path.join(dir, 'here.txt')
+    await writeFile(present, 'twelve bytes')
+
+    await expect(fileSize(present)).resolves.toBe(12)
+  })
+
+  /** Zero is a real size, and must not read as "missing" anywhere downstream. */
+  it('reports 0 for an empty file rather than null', async () => {
+    const empty = path.join(dir, 'empty.opus')
+    await writeFile(empty, '')
+
+    await expect(fileSize(empty)).resolves.toBe(0)
+  })
+
+  it('answers null for a path that is not there', async () => {
+    await expect(fileSize(path.join(dir, 'gone.txt'))).resolves.toBeNull()
+  })
+
+  it('answers null rather than rejecting for an unreadable path', async () => {
+    // A directory is not a file, and a path under a file is not a path at all (ENOTDIR).
+    await writeFile(path.join(dir, 'a-file'), 'x')
+
+    await expect(fileSize(path.join(dir, 'a-file', 'nested'))).resolves.toBeNull()
+    await expect(fileSize('')).resolves.toBeNull()
   })
 })
 

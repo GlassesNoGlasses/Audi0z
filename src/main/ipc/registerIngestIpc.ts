@@ -67,11 +67,20 @@ function assertDownloadRequest(value: unknown): DownloadRequest {
  * A freshly imported song is on disk by definition, so `exists` is true and the media URL follows
  * straight from the id. (WP2's library IPC builds the same DTO for songs read back from the store.)
  *
+ * `sizeBytes` is left null rather than stat'd here: this module has no `audioDir` and no filesystem
+ * seam, and the renderer reloads the library on `libraryChanged` anyway — that listing goes through
+ * `registerLibraryIpc`, which does measure it.
+ *
  * The id is encoded because `mediaProtocol` decodes it: ids are uuids in practice, but
  * `library.json` is hand-editable, and the two halves have to agree whatever is in there.
  */
 function toSongDto(song: Song): SongDto {
-  return { ...song, exists: true, url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}` }
+  return {
+    ...song,
+    exists: true,
+    url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}`,
+    sizeBytes: null
+  }
 }
 
 /** Returns the progress-forwarding unsubscribe, for teardown in tests and on window replacement. */

@@ -89,10 +89,13 @@ describe('registerIngestIpc', () => {
       sourceUrl: 'https://example.test/v/1'
     })
 
+    // `sizeBytes` is null here by design: this module has no audio directory to stat against, and
+    // the renderer's next `library:list` — which does — fills it in.
     await expect(invoke(IPC.download.start, VALID_REQUEST)).resolves.toEqual({
       ...SONG,
       exists: true,
-      url: `media://audio/${SONG.id}`
+      url: `media://audio/${SONG.id}`,
+      sizeBytes: null
     })
     expect(downloader.start).toHaveBeenCalledWith(VALID_REQUEST)
 

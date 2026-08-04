@@ -6,7 +6,8 @@ import type {
   Playlist,
   ProbeResult,
   Settings,
-  SongDto
+  SongDto,
+  Tag
 } from './types'
 
 /**
@@ -20,9 +21,26 @@ export interface Api {
   library: {
     list(): Promise<SongDto[]>
     add(req: AddSongRequest): Promise<SongDto>
-    update(id: string, patch: { title?: string; tags?: string[] }): Promise<SongDto>
+    update(
+      id: string,
+      patch: { title?: string; tags?: string[]; durationSec?: number }
+    ): Promise<SongDto>
     remove(id: string): Promise<void>
     revealInFolder(id: string): Promise<void>
+    /** Transcodes an already-imported song to Opus in place. Rejects if it is already compressed. */
+    compress(id: string): Promise<SongDto>
+    /** Opens the library's `audio/` directory itself, rather than a single song inside it. */
+    showFolder(): Promise<void>
+  }
+  /**
+   * The tag registry. Songs still carry tags as plain strings; this is the named/coloured index of
+   * them, so renaming a tag in one place renames it on every song.
+   */
+  tags: {
+    list(): Promise<Tag[]>
+    create(name: string): Promise<Tag>
+    rename(id: string, name: string): Promise<Tag>
+    remove(id: string): Promise<void>
   }
   playlists: {
     list(): Promise<Playlist[]>

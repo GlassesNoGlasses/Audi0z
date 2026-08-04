@@ -4,6 +4,7 @@ import path from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { IPC_EVENTS, MEDIA_SCHEME } from '../shared/ipc'
 import type { AppError } from '../shared/types'
+import { compressExisting } from './ingest/compressExisting'
 import { createDownloader } from './ingest/downloader'
 import { resolveFfmpegPath, transcode } from './ingest/ffmpeg'
 import { importFile, type ImportDeps, type ImportRequest } from './ingest/importer'
@@ -16,9 +17,11 @@ import { audioDir, ensureDirs, resolveLibraryRoot } from './paths'
 import { createLibraryStore } from './store/libraryStore'
 import { createPlaylistStore } from './store/playlistStore'
 import { createSettingsStore } from './store/settingsStore'
+import { createTagStore } from './store/tagStore'
 import {
   createWindowSender,
   fileExists,
+  fileSize,
   resolveResourcesBinDir,
   runStartup,
   withErrorReport
@@ -110,6 +113,7 @@ function startup(): void {
   const libraryStore = createLibraryStore(libraryRoot)
   const playlistStore = createPlaylistStore(libraryRoot)
   const settingsStore = createSettingsStore(libraryRoot)
+  const tagStore = createTagStore(libraryRoot)
 
   const sendToWindow = createWindowSender(() => mainWindow)
   const reportError = (error: AppError): void => sendToWindow(IPC_EVENTS.error, error)
@@ -132,16 +136,27 @@ function startup(): void {
   const importSong = withErrorReport('import', reportError, (request: ImportRequest) =>
     importFile(request, importDeps)
   )
+  // Compressing an existing song is the same ffmpeg run as an import, against the same store.
+  const compressSong = withErrorReport('ffmpeg', reportError, (id: string) =>
+    compressExisting(id, {
+      audioDir: audio,
+      libraryStore,
+      transcode: ({ src, dst }) => transcode({ src, dst, ffmpegPath })
+    })
+  )
 
   registerLibraryIpc(ipcMain, {
     libraryStore,
     playlistStore,
     settingsStore,
+    tagStore,
     audioDir: audio,
     // The importer records the song itself, so the handler must not add it a second time.
     importSong,
+    compressSong,
     trashItem: withErrorReport('trash', reportError, (absPath: string) => shell.trashItem(absPath)),
     fileExists,
+    fileSize,
     revealInFolder: (absPath) => shell.showItemInFolder(absPath)
   })
 

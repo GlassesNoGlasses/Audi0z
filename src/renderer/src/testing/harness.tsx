@@ -1,6 +1,10 @@
 import { act, render, screen, type RenderResult } from '@testing-library/react'
 import { afterEach, beforeEach, vi, type Mock } from 'vitest'
-import { createMockApi, type MockApiSeed } from '../../../../tests/support/mockApi'
+import {
+  createMockApi,
+  DEFAULT_MOCK_SIZE_BYTES,
+  type MockApiSeed
+} from '../../../../tests/support/mockApi'
 import type { Api } from '../../../shared/api'
 import type { Playlist, SongDto } from '../../../shared/types'
 import { App } from '../App'
@@ -92,6 +96,7 @@ export function song(id: string, title: string, extra: Partial<SongDto> = {}): S
     compressed: false,
     exists: true,
     url: `media://audio/${id}`,
+    sizeBytes: DEFAULT_MOCK_SIZE_BYTES,
     ...extra
   }
 }
