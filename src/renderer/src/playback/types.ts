@@ -36,6 +36,11 @@ export type PlaybackAction =
       order: readonly string[]
       shuffle: boolean
       repeat: boolean
+      /**
+       * Play this song in the new queue rather than stopping. Set when the switch was caused by
+       * the user playing something (a row click); left out when only the queue itself changed.
+       */
+      startSongId?: string
     }
   | { type: 'queue/orderChanged'; order: readonly string[] }
   | { type: 'song/selected'; songId: string }

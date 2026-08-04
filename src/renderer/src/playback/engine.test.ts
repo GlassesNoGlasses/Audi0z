@@ -423,7 +423,7 @@ describe('playbackReducer — queue/selected', () => {
     history: ['a']
   })
 
-  it('applies the queue, stops playback and clears history', () => {
+  it('applies the queue, stops playback and clears history when no song is started', () => {
     const next = reduce(state, {
       type: 'queue/selected',
       queueId: PLAYLIST_QUEUE_ID,
@@ -442,6 +442,54 @@ describe('playbackReducer — queue/selected', () => {
     expect(next.history).toEqual([])
     expect(playedCount(next)).toBe(0)
     expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true })
+  })
+
+  it('starts the given song in the new queue instead of stopping', () => {
+    const frozen = deepFreeze(structuredClone(state))
+
+    const next = reduce(frozen, {
+      type: 'queue/selected',
+      queueId: PLAYLIST_QUEUE_ID,
+      order: ['x', 'y', 'z'],
+      shuffle: false,
+      repeat: false,
+      startSongId: 'y'
+    })
+
+    expect(next.queueId).toBe(PLAYLIST_QUEUE_ID)
+    expect(next.order).toEqual(['x', 'y', 'z'])
+    expect(next.currentId).toBe('y')
+    expect(next.isPlaying).toBe(true)
+    expect(next.playToken).toBe(5)
+    // `resetPlayed: true`, exactly as a manual click: only the started song counts as played.
+    expect(next.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({ y: true })
+    expect(next.history).toEqual(['y'])
+    // The outgoing queue keeps its own flags, and the state it was given is untouched.
+    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true })
+    expect(frozen).toEqual(state)
+  })
+
+  it('drops the flags a re-selected queue had when a song is started in it', () => {
+    const playlistPlayed = reduce(state, {
+      type: 'queue/selected',
+      queueId: PLAYLIST_QUEUE_ID,
+      order: ['x', 'y'],
+      shuffle: false,
+      repeat: false,
+      startSongId: 'x'
+    })
+
+    const back = reduce(playlistPlayed, {
+      type: 'queue/selected',
+      queueId: PLAYLIST_QUEUE_ID,
+      order: ['x', 'y'],
+      shuffle: false,
+      repeat: false,
+      startSongId: 'y'
+    })
+
+    expect(back.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({ y: true })
+    expect(back.history).toEqual(['y'])
   })
 
   it('restores the played flags of a queue that is selected again', () => {
