@@ -69,7 +69,17 @@ export function SongList(): ReactElement {
         startSongId: songId
       })
     },
-    [dispatch, view, playback.queueId, inView, containingPlaylist, settings]
+    // The two fields, not the whole `settings`: dragging the volume slider must not invalidate
+    // this callback and re-render every memoised row with it.
+    [
+      dispatch,
+      view,
+      playback.queueId,
+      inView,
+      containingPlaylist,
+      settings.libraryShuffle,
+      settings.libraryRepeat
+    ]
   )
 
   const onEdit = useCallback(
