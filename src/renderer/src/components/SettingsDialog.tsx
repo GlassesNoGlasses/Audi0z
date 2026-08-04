@@ -68,11 +68,20 @@ export function SettingsDialog(): ReactElement {
       .finally(() => markCompressing(song.id, false))
   }
 
+  /**
+   * `library/songsRemoved` first, then the re-read — the same order the song rows delete in.
+   * Re-reading the library only reshapes the queue's ORDER; the history and the played flags are
+   * the engine's, and only this action clears the deleted song out of them. Left there, Prev would
+   * cue a song that no longer exists and quietly kill the transport.
+   */
   function remove(songId: string): void {
     setConfirmingId(null)
     void window.api.library
       .remove(songId)
-      .then(() => refreshLibrary(dispatch))
+      .then(async () => {
+        dispatch({ type: 'library/songsRemoved', songIds: [songId] })
+        await refreshLibrary(dispatch)
+      })
       .catch(fail)
   }
 

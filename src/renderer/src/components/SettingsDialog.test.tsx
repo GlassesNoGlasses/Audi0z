@@ -2,7 +2,7 @@ import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import type { SongDto } from '../../../shared/types'
-import { renderApp, seedApi, song, stubMediaElement } from '../testing/harness'
+import { nowPlaying, renderApp, seedApi, song, stubMediaElement } from '../testing/harness'
 
 stubMediaElement()
 
@@ -219,5 +219,34 @@ describe('SettingsDialog storage', () => {
 
     expect(api.library.remove).toHaveBeenCalledWith('a')
     await waitFor(() => expect(fileTitles()).toEqual(['Bravo Beat']))
+  })
+
+  /**
+   * A deleted song has to leave the transport, not just the list. Re-reading the library only
+   * reshapes the queue's ORDER — the history and the played flags are the engine's, and a song
+   * left in the history is one the Prev button will happily cue a missing file from.
+   */
+  it('takes the deleted song out of the transport, not just out of the list', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(screen.getByRole('button', { name: 'Bravo Beat' }))
+    expect(nowPlaying()).toBe('Bravo Beat')
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Delete Alpha Mix' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(fileTitles()).toEqual(['Bravo Beat']))
+    await user.keyboard('{Escape}')
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }))
+
+    // Nothing behind it in the history any more, so Prev restarts what is playing rather than
+    // cueing a song that is gone and killing the transport.
+    expect(nowPlaying()).toBe('Bravo Beat')
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
 })
