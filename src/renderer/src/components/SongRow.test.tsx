@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   nowPlaying,
   playlist,
@@ -14,7 +14,23 @@ import {
 
 stubMediaElement()
 
+const MB = 1024 * 1024
+
 const songs = [song('a', 'Alpha Mix', { tags: ['slowed'] }), song('b', 'Bravo Beat')]
+
+const registry = [
+  { id: 't1', name: 'slowed', color: '#e0a35c' },
+  { id: 't2', name: 'reverb', color: '#3b2f8f' }
+]
+
+/** The row's overflow menu, opened from the ⋯ button. */
+async function openMenu(
+  user: ReturnType<typeof userEvent.setup>,
+  title: string
+): Promise<HTMLElement> {
+  await user.click(screen.getByRole('button', { name: `Options for ${title}` }))
+  return screen.getByRole('menu')
+}
 
 describe('SongRow', () => {
   it('plays the song that was clicked', async () => {
@@ -32,26 +48,92 @@ describe('SongRow', () => {
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
 
-  it('saves an edited title and tags, and re-renders from what the api returned', async () => {
-    const user = userEvent.setup()
-    const api = seedApi({ songs })
+  it('anchors the row with the playing time on the left and the size on the right', async () => {
+    seedApi({
+      songs: [
+        song('a', 'Alpha Mix', { durationSec: 173, sizeBytes: 4 * MB }),
+        // Nothing has measured this one yet, and its file is gone: both anchors say so.
+        song('b', 'Bravo Beat', { exists: false, sizeBytes: null })
+      ]
+    })
     await renderApp()
 
-    await user.click(screen.getByRole('button', { name: 'Edit Alpha Mix' }))
-    const title = screen.getByRole('textbox', { name: 'Title' })
-    await user.clear(title)
-    await user.type(title, 'Alpha Mix (slowed)')
-    const tags = screen.getByRole('textbox', { name: 'Tags (comma separated)' })
-    await user.clear(tags)
-    await user.type(tags, ' slowed , reverb ,')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    const [alpha, bravo] = [...document.querySelectorAll<HTMLElement>('.song-row')]
+    expect(within(alpha).getByText('2:53')).toHaveClass('song-duration')
+    expect(within(alpha).getByText('4.0 MB')).toHaveClass('song-size')
+    expect(within(bravo).getByText('–:––')).toHaveClass('song-duration')
+    expect(within(bravo).getByText('—')).toHaveClass('song-size')
+  })
 
-    expect(api.library.update).toHaveBeenCalledWith('a', {
-      title: 'Alpha Mix (slowed)',
-      tags: ['slowed', 'reverb']
+  it('paints a tag in the registry colour, and one the registry has never heard of in grey', async () => {
+    seedApi({
+      songs: [song('a', 'Alpha Mix', { tags: ['slowed', 'bootleg'] })],
+      tags: registry
     })
-    await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix (slowed)', 'Bravo Beat']))
-    expect(screen.queryByRole('dialog', { name: 'Edit song' })).not.toBeInTheDocument()
+    await renderApp()
+
+    expect(screen.getByText('slowed')).toHaveStyle({
+      backgroundColor: '#e0a35c',
+      color: '#000000'
+    })
+    // No registry entry, so no colour of its own — the stylesheet's grey stands.
+    expect(screen.getByText('bootleg')).not.toHaveAttribute('style')
+  })
+
+  it('offers the row itself nothing but the title and the menu', async () => {
+    seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a'])] })
+    await renderApp()
+
+    expect(screen.queryByRole('combobox', { name: /playlist/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Reveal Alpha Mix' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Edit Alpha Mix' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete Alpha Mix' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Options for Alpha Mix' })).toHaveAttribute(
+      'aria-haspopup',
+      'menu'
+    )
+  })
+})
+
+describe('SongRow menu', () => {
+  it('opens on the ⋯ button and closes again on Escape', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await openMenu(user, 'Alpha Mix')
+    expect(screen.getByRole('button', { name: 'Options for Alpha Mix' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    )
+
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('closes when the click lands outside it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await openMenu(user, 'Alpha Mix')
+    await user.click(document.body)
+
+    expect(screen.queryByRole('menu')).toBeNull()
+  })
+
+  it('opens the edit dialog from the menu, and closes the menu behind it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Edit' }))
+
+    expect(screen.getByRole('dialog', { name: 'Edit song' })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Alpha Mix')
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 
   it('deletes a song only after confirmation, and clears it out of playback', async () => {
@@ -62,9 +144,11 @@ describe('SongRow', () => {
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
     expect(nowPlaying()).toBe('Alpha Mix')
 
-    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
+
     expect(screen.getByRole('dialog', { name: 'Confirm' })).toHaveTextContent(
-      'Move "Alpha Mix" to the trash?'
+      'Move Alpha Mix to the trash?'
     )
     expect(api.library.remove).not.toHaveBeenCalled()
 
@@ -76,44 +160,18 @@ describe('SongRow', () => {
     expect(nowPlaying()).toBe('Nothing playing')
   })
 
-  it('closes the edit dialog on Escape, leaving the song untouched', async () => {
-    const user = userEvent.setup()
-    const api = seedApi({ songs })
-    await renderApp()
-
-    await user.click(screen.getByRole('button', { name: 'Edit Alpha Mix' }))
-    await user.type(screen.getByRole('textbox', { name: 'Title' }), ' (slowed)')
-    await user.keyboard('{Escape}')
-
-    expect(screen.queryByRole('dialog', { name: 'Edit song' })).toBeNull()
-    expect(api.library.update).not.toHaveBeenCalled()
-    expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
-  })
-
   it('closes the confirmation on Escape without deleting anything', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs })
     await renderApp()
 
-    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Delete' }))
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('dialog', { name: 'Confirm' })).toBeNull()
     expect(api.library.remove).not.toHaveBeenCalled()
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
-  })
-
-  it('adds a song to a playlist', async () => {
-    const user = userEvent.setup()
-    const api = seedApi({ songs, playlists: [playlist('p1', 'Mixes', [])] })
-    await renderApp()
-
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: 'Add Alpha Mix to a playlist' }),
-      'p1'
-    )
-
-    await waitFor(() => expect(api.playlists.addSong).toHaveBeenCalledWith('p1', 'a'))
   })
 
   it('takes a song out of the playlist it is being viewed in, keeping it in the library', async () => {
@@ -122,10 +180,13 @@ describe('SongRow', () => {
     await renderApp()
 
     // Only offered inside a playlist: in the Library there is nothing to remove it from.
-    expect(screen.queryByRole('button', { name: 'Remove Alpha Mix from Mixes' })).toBeNull()
+    const libraryMenu = await openMenu(user, 'Alpha Mix')
+    expect(within(libraryMenu).queryByRole('menuitem', { name: /Remove from/ })).toBeNull()
+    await user.keyboard('{Escape}')
 
     await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
-    await user.click(screen.getByRole('button', { name: 'Remove Alpha Mix from Mixes' }))
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Remove from "Mixes"' }))
 
     expect(api.playlists.removeSong).toHaveBeenCalledWith('p1', 'a')
     await waitFor(() => expect(songTitles()).toEqual(['Bravo Beat']))
@@ -134,14 +195,72 @@ describe('SongRow', () => {
     await user.click(within(sidebar()).getByRole('button', { name: 'Library' }))
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
   })
+})
 
-  it('reveals the backing file in the file manager', async () => {
+describe('SongRow tag menu', () => {
+  it('puts a registry tag on the song and takes it off again', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs, tags: registry })
+    await renderApp()
+
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Tags' }))
+
+    // What the song already carries is ticked; the rest of the registry is offered alongside it.
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'slowed' })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    )
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'reverb' })).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+
+    await user.click(within(menu).getByRole('menuitemcheckbox', { name: 'reverb' }))
+
+    expect(api.library.update).toHaveBeenCalledWith('a', { tags: ['slowed', 'reverb'] })
+    await waitFor(() =>
+      expect(screen.getByRole('menuitemcheckbox', { name: 'reverb' })).toHaveAttribute(
+        'aria-checked',
+        'true'
+      )
+    )
+
+    await user.click(screen.getByRole('menuitemcheckbox', { name: 'slowed' }))
+
+    expect(api.library.update).toHaveBeenLastCalledWith('a', { tags: ['reverb'] })
+    await waitFor(() =>
+      expect(screen.getByRole('menuitemcheckbox', { name: 'slowed' })).toHaveAttribute(
+        'aria-checked',
+        'false'
+      )
+    )
+  })
+
+  it('sends the user to the Tags dialog when the registry is empty', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs })
     await renderApp()
 
-    await user.click(screen.getByRole('button', { name: 'Reveal Alpha Mix' }))
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Tags' }))
 
-    expect(api.library.revealInFolder).toHaveBeenCalledWith('a')
+    expect(
+      within(menu).getByRole('menuitem', { name: 'No tags yet — create them from Tags.' })
+    ).toBeDisabled()
+    expect(api.library.update).not.toHaveBeenCalled()
+  })
+
+  it('says so when the tag cannot be saved', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs, tags: registry })
+    vi.mocked(api.library.update).mockRejectedValue(new Error('library.json is read-only'))
+    await renderApp()
+
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Tags' }))
+    await user.click(within(menu).getByRole('menuitemcheckbox', { name: 'reverb' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('library.json is read-only')
   })
 })

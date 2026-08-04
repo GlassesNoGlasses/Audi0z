@@ -264,12 +264,18 @@ input[type='range'] {
   padding: 4px 8px;
 }
 
+/* A ruled list, not a stack of pills: the border is what separates one song from the next. */
 .song-row {
   align-items: center;
-  border-radius: var(--radius);
+  border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 8px;
-  padding: 2px 8px;
+  gap: 10px;
+  padding: 8px 10px;
+  position: relative;
+}
+
+.song-row:last-child {
+  border-bottom: none;
 }
 
 .song-row:hover {
@@ -280,12 +286,29 @@ input[type='range'] {
   background: var(--panel-2);
 }
 
+/* Tabular and fixed-width so the two columns of figures line up down the whole list. */
+.song-duration,
+.song-size {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-duration {
+  min-width: 40px;
+}
+
+.song-size {
+  min-width: 62px;
+  text-align: right;
+}
+
 .song-title {
   background: none;
   border: none;
   flex: 1;
   overflow: hidden;
-  padding: 6px 0;
+  padding: 2px 0;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -301,24 +324,88 @@ input[type='range'] {
 }
 
 .song-tags {
-  color: var(--muted);
-  font-size: 12px;
+  display: flex;
+  gap: 4px;
   max-width: 220px;
   overflow: hidden;
+}
+
+/* The registry's colour arrives inline; this is what a tag it has never heard of falls back to. */
+.song-tag {
+  background: var(--panel-2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  padding: 2px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.song-row .song-playlists,
-.song-row button:not(.song-title) {
-  opacity: 0;
+/* ---------- the row's overflow menu ---------- */
+
+.song-menu {
+  position: relative;
 }
 
-.song-row:hover .song-playlists,
-.song-row:hover button:not(.song-title),
-.song-row .song-playlists:focus-visible,
-.song-row button:focus-visible {
-  opacity: 1;
+.song-menu-button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.song-row:hover .song-menu-button,
+.song-menu-button[aria-expanded='true'] {
+  color: var(--fg);
+}
+
+/*
+ * Hung off the row rather than laid out in it, so opening it never reflows the list. It opens to
+ * the left because the button it comes from is already at the right-hand edge.
+ */
+.song-menu-popup {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+}
+
+.song-menu-popup button {
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.song-menu-popup button:hover:not(:disabled) {
+  background: var(--panel);
+  border-color: transparent;
+}
+
+/* The tick column is a fixed gutter, so the names line up whether they are ticked or not. */
+.menu-check {
+  display: inline-block;
+  min-width: 14px;
+}
+
+.song-menu-popup button.menu-check-item {
+  padding-left: 6px;
+}
+
+.menu-note {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* ---------- player ---------- */

@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mockApiControls } from '../../../tests/support/mockApi'
@@ -17,6 +17,12 @@ stubMediaElement()
 /** A shortcut press. Nothing is focused by default, so the key arrives on the body. */
 function press(key: string, target: Element = document.body): void {
   fireEvent.keyDown(target, { key })
+}
+
+/** Delete lives behind the row's ⋯ menu, and asks the global confirm dialog first. */
+async function askToDelete(user: ReturnType<typeof userEvent.setup>, title: string): Promise<void> {
+  await user.click(screen.getByRole('button', { name: `Options for ${title}` }))
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Delete' }))
 }
 
 describe('App shell', () => {
@@ -106,7 +112,7 @@ describe('App shell', () => {
     )
     await renderApp()
 
-    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    await askToDelete(user, 'Alpha Mix')
     // Main gets there first, exactly as `withErrorReport` does in the real process.
     act(() => {
       controls.emitError({ source: 'trash', message: 'Failed to move item to trash' })
@@ -134,7 +140,7 @@ describe('App shell', () => {
     )
     await renderApp()
 
-    await user.click(screen.getByRole('button', { name: 'Delete Alpha Mix' }))
+    await askToDelete(user, 'Alpha Mix')
     act(() => {
       controls.emitError({ source: 'trash', message: 'library.json is read-only' })
     })

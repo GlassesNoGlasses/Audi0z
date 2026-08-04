@@ -10,7 +10,7 @@ import { SongRow } from './SongRow'
 export function SongList(): ReactElement {
   const state = useAppState()
   const dispatch = useAppDispatch()
-  const { songs, playlists, settings, query, view, playback } = state
+  const { songs, playlists, tags, settings, query, view, playback } = state
 
   const containingPlaylist = useMemo(() => viewedPlaylist(view, playlists), [view, playlists])
   const inView = useMemo(
@@ -72,7 +72,7 @@ export function SongList(): ReactElement {
         type: 'dialog/opened',
         dialog: {
           kind: 'confirm',
-          message: `Move "${song?.title ?? songId}" to the trash?`,
+          message: `Move ${song?.title ?? songId} to the trash?`,
           confirmLabel: 'Delete',
           intent: { kind: 'deleteSong', songId }
         }
@@ -81,21 +81,22 @@ export function SongList(): ReactElement {
     [dispatch, songs]
   )
 
-  const onReveal = useCallback(
-    (songId: string) => {
-      void window.api.library.revealInFolder(songId).catch(fail)
-    },
-    [fail]
-  )
-
-  const onAddToPlaylist = useCallback(
-    (playlistId: string, songId: string) => {
-      void window.api.playlists
-        .addSong(playlistId, songId)
-        .then((playlist) => dispatch({ type: 'playlists/upserted', playlist }))
+  /**
+   * Tag membership is a whole-list write: `library.update` replaces `tags`, so the next list is
+   * computed here from what the song carries rather than sent as a delta.
+   */
+  const onToggleTag = useCallback(
+    (songId: string, tagName: string) => {
+      const song = songs.find((entry) => entry.id === songId)
+      if (!song) return
+      const has = song.tags.includes(tagName)
+      const nextTags = has ? song.tags.filter((name) => name !== tagName) : [...song.tags, tagName]
+      void window.api.library
+        .update(songId, { tags: nextTags })
+        .then((updated) => dispatch({ type: 'library/songUpdated', song: updated }))
         .catch(fail)
     },
-    [dispatch, fail]
+    [dispatch, fail, songs]
   )
 
   const onRemoveFromPlaylist = useCallback(
@@ -119,13 +120,12 @@ export function SongList(): ReactElement {
           key={song.id}
           song={song}
           isCurrent={song.id === playback.currentId}
-          playlists={playlists}
+          tags={tags}
           containingPlaylist={containingPlaylist}
           onPlay={onPlay}
           onEdit={onEdit}
           onDelete={onDelete}
-          onReveal={onReveal}
-          onAddToPlaylist={onAddToPlaylist}
+          onToggleTag={onToggleTag}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
         />
       ))}
