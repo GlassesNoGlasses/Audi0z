@@ -1,4 +1,5 @@
 import { act, renderHook, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SongDto } from '../../../shared/types'
 import { renderApp, seedApi, song, stubDuration, stubMediaElement } from '../testing/harness'
@@ -62,11 +63,103 @@ describe('useDurationBackfill', () => {
 
     await reportDuration(probes[0], 183.6)
 
-    await waitFor(() => expect(api.library.update).toHaveBeenCalledWith('a', { durationSec: 184 }))
+    await waitFor(() =>
+      expect(api.library.updateDurations).toHaveBeenCalledWith([{ id: 'a', durationSec: 184 }])
+    )
     expect(dispatch).toHaveBeenCalledWith({
-      type: 'library/songUpdated',
-      song: expect.objectContaining({ id: 'a', durationSec: 184 })
+      type: 'library/songsUpdated',
+      songs: [expect.objectContaining({ id: 'a', durationSec: 184 })]
     })
+  })
+
+  it('writes many measured songs in one batch, not one write each', async () => {
+    const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
+    const api = seedApi({ songs: three })
+    backfill(three)
+
+    await waitFor(() => expect(probes).toHaveLength(2))
+    await reportDuration(probes[0], 173)
+    await reportDuration(probes[1], 41)
+    await waitFor(() => expect(probes).toHaveLength(3))
+    await reportDuration(probes[2], 12)
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.library.updateDurations).mock.calls[0][0]).toEqual([
+      { id: 'a', durationSec: 173 },
+      { id: 'b', durationSec: 41 },
+      { id: 'c', durationSec: 12 }
+    ])
+  })
+
+  /** A first launch has thousands of these, and none of them should wait for the last one. */
+  it('flushes a full batch early rather than holding every measurement to the end', async () => {
+    const nine = Array.from({ length: 9 }, (_, index) => song(`s${index}`, `Song ${index}`))
+    const api = seedApi({ songs: nine })
+    backfill(nine)
+
+    // Answered one at a time, so the readers hand back measurements in song order.
+    for (let index = 0; index < nine.length; index++) {
+      await waitFor(() => expect(probes.length).toBeGreaterThan(index))
+      await reportDuration(probes[index], 100 + index)
+    }
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(2))
+    const [first, second] = vi.mocked(api.library.updateDurations).mock.calls
+    expect(first[0].map((entry) => entry.id)).toEqual([
+      's0',
+      's1',
+      's2',
+      's3',
+      's4',
+      's5',
+      's6',
+      's7'
+    ])
+    expect(second[0]).toEqual([{ id: 's8', durationSec: 108 }])
+  })
+
+  /**
+   * StrictMode really double-mounts this hook (main.tsx wraps the app). A probe cut short by the
+   * first unmount must be re-asked on the second mount, and its measurement must be written once.
+   */
+  it('survives a mount, unmount, remount without losing or doubling a measurement', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
+    const first = backfill([song('a', 'Alpha Mix')])
+
+    await waitFor(() => expect(probes).toHaveLength(1))
+    // Aborts the in-flight probe and un-marks the song.
+    first.unmount()
+    backfill([song('a', 'Alpha Mix')])
+
+    await waitFor(() => expect(probes).toHaveLength(2))
+    await reportDuration(probes[1], 173)
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.library.updateDurations).mock.calls[0][0]).toEqual([
+      { id: 'a', durationSec: 173 }
+    ])
+  })
+
+  /**
+   * The same story with the refs React actually preserves across its development double-mount —
+   * two `renderHook` calls each get their own, so only a StrictMode wrapper puts the second mount
+   * in front of the first one's `attempted` set.
+   */
+  it('re-asks a song StrictMode cut the probe short on, and writes it once', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
+    const dispatch = vi.fn()
+    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch), {
+      wrapper: StrictMode
+    })
+
+    // One probe per mount: the second only happens because the first un-marked the song.
+    await waitFor(() => expect(probes).toHaveLength(2))
+    await reportDuration(probes[1], 173)
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.library.updateDurations).mock.calls[0][0]).toEqual([
+      { id: 'a', durationSec: 173 }
+    ])
   })
 
   it('has nothing to measure on a song that is already timed or whose file is gone', async () => {
@@ -81,7 +174,7 @@ describe('useDurationBackfill', () => {
     await act(async () => {})
 
     expect(probes).toHaveLength(0)
-    expect(api.library.update).not.toHaveBeenCalled()
+    expect(api.library.updateDurations).not.toHaveBeenCalled()
   })
 
   it('leaves a file it could not read alone rather than asking it again', async () => {
@@ -97,7 +190,7 @@ describe('useDurationBackfill', () => {
     await act(async () => {})
 
     expect(probes).toHaveLength(1)
-    expect(api.library.update).not.toHaveBeenCalled()
+    expect(api.library.updateDurations).not.toHaveBeenCalled()
   })
 
   it('ignores a duration the file reports as nonsense', async () => {
@@ -109,7 +202,7 @@ describe('useDurationBackfill', () => {
     await reportDuration(probes[0], Number.POSITIVE_INFINITY)
     await act(async () => {})
 
-    expect(api.library.update).not.toHaveBeenCalled()
+    expect(api.library.updateDurations).not.toHaveBeenCalled()
   })
 
   it('reads two files at a time and takes the next one as each finishes', async () => {
@@ -130,7 +223,7 @@ describe('useDurationBackfill', () => {
 
   it('says nothing when the library refuses the measurement', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
-    vi.mocked(api.library.update).mockRejectedValue(new Error('library.json is read-only'))
+    vi.mocked(api.library.updateDurations).mockRejectedValue(new Error('library.json is read-only'))
     const dispatch = vi.fn()
     renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch))
 
