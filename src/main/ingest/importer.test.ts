@@ -18,6 +18,15 @@ function mockLibraryStore(): LibraryStore {
     }),
     remove: vi.fn(async () => {
       throw new Error('importer must not call remove')
+    }),
+    renameTag: vi.fn(async () => {
+      throw new Error('importer must not call renameTag')
+    }),
+    removeTag: vi.fn(async () => {
+      throw new Error('importer must not call removeTag')
+    }),
+    replaceFile: vi.fn(async () => {
+      throw new Error('importer must not call replaceFile')
     })
   }
 }

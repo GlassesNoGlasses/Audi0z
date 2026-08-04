@@ -29,7 +29,8 @@ function isSong(value: unknown): value is Song {
     isStringArray(song.tags) &&
     typeof song.addedAt === 'string' &&
     typeof song.compressed === 'boolean' &&
-    (song.sourceUrl === undefined || typeof song.sourceUrl === 'string')
+    (song.sourceUrl === undefined || typeof song.sourceUrl === 'string') &&
+    (song.durationSec === undefined || typeof song.durationSec === 'number')
   )
 }
 
@@ -106,8 +107,64 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       const updated: Song = {
         ...current[index],
         ...(patch.title !== undefined ? { title: patch.title } : {}),
-        ...(patch.tags !== undefined ? { tags: [...patch.tags] } : {})
+        ...(patch.tags !== undefined ? { tags: [...patch.tags] } : {}),
+        ...(patch.durationSec !== undefined ? { durationSec: patch.durationSec } : {})
       }
+      current[index] = updated
+      await persist(current)
+      return cloneSong(updated)
+    },
+
+    /**
+     * Renames one tag across the whole library.
+     *
+     * Exact string match: the tag registry is what decides two names are "the same", and it already
+     * refused to let a second tag differ only by case — so a song carrying `Slowed` alongside
+     * `slowed` is hand-edited data this pass has no business reinterpreting.
+     *
+     * One write for the whole pass, and none at all when nothing matched: this runs behind a single
+     * `tags:rename` invoke, and a per-song persist would rewrite `library.json` once per song.
+     */
+    async renameTag(oldName, newName) {
+      const current = await load()
+      let changed = false
+      for (let index = 0; index < current.length; index++) {
+        const song = current[index]
+        if (!song.tags.includes(oldName)) continue
+        // A song that already carries the new name merges the two rather than listing it twice.
+        const tags = song.tags.includes(newName)
+          ? song.tags.filter((tag) => tag !== oldName)
+          : song.tags.map((tag) => (tag === oldName ? newName : tag))
+        current[index] = { ...song, tags }
+        changed = true
+      }
+      if (changed) await persist(current)
+    },
+
+    /** Drops one tag from every song. Same single-write rule as `renameTag`. */
+    async removeTag(name) {
+      const current = await load()
+      let changed = false
+      for (let index = 0; index < current.length; index++) {
+        const song = current[index]
+        if (!song.tags.includes(name)) continue
+        current[index] = { ...song, tags: song.tags.filter((tag) => tag !== name) }
+        changed = true
+      }
+      if (changed) await persist(current)
+    },
+
+    /**
+     * Repoints a song at a different file. Written as its own method rather than folded into
+     * `update` because `fileName` is deliberately not patchable from the renderer — the only thing
+     * allowed to move a song's audio is the code that just wrote the new file (`compressExisting`).
+     */
+    async replaceFile(id, fileName, compressed) {
+      const current = await load()
+      const index = current.findIndex((song) => song.id === id)
+      if (index === -1) throw new NotFoundError(`No song with id "${id}"`)
+
+      const updated: Song = { ...current[index], fileName, compressed }
       current[index] = updated
       await persist(current)
       return cloneSong(updated)
