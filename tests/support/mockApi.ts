@@ -226,6 +226,19 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         libraryChanged.emit()
         return cloneSong(song)
       }),
+      updateDurations: vi.fn(async (entries: Array<{ id: string; durationSec: number }>) => {
+        const updated: SongDto[] = []
+        for (const { id: songId, durationSec } of entries) {
+          // Unlike `update`, an id that is not here is passed over: the real handler does the same,
+          // because a song can be deleted between the probe that measured it and the write.
+          const song = state.songs.find((entry) => entry.id === songId)
+          if (!song) continue
+          song.durationSec = durationSec
+          updated.push(cloneSong(song))
+        }
+        if (updated.length > 0) libraryChanged.emit()
+        return updated
+      }),
       remove: vi.fn(async (songId) => {
         findSong(songId)
         state.songs = state.songs.filter((song) => song.id !== songId)

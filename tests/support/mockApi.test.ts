@@ -166,6 +166,38 @@ describe('song size and duration', () => {
     })
     await expect(api.library.list()).resolves.toMatchObject([{ durationSec: 214 }])
   })
+
+  /** The batched write skips ids it does not know rather than throwing the way `update` does. */
+  it('records a whole batch of durations and passes over ids it does not have', async () => {
+    const api = createMockApi({ songs: [song('a'), song('b')] })
+
+    const updated = await api.library.updateDurations([
+      { id: 'a', durationSec: 173 },
+      { id: 'ghost', durationSec: 9 },
+      { id: 'b', durationSec: 41 }
+    ])
+
+    expect(updated.map((s) => [s.id, s.durationSec])).toEqual([
+      ['a', 173],
+      ['b', 41]
+    ])
+    await expect(api.library.list()).resolves.toMatchObject([
+      { id: 'a', durationSec: 173 },
+      { id: 'b', durationSec: 41 }
+    ])
+  })
+
+  it('announces a batch that changed something and stays quiet about one that did not', async () => {
+    const api = createMockApi({ songs: [song('a')] })
+    const changed = vi.fn()
+    api.events.onLibraryChanged(changed)
+
+    await api.library.updateDurations([{ id: 'ghost', durationSec: 9 }])
+    expect(changed).not.toHaveBeenCalled()
+
+    await api.library.updateDurations([{ id: 'a', durationSec: 173 }])
+    expect(changed).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('library.compress', () => {
