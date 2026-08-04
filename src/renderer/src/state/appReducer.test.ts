@@ -62,6 +62,25 @@ describe('appReducer', () => {
     expect(state.songs[1].tags).toEqual(['edit'])
   })
 
+  it('merges a batch of updated songs without touching the rest', () => {
+    const state = seeded()
+    const next = reducer(state, {
+      type: 'library/songsUpdated',
+      songs: [
+        song('a', 'Alpha', { durationSec: 173 }),
+        // A song the batch names but the library no longer holds changes nothing.
+        song('gone', 'Gone', { durationSec: 9 })
+      ]
+    })
+
+    expect(next.songs.map((s) => [s.id, s.durationSec])).toEqual([
+      ['a', 173],
+      ['b', undefined],
+      ['c', undefined]
+    ])
+    expect(next.playback).toBe(state.playback)
+  })
+
   it('flags a song as missing without touching the rest', () => {
     const state = reducer(seeded(), { type: 'library/songMissing', songId: 'b' })
     expect(state.songs.map((s) => s.exists)).toEqual([true, false, true])

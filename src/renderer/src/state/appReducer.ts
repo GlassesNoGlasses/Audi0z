@@ -53,6 +53,8 @@ export type AppAction =
   | PlaybackAction
   | { type: 'library/loaded'; songs: SongDto[] }
   | { type: 'library/songUpdated'; song: SongDto }
+  /** Several songs in one dispatch, so a batched write costs one re-render rather than one each. */
+  | { type: 'library/songsUpdated'; songs: SongDto[] }
   | { type: 'library/songMissing'; songId: string }
   | { type: 'tags/loaded'; tags: Tag[] }
   | { type: 'playlists/loaded'; playlists: Playlist[] }
@@ -150,6 +152,10 @@ export function createAppReducer(
           ...state,
           songs: state.songs.map((song) => (song.id === action.song.id ? action.song : song))
         }
+      case 'library/songsUpdated': {
+        const byId = new Map(action.songs.map((song) => [song.id, song]))
+        return { ...state, songs: state.songs.map((song) => byId.get(song.id) ?? song) }
+      }
       case 'library/songMissing':
         return {
           ...state,
