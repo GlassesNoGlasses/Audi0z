@@ -18,19 +18,40 @@ const songs = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charl
 const mixes = playlist('p1', 'Mixes', ['c', 'a'], { shuffle: true })
 
 describe('Sidebar', () => {
-  it('selects a playlist as the queue, in its own order and with its own toggles', async () => {
+  /**
+   * The view and the queue are separate things. Moving around the sidebar to see what is in a
+   * playlist is not a request to stop the music, so it does not — the queue only changes when the
+   * user plays something from the view they moved to.
+   */
+  it('shows a playlist without disturbing what is playing', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+
+    // The playlist is on screen in its own order, and playback carried straight on.
+    expect(songTitles()).toEqual(['Charlie Tune', 'Alpha Mix'])
+    expect(nowPlaying()).toBe('Alpha Mix')
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    // Still the library's toggles: the playlist is only being looked at, not played.
+    expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('hands the queue over to the viewed playlist once a song in it is played', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes] })
     await renderApp()
 
     await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Charlie Tune' }))
 
-    expect(songTitles()).toEqual(['Charlie Tune', 'Alpha Mix'])
-    expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'true')
-
-    // Playing from an untouched queue starts at the head of the playlist's own order.
-    await user.click(screen.getByRole('button', { name: 'Play' }))
     expect(nowPlaying()).toBe('Charlie Tune')
+    // The playlist's own toggles come with it.
+    expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('expands a playlist without disturbing the queue', async () => {

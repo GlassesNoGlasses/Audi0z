@@ -2,6 +2,7 @@ import { useCallback, useMemo, type ReactElement } from 'react'
 import type { Playlist, SongDto } from '../../../shared/types'
 import { errorMessage } from '../lib/errors'
 import { filterSongs } from '../lib/search'
+import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 import type { AppState, View } from '../state/appReducer'
 import { SongRow } from './SongRow'
@@ -31,7 +32,7 @@ function songsInView(songs: SongDto[], playlist: Playlist | null, view: View): S
 export function SongList(): ReactElement {
   const state = useAppState()
   const dispatch = useAppDispatch()
-  const { songs, playlists, query, view, playback } = state
+  const { songs, playlists, settings, query, view, playback } = state
 
   const containingPlaylist = useMemo(() => viewedPlaylist(view, playlists), [view, playlists])
   const inView = useMemo(
@@ -47,9 +48,28 @@ export function SongList(): ReactElement {
     [dispatch]
   )
 
+  /**
+   * Playing a row is the one gesture that moves the queue. Inside the queue already playing it is
+   * a plain song change; anywhere else it hands the queue over to the view first — with the
+   * view's FULL order, since the search filters what is shown and never what is queued.
+   */
   const onPlay = useCallback(
-    (songId: string) => dispatch({ type: 'song/selected', songId }),
-    [dispatch]
+    (songId: string) => {
+      const viewQueueId = view.kind === 'library' ? LIBRARY_QUEUE_ID : view.id
+      if (viewQueueId === playback.queueId) {
+        dispatch({ type: 'song/selected', songId })
+        return
+      }
+      dispatch({
+        type: 'queue/selected',
+        queueId: viewQueueId,
+        order: inView.map((song) => song.id),
+        shuffle: containingPlaylist ? containingPlaylist.shuffle : settings.libraryShuffle,
+        repeat: containingPlaylist ? containingPlaylist.repeat : settings.libraryRepeat,
+        startSongId: songId
+      })
+    },
+    [dispatch, view, playback.queueId, inView, containingPlaylist, settings]
   )
 
   const onEdit = useCallback(
