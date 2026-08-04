@@ -72,10 +72,11 @@ export function playbackReducer(
   rng: Rng
 ): PlaybackState {
   switch (action.type) {
-    case 'queue/selected':
-      // Switching context stops playback outright — no surprise cross-fade between queues. The
-      // outgoing queue's played flags stay in `playedByQueue`, ready for when it is selected again.
-      return {
+    case 'queue/selected': {
+      // Switching context on its own stops playback outright — no surprise cross-fade between
+      // queues. The outgoing queue's played flags stay in `playedByQueue`, ready for when it is
+      // selected again.
+      const switched: PlaybackState = {
         ...state,
         queueId: action.queueId,
         order: [...action.order],
@@ -85,6 +86,11 @@ export function playbackReducer(
         isPlaying: false,
         history: []
       }
+      // A switch the user caused by playing something carries the song straight over, on the same
+      // terms as a manual `song/selected`: the new queue starts fresh from that song.
+      if (action.startSongId === undefined) return switched
+      return startSong(switched, action.startSongId, true)
+    }
     case 'queue/orderChanged':
       return changeOrder(state, action.order)
     case 'song/selected':

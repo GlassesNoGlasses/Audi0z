@@ -1,17 +1,18 @@
 import { useState, type FormEvent, type ReactElement } from 'react'
 import type { Playlist } from '../../../shared/types'
 import { errorMessage } from '../lib/errors'
-import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
 /**
- * Library + playlists, and the only place a queue is chosen.
+ * Library + playlists, and the only place the VIEW is chosen.
  *
- * Selecting an entry sets the view AND the queue (which stops playback — switching context is
- * never a cross-fade). Expanding one to peek at its songs is deliberately not a selection.
+ * Selecting an entry changes what is listed and nothing else — the queue and the music carry on
+ * untouched. Browsing is not a transport control: the queue follows only when the user plays a
+ * song from the view they moved to (`SongList`). Expanding an entry to peek at its songs is
+ * deliberately not even a view change.
  */
 export function Sidebar(): ReactElement {
-  const { songs, playlists, settings, view, expandedPlaylists } = useAppState()
+  const { songs, playlists, view, expandedPlaylists } = useAppState()
   const dispatch = useAppDispatch()
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -26,24 +27,10 @@ export function Sidebar(): ReactElement {
 
   function selectLibrary(): void {
     dispatch({ type: 'view/selected', view: { kind: 'library' } })
-    dispatch({
-      type: 'queue/selected',
-      queueId: LIBRARY_QUEUE_ID,
-      order: songs.map((song) => song.id),
-      shuffle: settings.libraryShuffle,
-      repeat: settings.libraryRepeat
-    })
   }
 
   function selectPlaylist(playlist: Playlist): void {
     dispatch({ type: 'view/selected', view: { kind: 'playlist', id: playlist.id } })
-    dispatch({
-      type: 'queue/selected',
-      queueId: playlist.id,
-      order: playlist.songIds,
-      shuffle: playlist.shuffle,
-      repeat: playlist.repeat
-    })
   }
 
   function create(event: FormEvent): void {
@@ -152,9 +139,12 @@ export function Sidebar(): ReactElement {
                 </div>
                 {expanded ? (
                   <ul className="playlist-songs">
-                    {playlist.songIds.map((songId) => (
-                      <li key={songId}>{titleOf(songId)}</li>
-                    ))}
+                    {/* An expansion that renders nothing reads as broken rather than as empty. */}
+                    {playlist.songIds.length === 0 ? (
+                      <li className="playlist-empty">playlist is empty</li>
+                    ) : (
+                      playlist.songIds.map((songId) => <li key={songId}>{titleOf(songId)}</li>)
+                    )}
                   </ul>
                 ) : null}
               </li>

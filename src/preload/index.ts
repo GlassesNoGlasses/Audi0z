@@ -32,7 +32,15 @@ export const api: Api = {
     add: (req) => ipcRenderer.invoke(IPC.library.add, req),
     update: (id, patch) => ipcRenderer.invoke(IPC.library.update, id, patch),
     remove: (id) => ipcRenderer.invoke(IPC.library.remove, id),
-    revealInFolder: (id) => ipcRenderer.invoke(IPC.library.revealInFolder, id)
+    revealInFolder: (id) => ipcRenderer.invoke(IPC.library.revealInFolder, id),
+    compress: (id) => ipcRenderer.invoke(IPC.library.compress, id),
+    showFolder: () => ipcRenderer.invoke(IPC.library.showFolder)
+  },
+  tags: {
+    list: () => ipcRenderer.invoke(IPC.tags.list),
+    create: (name) => ipcRenderer.invoke(IPC.tags.create, name),
+    rename: (id, name) => ipcRenderer.invoke(IPC.tags.rename, id, name),
+    remove: (id) => ipcRenderer.invoke(IPC.tags.remove, id)
   },
   playlists: {
     list: () => ipcRenderer.invoke(IPC.playlists.list),

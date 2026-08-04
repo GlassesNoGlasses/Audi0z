@@ -61,7 +61,10 @@ Played flags are per-queue and live **in memory only** — they are never persis
 
 - **No Python.** `yt-dlp` is shipped as a pinned standalone binary per platform.
 - Songs store a **`fileName`, not a path** — the library directory can move.
-- **Switching queue stops playback** (no surprise cross-fade between contexts).
+- **The view and the queue are separate things.** Choosing Library or a playlist in the sidebar
+  changes only what is listed — playback carries on untouched. The queue follows when the user
+  plays a song from another view: that song starts in the new queue. A queue switch with no song
+  to start still stops playback (no surprise cross-fade between contexts).
 - **One download at a time**; the URL flow is two-step: `probe` → user confirms title/tags →
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash

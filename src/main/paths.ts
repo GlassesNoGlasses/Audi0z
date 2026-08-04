@@ -52,6 +52,10 @@ export function settingsJsonPath(root: string = resolveLibraryRoot()): string {
   return path.join(root, 'settings.json')
 }
 
+export function tagsJsonPath(root: string = resolveLibraryRoot()): string {
+  return path.join(root, 'tags.json')
+}
+
 export function audioDir(root: string = resolveLibraryRoot()): string {
   return path.join(root, 'audio')
 }

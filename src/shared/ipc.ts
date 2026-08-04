@@ -10,7 +10,15 @@ export const IPC = {
     add: 'library:add',
     update: 'library:update',
     remove: 'library:remove',
-    revealInFolder: 'library:revealInFolder'
+    revealInFolder: 'library:revealInFolder',
+    compress: 'library:compress',
+    showFolder: 'library:showFolder'
+  },
+  tags: {
+    list: 'tags:list',
+    create: 'tags:create',
+    rename: 'tags:rename',
+    remove: 'tags:remove'
   },
   playlists: {
     list: 'playlists:list',

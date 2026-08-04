@@ -3,11 +3,12 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
 import { IPC } from '../../shared/ipc'
-import type { AddSongRequest, Playlist, Settings, Song, SongDto } from '../../shared/types'
+import type { AddSongRequest, Playlist, Settings, Song, SongDto, Tag } from '../../shared/types'
 import { createLibraryStore } from '../store/libraryStore'
 import { createPlaylistStore } from '../store/playlistStore'
 import { createSettingsStore } from '../store/settingsStore'
-import type { LibraryStore, PlaylistStore, SettingsStore } from '../store/storeTypes'
+import { createTagStore } from '../store/tagStore'
+import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
 import { registerLibraryIpc } from './registerLibraryIpc'
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
@@ -18,10 +19,13 @@ interface Harness {
   libraryStore: LibraryStore
   playlistStore: PlaylistStore
   settingsStore: SettingsStore
+  tagStore: TagStore
   audioDir: string
   importSong: ReturnType<typeof vi.fn>
   trashItem: ReturnType<typeof vi.fn>
   fileExists: ReturnType<typeof vi.fn>
+  fileSize: ReturnType<typeof vi.fn>
+  compressSong: ReturnType<typeof vi.fn>
   revealInFolder: ReturnType<typeof vi.fn>
 }
 
@@ -50,6 +54,7 @@ function setup(): Harness {
   const libraryStore = createLibraryStore(lib.root)
   const playlistStore = createPlaylistStore(lib.root)
   const settingsStore = createSettingsStore(lib.root)
+  const tagStore = createTagStore(lib.root)
   const importSong = vi.fn(async (req: AddSongRequest) =>
     libraryStore.add(
       draftSong({ fileName: path.basename(req.sourcePath), title: req.title, tags: req.tags })
@@ -57,16 +62,21 @@ function setup(): Harness {
   )
   const trashItem = vi.fn(async (_absPath: string) => {})
   const fileExists = vi.fn(async (_absPath: string) => true)
+  const fileSize = vi.fn(async (_absPath: string): Promise<number | null> => 4096)
+  const compressSong = vi.fn(async (id: string) => libraryStore.replaceFile(id, `${id}.opus`, true))
   const revealInFolder = vi.fn((_absPath: string) => {})
 
   registerLibraryIpc(ipc, {
     libraryStore,
     playlistStore,
     settingsStore,
+    tagStore,
     audioDir: lib.audio,
     importSong,
     trashItem,
     fileExists,
+    fileSize,
+    compressSong,
     revealInFolder
   })
 
@@ -80,10 +90,13 @@ function setup(): Harness {
     libraryStore,
     playlistStore,
     settingsStore,
+    tagStore,
     audioDir: lib.audio,
     importSong,
     trashItem,
     fileExists,
+    fileSize,
+    compressSong,
     revealInFolder
   }
 }
@@ -103,7 +116,8 @@ describe('channel registration', () => {
     const expected = [
       ...Object.values(IPC.library),
       ...Object.values(IPC.playlists),
-      ...Object.values(IPC.settings)
+      ...Object.values(IPC.settings),
+      ...Object.values(IPC.tags)
     ]
     expect([...channels].sort()).toEqual([...expected].sort())
   })
@@ -128,8 +142,57 @@ describe(IPC.library.list, () => {
 
     const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
 
-    expect(dto).toEqual({ ...added, exists: true, url: `media://audio/${added.id}` })
-    expect(harness.fileExists).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
+    expect(dto).toEqual({
+      ...added,
+      exists: true,
+      url: `media://audio/${added.id}`,
+      sizeBytes: 4096
+    })
+    expect(harness.fileSize).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
+  })
+
+  /** One stat per song, not a stat *and* an access: `exists` is just "the size came back". */
+  it('measures each song exactly once and derives exists from the result', async () => {
+    const harness = setup()
+    await harness.libraryStore.add(draftSong())
+
+    await harness.invoke<SongDto[]>(IPC.library.list)
+
+    expect(harness.fileSize).toHaveBeenCalledTimes(1)
+    expect(harness.fileExists).not.toHaveBeenCalled()
+  })
+
+  it('reports sizeBytes null and exists false when the file cannot be measured', async () => {
+    const harness = setup()
+    await harness.libraryStore.add(draftSong())
+    harness.fileSize.mockResolvedValue(null)
+
+    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
+
+    expect(dto.sizeBytes).toBeNull()
+    expect(dto.exists).toBe(false)
+  })
+
+  /** A 0-byte file is present, however useless — it must not collapse into "missing". */
+  it('treats a zero-byte file as existing', async () => {
+    const harness = setup()
+    await harness.libraryStore.add(draftSong())
+    harness.fileSize.mockResolvedValue(0)
+
+    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
+
+    expect(dto.sizeBytes).toBe(0)
+    expect(dto.exists).toBe(true)
+  })
+
+  it('carries a recorded durationSec through to the dto', async () => {
+    const harness = setup()
+    const added = await harness.libraryStore.add(draftSong())
+    await harness.libraryStore.update(added.id, { durationSec: 214 })
+
+    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
+
+    expect(dto.durationSec).toBe(214)
   })
 
   /**
@@ -147,16 +210,6 @@ describe(IPC.library.list, () => {
     expect(decodeURIComponent(new URL(dto.url).pathname.slice(1))).toBe(id)
   })
 
-  it('reports exists:false when the backing file is gone', async () => {
-    const harness = setup()
-    await harness.libraryStore.add(draftSong())
-    harness.fileExists.mockResolvedValue(false)
-
-    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(dto.exists).toBe(false)
-  })
-
   it('reports exists:false for a fileName pointing outside the audio directory', async () => {
     const harness = setup()
     await harness.libraryStore.add(draftSong({ fileName: '../../etc/passwd' }))
@@ -164,7 +217,8 @@ describe(IPC.library.list, () => {
     const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
 
     expect(dto.exists).toBe(false)
-    expect(harness.fileExists).not.toHaveBeenCalled()
+    expect(dto.sizeBytes).toBeNull()
+    expect(harness.fileSize).not.toHaveBeenCalled()
   })
 })
 
@@ -211,7 +265,14 @@ describe(IPC.library.update, () => {
       tags: ['x']
     })
 
-    expect(dto).toEqual({ ...added, title: 'Renamed', tags: ['x'], exists: true, url: dto.url })
+    expect(dto).toEqual({
+      ...added,
+      title: 'Renamed',
+      tags: ['x'],
+      exists: true,
+      url: dto.url,
+      sizeBytes: 4096
+    })
   })
 
   it('propagates NotFound for an unknown id', async () => {
@@ -222,13 +283,28 @@ describe(IPC.library.update, () => {
     ).rejects.toMatchObject({ name: 'NotFound' })
   })
 
+  it('accepts a probed durationSec', async () => {
+    const harness = setup()
+    const added = await harness.libraryStore.add(draftSong())
+
+    const dto = await harness.invoke<SongDto>(IPC.library.update, added.id, { durationSec: 214.6 })
+
+    expect(dto.durationSec).toBe(214.6)
+    expect((await harness.libraryStore.getSong(added.id))?.durationSec).toBe(214.6)
+  })
+
   it.each([
     ['', { title: 'x' }],
     [42, { title: 'x' }],
     ['id', undefined],
     ['id', { title: 7 }],
     ['id', { tags: 'x' }],
-    ['id', { tags: [1] }]
+    ['id', { tags: [1] }],
+    ['id', { durationSec: 'long' }],
+    ['id', { durationSec: 0 }],
+    ['id', { durationSec: -5 }],
+    ['id', { durationSec: Number.NaN }],
+    ['id', { durationSec: Number.POSITIVE_INFINITY }]
   ])('rejects a malformed payload (%s, %s)', async (id, patch) => {
     const harness = setup()
 
@@ -336,6 +412,183 @@ describe(IPC.library.revealInFolder, () => {
       name: 'NotFound'
     })
     expect(harness.revealInFolder).not.toHaveBeenCalled()
+  })
+})
+
+describe(IPC.library.compress, () => {
+  it('delegates to the injected compressor and returns a fresh dto', async () => {
+    const harness = setup()
+    const added = await harness.libraryStore.add(draftSong())
+
+    const dto = await harness.invoke<SongDto>(IPC.library.compress, added.id)
+
+    expect(harness.compressSong).toHaveBeenCalledExactlyOnceWith(added.id)
+    expect(dto).toMatchObject({
+      id: added.id,
+      compressed: true,
+      fileName: `${added.id}.opus`,
+      exists: true,
+      sizeBytes: 4096
+    })
+  })
+
+  it('propagates what the compressor throws', async () => {
+    const harness = setup()
+    const alreadyCompressed = new Error('Song "X" is already compressed')
+    alreadyCompressed.name = 'AlreadyCompressed'
+    harness.compressSong.mockRejectedValue(alreadyCompressed)
+
+    await expect(harness.invoke(IPC.library.compress, 'some-id')).rejects.toThrow(
+      'already compressed'
+    )
+  })
+
+  it.each([[''], [undefined], [42]])('rejects a malformed id (%s)', async (id) => {
+    const harness = setup()
+
+    await expect(harness.invoke(IPC.library.compress, id)).rejects.toThrow()
+    expect(harness.compressSong).not.toHaveBeenCalled()
+  })
+})
+
+describe(IPC.library.showFolder, () => {
+  it('reveals the audio directory itself, with no payload', async () => {
+    const harness = setup()
+
+    await harness.invoke(IPC.library.showFolder)
+
+    expect(harness.revealInFolder).toHaveBeenCalledExactlyOnceWith(lib.audio)
+  })
+})
+
+describe('tag channels', () => {
+  it('lists, creates, renames and removes', async () => {
+    const harness = setup()
+
+    expect(await harness.invoke<Tag[]>(IPC.tags.list)).toEqual([])
+
+    const created = await harness.invoke<Tag>(IPC.tags.create, '  slowed ')
+    expect(created).toMatchObject({
+      name: 'slowed',
+      color: expect.stringMatching(/^#[0-9a-f]{6}$/)
+    })
+
+    const renamed = await harness.invoke<Tag>(IPC.tags.rename, created.id, 'slow')
+    expect(renamed).toEqual({ ...created, name: 'slow' })
+
+    await harness.invoke(IPC.tags.remove, created.id)
+    expect(await harness.invoke<Tag[]>(IPC.tags.list)).toEqual([])
+  })
+
+  it('refuses a duplicate name with a message the renderer can show', async () => {
+    const harness = setup()
+    await harness.invoke<Tag>(IPC.tags.create, 'Slowed')
+
+    await expect(harness.invoke(IPC.tags.create, 'slowed')).rejects.toThrow(
+      'A tag named "Slowed" already exists'
+    )
+  })
+
+  it.each([[''], ['   '], [undefined], [42]])(
+    'rejects a malformed create payload (%s)',
+    async (name) => {
+      const harness = setup()
+
+      await expect(harness.invoke(IPC.tags.create, name)).rejects.toThrow()
+      expect(await harness.tagStore.list()).toEqual([])
+    }
+  )
+
+  it.each([
+    ['', 'x'],
+    ['id', ''],
+    [42, 'x']
+  ])('rejects a malformed rename payload (%s, %s)', async (id, name) => {
+    const harness = setup()
+
+    await expect(harness.invoke(IPC.tags.rename, id, name)).rejects.toThrow()
+  })
+
+  /** The registry names a tag; the songs are what actually carry it, so a rename has to cascade. */
+  it('renames the tag on every song that carries it', async () => {
+    const harness = setup()
+    const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
+    const first = await harness.libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+    const second = await harness.libraryStore.add(draftSong({ tags: ['edit'] }))
+
+    await harness.invoke<Tag>(IPC.tags.rename, created.id, 'slow')
+
+    expect((await harness.libraryStore.getSong(first.id))?.tags).toEqual(['slow', 'edit'])
+    expect((await harness.libraryStore.getSong(second.id))?.tags).toEqual(['edit'])
+  })
+
+  /** The cascade must use the name the tag had *before* the rename, not the new one. */
+  it('cascades from the old name even when only the case changed', async () => {
+    const harness = setup()
+    const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
+    const song = await harness.libraryStore.add(draftSong({ tags: ['slowed'] }))
+
+    await harness.invoke<Tag>(IPC.tags.rename, created.id, 'Slowed')
+
+    expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['Slowed'])
+  })
+
+  /** Opening the rename field, changing nothing and confirming must not wipe the tag. */
+  it('leaves every song alone when a tag is renamed to the name it already has', async () => {
+    const harness = setup()
+    const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
+    const song = await harness.libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+
+    const renamed = await harness.invoke<Tag>(IPC.tags.rename, created.id, 'slowed')
+
+    expect(renamed).toEqual(created)
+    expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['slowed', 'edit'])
+    expect(await harness.tagStore.list()).toEqual([created])
+  })
+
+  it('leaves the songs alone when the rename is refused', async () => {
+    const harness = setup()
+    await harness.invoke<Tag>(IPC.tags.create, 'reverb')
+    const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
+    const song = await harness.libraryStore.add(draftSong({ tags: ['slowed'] }))
+
+    await expect(harness.invoke(IPC.tags.rename, created.id, 'reverb')).rejects.toThrow()
+
+    expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['slowed'])
+  })
+
+  it('throws NotFound when renaming a tag that is not in the registry', async () => {
+    const harness = setup()
+
+    await expect(harness.invoke(IPC.tags.rename, 'missing', 'x')).rejects.toMatchObject({
+      name: 'NotFound'
+    })
+  })
+
+  it('drops the tag from every song when it is removed', async () => {
+    const harness = setup()
+    const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
+    const song = await harness.libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+
+    await harness.invoke(IPC.tags.remove, created.id)
+
+    expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['edit'])
+  })
+
+  /** Removing something that is already gone is what the user wanted, so it is not an error. */
+  it('says nothing and touches nothing when removing an unknown tag', async () => {
+    const harness = setup()
+    const song = await harness.libraryStore.add(draftSong({ tags: ['slowed'] }))
+
+    await expect(harness.invoke(IPC.tags.remove, 'missing')).resolves.toBeUndefined()
+
+    expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['slowed'])
+  })
+
+  it.each([[''], [undefined], [42]])('rejects a malformed remove id (%s)', async (id) => {
+    const harness = setup()
+
+    await expect(harness.invoke(IPC.tags.remove, id)).rejects.toThrow()
   })
 })
 

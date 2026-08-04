@@ -6,7 +6,8 @@ import type {
   DownloadRequest,
   Playlist,
   Settings,
-  SongDto
+  SongDto,
+  Tag
 } from '../../src/shared/types'
 
 /**
@@ -29,15 +30,32 @@ export const DEFAULT_MOCK_SETTINGS: Settings = {
   libraryRepeat: false
 }
 
+/**
+ * A seeded song may leave `sizeBytes` out — almost no test cares what a song weighs, and the ones
+ * that do say so explicitly.
+ */
+export type MockApiSeedSong = Omit<SongDto, 'sizeBytes'> & { sizeBytes?: number | null }
+
+/** What a song weighs when the seed does not say. Roughly a four-minute 128k file. */
+export const DEFAULT_MOCK_SIZE_BYTES = 4_000_000
+
+/** Compressing is assumed to save 60%, so the UI has a delta worth showing. */
+const COMPRESSED_SIZE_RATIO = 0.4
+
+/** Cycled rather than random: a tag's colour has to be the same on every run of a test. */
+const MOCK_TAG_COLORS = ['#e05c5c', '#e0a35c', '#5ce07a', '#5ca8e0', '#a35ce0']
+
 export interface MockApiSeed {
-  songs?: SongDto[]
+  songs?: MockApiSeedSong[]
   playlists?: Playlist[]
+  tags?: Tag[]
   settings?: Partial<Settings>
 }
 
 export interface MockApiState {
   songs: SongDto[]
   playlists: Playlist[]
+  tags: Tag[]
   settings: Settings
 }
 
@@ -68,8 +86,36 @@ function cloneSong(song: SongDto): SongDto {
   return { ...song, tags: [...song.tags] }
 }
 
+/**
+ * Seed -> state: the one place a missing `sizeBytes` becomes the default. An explicit `null` is
+ * kept — that is how a seed says "this file is gone", so it must not be defaulted away.
+ */
+function adoptSong(song: MockApiSeedSong): SongDto {
+  return {
+    ...song,
+    tags: [...song.tags],
+    sizeBytes: song.sizeBytes === undefined ? DEFAULT_MOCK_SIZE_BYTES : song.sizeBytes
+  }
+}
+
 function clonePlaylist(playlist: Playlist): Playlist {
   return { ...playlist, songIds: [...playlist.songIds] }
+}
+
+function cloneTag(tag: Tag): Tag {
+  return { ...tag }
+}
+
+/**
+ * Same rule as `libraryStore.renameTag`: a song that already carries `next` loses `previous` rather
+ * than ending up with the same tag twice — but renaming a tag to its own name is a no-op, or the
+ * merge branch would delete it instead.
+ */
+function renameIn(tags: string[], previous: string, next: string): string[] {
+  if (previous === next) return tags
+  if (!tags.includes(previous)) return tags
+  if (tags.includes(next)) return tags.filter((name) => name !== previous)
+  return tags.map((name) => (name === previous ? next : name))
 }
 
 function extensionOf(sourcePath: string): string {
@@ -97,8 +143,9 @@ function makeEmitter<Args extends unknown[]>(): {
 
 export function createMockApi(seed: MockApiSeed = {}): Api {
   const state: MockApiState = {
-    songs: (seed.songs ?? []).map(cloneSong),
+    songs: (seed.songs ?? []).map(adoptSong),
     playlists: (seed.playlists ?? []).map(clonePlaylist),
+    tags: (seed.tags ?? []).map(cloneTag),
     settings: { ...DEFAULT_MOCK_SETTINGS, ...seed.settings }
   }
 
@@ -121,6 +168,20 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
     return playlist
   }
 
+  /**
+   * Mirrors `tagStore`: a trimmed, non-empty, case-insensitively unique name. `exceptId` lets a
+   * rename keep its own name while only changing its case.
+   */
+  const assertTagName = (name: string, exceptId?: string): string => {
+    const trimmed = name.trim()
+    if (trimmed === '') throw new Error('mockApi: a tag name must not be empty')
+    const clash = state.tags.find(
+      (t) => t.id !== exceptId && t.name.toLowerCase() === trimmed.toLowerCase()
+    )
+    if (clash) throw new Error(`A tag named "${clash.name}" already exists`)
+    return trimmed
+  }
+
   const insertSong = (input: {
     title: string
     tags: string[]
@@ -138,6 +199,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
       compressed: input.compress,
       exists: true,
       url: `media://audio/${songId}`,
+      sizeBytes: DEFAULT_MOCK_SIZE_BYTES,
       ...(input.sourceUrl === undefined ? {} : { sourceUrl: input.sourceUrl })
     }
     state.songs.push(song)
@@ -160,6 +222,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         const song = findSong(songId)
         if (patch.title !== undefined) song.title = patch.title
         if (patch.tags !== undefined) song.tags = [...patch.tags]
+        if (patch.durationSec !== undefined) song.durationSec = patch.durationSec
         libraryChanged.emit()
         return cloneSong(song)
       }),
@@ -173,6 +236,50 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
       }),
       revealInFolder: vi.fn(async (songId) => {
         findSong(songId)
+      }),
+      compress: vi.fn(async (songId) => {
+        const song = findSong(songId)
+        song.compressed = true
+        song.fileName = `${song.id}.opus`
+        if (song.sizeBytes !== null)
+          song.sizeBytes = Math.round(song.sizeBytes * COMPRESSED_SIZE_RATIO)
+        libraryChanged.emit()
+        return cloneSong(song)
+      }),
+      // Nothing to do but be observable: `vi.fn` is the recording.
+      showFolder: vi.fn(async () => {})
+    },
+    tags: {
+      list: vi.fn(async () => state.tags.map(cloneTag)),
+      create: vi.fn(async (name) => {
+        const tag: Tag = {
+          id: id('tag'),
+          name: assertTagName(name),
+          color: MOCK_TAG_COLORS[state.tags.length % MOCK_TAG_COLORS.length]
+        }
+        state.tags.push(tag)
+        return cloneTag(tag)
+      }),
+      rename: vi.fn(async (tagId, name) => {
+        const tag = state.tags.find((t) => t.id === tagId)
+        if (!tag) throw new Error(`mockApi: no tag ${tagId}`)
+        const previous = tag.name
+        tag.name = assertTagName(name, tagId)
+        // The registry is an index over the strings songs actually carry, so it cascades.
+        for (const song of state.songs) {
+          song.tags = renameIn(song.tags, previous, tag.name)
+        }
+        libraryChanged.emit()
+        return cloneTag(tag)
+      }),
+      remove: vi.fn(async (tagId) => {
+        const tag = state.tags.find((t) => t.id === tagId)
+        if (!tag) return
+        state.tags = state.tags.filter((t) => t.id !== tagId)
+        for (const song of state.songs) {
+          song.tags = song.tags.filter((name) => name !== tag.name)
+        }
+        libraryChanged.emit()
       })
     },
     playlists: {

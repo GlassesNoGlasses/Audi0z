@@ -63,6 +63,11 @@ describe('PlayerBar toggles', () => {
     const api = seedApi({ songs })
     await renderApp()
 
+    // The accent fill that marks an enabled toggle keys off `aria-pressed`, so both flips are the
+    // behavioural anchor for it.
+    expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Repeat' })).toHaveAttribute('aria-pressed', 'false')
+
     await user.click(screen.getByRole('button', { name: 'Shuffle' }))
     expect(api.settings.set).toHaveBeenCalledWith({ libraryShuffle: true })
     await waitFor(() =>
@@ -84,7 +89,10 @@ describe('PlayerBar toggles', () => {
     const api = seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'b'])] })
     await renderApp()
 
+    // Viewing the playlist is not enough — playing something in it is what makes it the queue.
     await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+
     await user.click(screen.getByRole('button', { name: 'Shuffle' }))
     expect(api.playlists.setPlaybackOptions).toHaveBeenCalledWith('p1', { shuffle: true })
 

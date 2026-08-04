@@ -1,10 +1,29 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
 import { libraryJsonPath } from '../paths'
 import type { LibraryFile, Song } from '../../shared/types'
 import { NotFoundError } from './errors'
+import { writeJsonFile } from './jsonFile'
 import { createLibraryStore } from './libraryStore'
+
+/**
+ * The real writer, wrapped in a spy: the tag cascades promise ONE write for the whole library pass
+ * (and none at all when nothing matched), which is only observable by counting calls.
+ */
+vi.mock('./jsonFile', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./jsonFile')>()
+  return { ...actual, writeJsonFile: vi.fn(actual.writeJsonFile) }
+})
+
+/** Call count of `writeJsonFile` since the last `resetWrites()`. */
+function writeCount(): number {
+  return vi.mocked(writeJsonFile).mock.calls.length
+}
+
+function resetWrites(): void {
+  vi.mocked(writeJsonFile).mockClear()
+}
 
 function draft(overrides: Partial<Song> = {}): Song {
   return {
@@ -157,6 +176,183 @@ describe('update', () => {
 
     await expect(store.update('missing', { title: 'x' })).rejects.toBeInstanceOf(NotFoundError)
     await expect(store.update('missing', { title: 'x' })).rejects.toMatchObject({
+      name: 'NotFound'
+    })
+  })
+})
+
+describe('update: durationSec', () => {
+  it('records a probed duration and persists it', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft())
+
+    const updated = await store.update(added.id, { durationSec: 214 })
+
+    expect(updated).toEqual({ ...added, durationSec: 214 })
+    await expect(createLibraryStore(lib.root).getSong(added.id)).resolves.toEqual(updated)
+  })
+
+  it('leaves a recorded duration alone when a later patch does not mention it', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft())
+    await store.update(added.id, { durationSec: 214 })
+
+    expect(await store.update(added.id, { title: 'Renamed' })).toMatchObject({ durationSec: 214 })
+  })
+
+  /** A hand-edited `library.json` must not lose every song over one bad field. */
+  it('loads a song whose durationSec is present and drops a file where it is not a number', async () => {
+    const withDuration: LibraryFile = {
+      version: 1,
+      songs: [{ ...draft({ id: 'a' }), durationSec: 12 }]
+    }
+    await writeFile(libraryJsonPath(lib.root), JSON.stringify(withDuration), 'utf8')
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual(withDuration.songs)
+
+    await writeFile(
+      libraryJsonPath(lib.root),
+      JSON.stringify({ version: 1, songs: [{ ...draft({ id: 'a' }), durationSec: 'long' }] }),
+      'utf8'
+    )
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([])
+  })
+})
+
+describe('renameTag', () => {
+  it('rewrites the tag on every song that carries it, in a single write', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
+    const second = await store.add(draft({ title: 'second', tags: ['edit'] }))
+    const third = await store.add(draft({ title: 'third', tags: ['slowed'] }))
+    resetWrites()
+
+    await store.renameTag('slowed', 'slow')
+
+    expect(writeCount()).toBe(1)
+    expect((await store.list()).map((song) => song.tags)).toEqual([
+      ['slow', 'edit'],
+      ['edit'],
+      ['slow']
+    ])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([
+      { ...first, tags: ['slow', 'edit'] },
+      second,
+      { ...third, tags: ['slow'] }
+    ])
+  })
+
+  /** Renaming onto a tag a song already has must merge, not leave the song holding it twice. */
+  it('drops the old name rather than duplicating when the song already has the new one', async () => {
+    const store = createLibraryStore(lib.root)
+    await store.add(draft({ tags: ['slowed', 'slow', 'edit'] }))
+    resetWrites()
+
+    await store.renameTag('slowed', 'slow')
+
+    expect(writeCount()).toBe(1)
+    expect((await store.list())[0].tags).toEqual(['slow', 'edit'])
+  })
+
+  /**
+   * The registry lets a tag be "renamed" to the name it already has (the rename dialog's confirm
+   * button does not care that nothing changed), and the IPC layer cascades unconditionally. The
+   * merge branch must not read that as "this song already has the new name, so drop the old one" —
+   * that would wipe the tag off every song carrying it.
+   */
+  it('is a no-op when the new name is identical to the old one', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
+    const second = await store.add(draft({ title: 'second', tags: ['slowed'] }))
+    resetWrites()
+
+    await store.renameTag('slowed', 'slowed')
+
+    expect(writeCount()).toBe(0)
+    expect((await store.list()).map((song) => song.tags)).toEqual([['slowed', 'edit'], ['slowed']])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([first, second])
+  })
+
+  it('matches the tag exactly, leaving near-misses alone', async () => {
+    const store = createLibraryStore(lib.root)
+    await store.add(draft({ tags: ['Slowed', 'slowed-2'] }))
+
+    await store.renameTag('slowed', 'slow')
+
+    expect((await store.list())[0].tags).toEqual(['Slowed', 'slowed-2'])
+  })
+
+  it('writes nothing when no song carries the tag', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['edit'] }))
+    resetWrites()
+
+    await store.renameTag('slowed', 'slow')
+
+    expect(writeCount()).toBe(0)
+    expect(await store.list()).toEqual([added])
+  })
+})
+
+describe('removeTag', () => {
+  it('drops the tag from every song in a single write', async () => {
+    const store = createLibraryStore(lib.root)
+    await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
+    await store.add(draft({ title: 'second', tags: ['edit'] }))
+    await store.add(draft({ title: 'third', tags: ['slowed'] }))
+    resetWrites()
+
+    await store.removeTag('slowed')
+
+    expect(writeCount()).toBe(1)
+    expect((await store.list()).map((song) => song.tags)).toEqual([['edit'], ['edit'], []])
+    await expect(createLibraryStore(lib.root).list()).resolves.toMatchObject([
+      { tags: ['edit'] },
+      { tags: ['edit'] },
+      { tags: [] }
+    ])
+  })
+
+  it('writes nothing when no song carries the tag', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['edit'] }))
+    resetWrites()
+
+    await store.removeTag('slowed')
+
+    expect(writeCount()).toBe(0)
+    expect(await store.list()).toEqual([added])
+  })
+})
+
+describe('replaceFile', () => {
+  it('repoints the song at a new file, persists, and hands back a copy', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ fileName: 'original.wav', compressed: false }))
+
+    const replaced = await store.replaceFile(added.id, `${added.id}.opus`, true)
+
+    expect(replaced).toEqual({ ...added, fileName: `${added.id}.opus`, compressed: true })
+    await expect(createLibraryStore(lib.root).getSong(added.id)).resolves.toEqual(replaced)
+
+    replaced.tags.push('injected')
+    expect((await store.getSong(added.id))?.tags).toEqual(added.tags)
+  })
+
+  it('leaves every other field alone', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ title: 'Keep me', tags: ['keep'] }))
+    await store.update(added.id, { durationSec: 90 })
+
+    const replaced = await store.replaceFile(added.id, 'other.opus', true)
+
+    expect(replaced).toMatchObject({ title: 'Keep me', tags: ['keep'], durationSec: 90 })
+  })
+
+  it('throws NotFound for an unknown id', async () => {
+    const store = createLibraryStore(lib.root)
+
+    await expect(store.replaceFile('missing', 'x.opus', true)).rejects.toBeInstanceOf(NotFoundError)
+    await expect(store.replaceFile('missing', 'x.opus', true)).rejects.toMatchObject({
       name: 'NotFound'
     })
   })

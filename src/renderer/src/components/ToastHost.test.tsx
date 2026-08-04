@@ -1,6 +1,6 @@
-import { act, screen } from '@testing-library/react'
+import { act, fireEvent, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApiControls } from '../../../../tests/support/mockApi'
 import { renderApp, seedApi, stubMediaElement } from '../testing/harness'
 
@@ -63,5 +63,87 @@ describe('ToastHost', () => {
     })
 
     expect(screen.getByRole('alert')).toHaveTextContent('Something went wrong')
+  })
+})
+
+/**
+ * A toast that never leaves is a toast the user ends up ignoring — and the stack is capped, so
+ * yesterday's failure eventually hides today's. Ten seconds is long enough to read a line of
+ * ffmpeg stderr and short enough that the corner clears itself.
+ */
+describe('ToastHost expiry', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('takes a toast down once it has had its ten seconds', async () => {
+    const api = seedApi()
+    const controls = mockApiControls(api)
+    await renderApp()
+
+    act(() => {
+      controls.emitError({ source: 'trash', message: 'Failed to move item to trash' })
+    })
+
+    act(() => {
+      vi.advanceTimersByTime(9_900)
+    })
+    expect(screen.getByRole('alert')).toBeInTheDocument()
+
+    act(() => {
+      vi.advanceTimersByTime(100)
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('gives a toast pushed later its own clock', async () => {
+    const api = seedApi()
+    const controls = mockApiControls(api)
+    await renderApp()
+
+    act(() => {
+      controls.emitError({ source: 'trash', message: 'First failure' })
+    })
+    act(() => {
+      vi.advanceTimersByTime(6_000)
+    })
+    act(() => {
+      controls.emitError({ source: 'ytdlp', message: 'Second failure' })
+    })
+
+    // The first one's ten seconds are up; the second one still has six of its own left.
+    act(() => {
+      vi.advanceTimersByTime(4_000)
+    })
+    const remaining = screen.getAllByRole('alert')
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0]).toHaveTextContent('Second failure')
+
+    act(() => {
+      vi.advanceTimersByTime(6_000)
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('still dismisses on click, well before the timer gets there', async () => {
+    const api = seedApi()
+    const controls = mockApiControls(api)
+    await renderApp()
+
+    act(() => {
+      controls.emitError({ source: 'import', message: 'Failed to import' })
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+
+    // And the timer it left behind has nothing to do when it fires.
+    act(() => {
+      vi.advanceTimersByTime(20_000)
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })

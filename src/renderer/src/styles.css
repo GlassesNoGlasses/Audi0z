@@ -171,6 +171,11 @@ input[type='range'] {
   white-space: nowrap;
 }
 
+.playlist-empty {
+  font-style: italic;
+  opacity: 0.7;
+}
+
 .sidebar-action {
   align-self: flex-start;
 }
@@ -194,12 +199,56 @@ input[type='range'] {
   overflow: hidden;
 }
 
-.toolbar {
+.topnav {
   align-items: center;
   border-bottom: 1px solid var(--line);
   display: flex;
   gap: 8px;
   padding: 12px 16px;
+}
+
+/* Pushes everything after it to the right-hand end of the bar. */
+.topnav-spacer {
+  flex: 1;
+}
+
+/*
+ * The one control on the bar that is an action rather than a destination, so it is the one that
+ * gets the accent: a solid round fill with a dark glyph, the same accent language the enabled
+ * transport toggles use.
+ */
+.topnav-play {
+  align-items: center;
+  background: var(--accent);
+  border-color: var(--accent);
+  border-radius: 50%;
+  /* The page's own background: a dark glyph punched out of the accent fill. */
+  color: var(--bg);
+  display: inline-flex;
+  font-size: 13px;
+  height: 30px;
+  justify-content: center;
+  padding: 0;
+  width: 30px;
+}
+
+.topnav-play:hover:not(:disabled) {
+  background: color-mix(in srgb, #fff 14%, var(--accent));
+}
+
+/* An icon button is its icon: the padding a text button needs would swallow it. */
+.topnav-icon {
+  align-items: center;
+  color: var(--muted);
+  display: inline-flex;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 32px;
+}
+
+.topnav-icon:hover:not(:disabled) {
+  color: var(--fg);
 }
 
 .search-box {
@@ -220,12 +269,18 @@ input[type='range'] {
   padding: 4px 8px;
 }
 
+/* A ruled list, not a stack of pills: the border is what separates one song from the next. */
 .song-row {
   align-items: center;
-  border-radius: var(--radius);
+  border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 8px;
-  padding: 2px 8px;
+  gap: 10px;
+  padding: 8px 10px;
+  position: relative;
+}
+
+.song-row:last-child {
+  border-bottom: none;
 }
 
 .song-row:hover {
@@ -236,12 +291,29 @@ input[type='range'] {
   background: var(--panel-2);
 }
 
+/* Tabular and fixed-width so the two columns of figures line up down the whole list. */
+.song-duration,
+.song-size {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-duration {
+  min-width: 40px;
+}
+
+.song-size {
+  min-width: 62px;
+  text-align: right;
+}
+
 .song-title {
   background: none;
   border: none;
   flex: 1;
   overflow: hidden;
-  padding: 6px 0;
+  padding: 2px 0;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -257,24 +329,88 @@ input[type='range'] {
 }
 
 .song-tags {
-  color: var(--muted);
-  font-size: 12px;
+  display: flex;
+  gap: 4px;
   max-width: 220px;
   overflow: hidden;
+}
+
+/* The registry's colour arrives inline; this is what a tag it has never heard of falls back to. */
+.song-tag {
+  background: var(--panel-2);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  padding: 2px 8px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.song-row .song-playlists,
-.song-row button:not(.song-title) {
-  opacity: 0;
+/* ---------- the row's overflow menu ---------- */
+
+.song-menu {
+  position: relative;
 }
 
-.song-row:hover .song-playlists,
-.song-row:hover button:not(.song-title),
-.song-row .song-playlists:focus-visible,
-.song-row button:focus-visible {
-  opacity: 1;
+.song-menu-button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.song-row:hover .song-menu-button,
+.song-menu-button[aria-expanded='true'] {
+  color: var(--fg);
+}
+
+/*
+ * Hung off the row rather than laid out in it, so opening it never reflows the list. It opens to
+ * the left because the button it comes from is already at the right-hand edge.
+ */
+.song-menu-popup {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+}
+
+.song-menu-popup button {
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.song-menu-popup button:hover:not(:disabled) {
+  background: var(--panel);
+  border-color: transparent;
+}
+
+/* The tick column is a fixed gutter, so the names line up whether they are ticked or not. */
+.menu-check {
+  display: inline-block;
+  min-width: 14px;
+}
+
+.song-menu-popup button.menu-check-item {
+  padding-left: 6px;
+}
+
+.menu-note {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 /* ---------- player ---------- */
@@ -296,8 +432,44 @@ input[type='range'] {
   gap: 6px;
 }
 
-.player-play {
+/*
+ * ▶ and ⏸ are different widths, so a button sized by its glyph resized on every play/pause and
+ * shoved the rest of the row sideways. Fixed boxes instead: the transport never moves.
+ */
+.player-transport button {
+  align-items: center;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  /* The box is the size now, so the glyph gets the whole of it rather than fighting the padding. */
+  padding: 0;
+  width: 36px;
+}
+
+/* Specific enough to beat the `width` above. */
+.player-transport button.player-play {
   font-size: 16px;
+  width: 44px;
+}
+
+/*
+ * An enabled toggle has to be readable at a glance, and only a FILL can carry that here:
+ *   - a border cannot, because `button:hover:not(:disabled)` paints the same accent border, so a
+ *     hovered OFF toggle would look exactly like an ON one;
+ *   - `color` cannot, because 🔀 and 🔁 are colour emoji and ignore it;
+ *   - `var(--panel-2)` cannot, because that is already every button's background.
+ * So: an accent-tinted fill no other state has, with the accent border alongside it. `color-mix`
+ * needs Chromium 111+, which is all this app ever runs on.
+ */
+.player-toggles button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
+  border-color: var(--accent);
+}
+
+/* The global hover only moves the border, which is already accent here — so an ON toggle would
+   otherwise feel dead under the pointer. */
+.player-toggles button[aria-pressed='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 36%, var(--panel-2));
 }
 
 .player-main {
@@ -388,6 +560,95 @@ input[type='range'] {
   gap: 6px;
 }
 
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.compress-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compress-estimate {
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.storage-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+/* Long titles ellipsise inside the rows, which a flex item's automatic minimum width would undo. */
+.settings-files {
+  min-width: 0;
+}
+
+/* A chevron and a word, not a button-looking button: it opens a section of this dialog. */
+.disclosure {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+
+.file-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  list-style: none;
+  margin: 6px 0 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.file-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+/* Tabular so the column of sizes lines up down the list. */
+.file-size {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+  text-align: right;
+}
+
+.file-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The quiet alternative to `.danger`: an action that is offered, not urged. */
+.btn-grey {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+/* The strip drops below the row it belongs to rather than squeezing into it. */
+.file-row .confirm-strip {
+  flex-basis: 100%;
+}
+
 .dialog-hint {
   color: var(--muted);
   font-size: 12px;
@@ -395,10 +656,176 @@ input[type='range'] {
   overflow-wrap: anywhere;
 }
 
+/* ---------- add to playlist ---------- */
+
+/* A tall panel of rows rather than a form: it is a list to work down, not a thing to fill in. */
+.add-to-playlist {
+  max-height: 80vh;
+  padding: 20px;
+}
+
+.dialog-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.dialog-head h2 {
+  font-size: 18px;
+}
+
+.dialog-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 2px 6px;
+}
+
+.dialog-close:hover:not(:disabled) {
+  border-color: transparent;
+  color: var(--fg);
+}
+
+/* The rounded field the screenshot is built around. */
+.pill-search {
+  background: var(--panel-2);
+  border-radius: 999px;
+  color: var(--fg);
+  padding: 10px 16px;
+}
+
+.add-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.add-row {
+  align-items: center;
+  border-radius: var(--radius);
+  display: flex;
+  gap: 12px;
+  padding: 6px 8px;
+}
+
+.add-row:hover {
+  background: var(--panel-2);
+}
+
+.add-row-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.add-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.add-sub {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An outlined circle, the way the screenshot draws it — the row is the target, not the glyph. */
+.add-button {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+  color: var(--muted);
+  display: inline-flex;
+  flex: none;
+  height: 28px;
+  justify-content: center;
+  padding: 0;
+  width: 28px;
+}
+
+.add-button:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+/* Already in the playlist: still legible, but plainly not a button any more. */
+.add-button.is-added {
+  border-color: var(--accent);
+  color: var(--accent);
+  opacity: 1;
+}
+
 .dialog-actions {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+}
+
+/*
+ * Chips fill the row before they wrap, and the block of them stays centred and top-aligned however
+ * many there are — a registry of three should not sit in the middle of an empty panel.
+ */
+.tag-chips {
+  align-content: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* Its own colour and, from `readableTextColor`, ink that can be read on it. */
+.tag-chip {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 6px 3px 10px;
+}
+
+.tag-chip button {
+  background: none;
+  border: none;
+  /* Inherited from the chip, so the buttons are legible on every colour. */
+  color: inherit;
+  line-height: 1;
+  opacity: 0.7;
+  padding: 0 2px;
+}
+
+.tag-chip button:hover:not(:disabled) {
+  border-color: transparent;
+  opacity: 1;
+}
+
+/*
+ * Confirming inside the dialog that opened it: there is one dialog slot, so the global confirm
+ * would close the dialog the user is working in.
+ */
+.confirm-strip {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.confirm-strip span {
+  flex: 1;
 }
 
 .segmented {
@@ -411,16 +838,107 @@ input[type='range'] {
   color: var(--accent);
 }
 
+/* Chips of the tags that exist. Creating one is the Tags dialog's job alone. */
+.tag-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag-picker button {
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 3px 10px;
+}
+
+/* The same accent fill the transport toggles use, for the same reason: hover already moves the
+   border, so only a fill can say "on" at a glance. */
+.tag-picker button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
 .download-progress {
-  align-items: center;
   color: var(--muted);
   display: flex;
+  flex-direction: column;
   font-size: 12px;
+  gap: 6px;
+}
+
+.progress-track {
+  background: var(--panel-2);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.progress-fill {
+  background: var(--accent);
+  height: 100%;
+  /* Progress arrives in jumps; the bar should not. */
+  transition: width 120ms linear;
+}
+
+/*
+ * Saving and transcoding cannot report a percentage. A bar stuck at nothing reads as a stall, so
+ * it slides back and forth instead — motion is the whole message.
+ */
+.progress-indeterminate {
+  animation: progress-slide 1.2s ease-in-out infinite;
+  transition: none;
+  width: 30%;
+}
+
+@keyframes progress-slide {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    /* 233% of a 30%-wide bar is 70% of the track: its right edge just reaches the far end. */
+    transform: translateX(233%);
+  }
+}
+
+.download-label {
+  align-items: center;
+  display: flex;
   gap: 8px;
 }
 
-.download-progress progress {
-  flex: 1;
+/* Pushed to the far end of its line, and tabular so the figures do not jitter as they climb. */
+.download-bytes {
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+
+/* A hint with something running behind it. */
+.hint-busy {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+  border: 2px solid var(--line);
+  border-radius: 50%;
+  border-top-color: var(--accent);
+  display: inline-block;
+  /* Never squeezed by the label beside it. */
+  flex: none;
+  height: 14px;
+  width: 14px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ---------- toasts ---------- */

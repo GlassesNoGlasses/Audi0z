@@ -1,20 +1,24 @@
 import { useState, type FormEvent, type ReactElement } from 'react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { errorMessage } from '../lib/errors'
-import { parseTags } from '../lib/text'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
 export interface EditSongDialogProps {
   songId: string
 }
 
-/** Title and tags only — everything else about a song is decided at import time. */
+/**
+ * The title, and nothing else.
+ *
+ * Tags used to be edited here as a comma-separated string, which quietly made this a second place
+ * a tag could be brought into existence. They are now a registry: which tags EXIST is the Tags
+ * dialog's business, and which of them a song carries is ticked off in the row's own menu.
+ */
 export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | null {
   const { songs } = useAppState()
   const dispatch = useAppDispatch()
   const song = songs.find((entry) => entry.id === songId)
   const [title, setTitle] = useState(song?.title ?? '')
-  const [tags, setTags] = useState(song?.tags.join(', ') ?? '')
   const [saving, setSaving] = useState(false)
 
   const close = (): void => dispatch({ type: 'dialog/closed' })
@@ -30,7 +34,7 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
     if (trimmed === '') return
     setSaving(true)
     void window.api.library
-      .update(songId, { title: trimmed, tags: parseTags(tags) })
+      .update(songId, { title: trimmed })
       .then((updated) => {
         dispatch({ type: 'library/songUpdated', song: updated })
         close()
@@ -49,10 +53,6 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
           <label className="field">
             Title
             <input value={title} onChange={(event) => setTitle(event.target.value)} />
-          </label>
-          <label className="field">
-            Tags (comma separated)
-            <input value={tags} onChange={(event) => setTags(event.target.value)} />
           </label>
           <div className="dialog-actions">
             <button type="button" onClick={close}>

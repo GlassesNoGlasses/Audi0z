@@ -1,15 +1,19 @@
-import { useCallback, useEffect, useMemo, type DragEvent, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type DragEvent, type ReactElement } from 'react'
 import { AddSongDialog } from './components/AddSongDialog'
+import { AddToPlaylistDialog } from './components/AddToPlaylistDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { EditSongDialog } from './components/EditSongDialog'
 import { PlayerBar } from './components/PlayerBar'
-import { SearchBox } from './components/SearchBox'
 import { SettingsDialog } from './components/SettingsDialog'
 import { Sidebar } from './components/Sidebar'
 import { SongList } from './components/SongList'
+import { TagsDialog } from './components/TagsDialog'
 import { ToastHost } from './components/ToastHost'
+import { TopNav } from './components/TopNav'
 import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
+import { useDurationBackfill } from './hooks/useDurationBackfill'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { errorMessage, isTrashFailure } from './lib/errors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
@@ -37,21 +41,26 @@ function AppShell(): ReactElement {
   const { songs, playlists, settings, playback, dialog } = state
 
   useApiEvents(dispatch)
+  // Songs are listed long before anything has decoded their headers; this measures them behind the
+  // list and persists what it finds, so the times only ever have to be read once.
+  useDurationBackfill(songs, dispatch)
 
   // Start-up: load everything, then make the Library the queue.
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
-        const [loadedSettings, loadedSongs, loadedPlaylists] = await Promise.all([
+        const [loadedSettings, loadedSongs, loadedPlaylists, loadedTags] = await Promise.all([
           window.api.settings.get(),
           window.api.library.list(),
-          window.api.playlists.list()
+          window.api.playlists.list(),
+          window.api.tags.list()
         ])
         if (cancelled) return
         dispatch({ type: 'settings/updated', settings: loadedSettings })
         dispatch({ type: 'library/loaded', songs: loadedSongs })
         dispatch({ type: 'playlists/loaded', playlists: loadedPlaylists })
+        dispatch({ type: 'tags/loaded', tags: loadedTags })
         dispatch({
           type: 'queue/selected',
           queueId: LIBRARY_QUEUE_ID,
@@ -118,6 +127,33 @@ function AppShell(): ReactElement {
     onError: handleError
   })
 
+  /** What to come back to when unmuting — muting must not lose where the slider was. */
+  const lastAudibleVolume = useRef(1)
+
+  useEffect(() => {
+    if (settings.volume > 0) lastAudibleVolume.current = settings.volume
+  }, [settings.volume])
+
+  const togglePlay = useCallback(() => dispatch({ type: 'transport/togglePlay' }), [dispatch])
+
+  // Applied to the store first so the audio and the slider react on the keystroke, then persisted
+  // — the same order the volume slider itself uses.
+  const toggleMute = useCallback(() => {
+    const next = settings.volume === 0 ? lastAudibleVolume.current || 1 : 0
+    dispatch({ type: 'settings/updated', settings: { ...settings, volume: next } })
+    void window.api.settings
+      .set({ volume: next })
+      .then((updated) => dispatch({ type: 'settings/updated', settings: updated }))
+      .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
+  }, [dispatch, settings])
+
+  useKeyboardShortcuts({
+    enabled: dialog === null,
+    hasCurrentSong: playback.currentId !== null,
+    onTogglePlay: togglePlay,
+    onToggleMute: toggleMute
+  })
+
   function onDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault()
     const files = event.dataTransfer?.files
@@ -150,15 +186,10 @@ function AppShell(): ReactElement {
       .remove(intent.playlistId)
       .then(() => {
         dispatch({ type: 'playlists/removed', playlistId: intent.playlistId })
+        // The view has nowhere left to be. The QUEUE is not touched: it may well be the library's,
+        // playing happily, and if it was this playlist's then the order effect above empties it.
         if (state.view.kind === 'playlist' && state.view.id === intent.playlistId) {
           dispatch({ type: 'view/selected', view: { kind: 'library' } })
-          dispatch({
-            type: 'queue/selected',
-            queueId: LIBRARY_QUEUE_ID,
-            order: songs.map((song) => song.id),
-            shuffle: settings.libraryShuffle,
-            repeat: settings.libraryRepeat
-          })
         }
       })
       .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
@@ -168,26 +199,7 @@ function AppShell(): ReactElement {
     <div className="app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
       <Sidebar />
       <section className="library">
-        <header className="toolbar">
-          <SearchBox />
-          <button
-            type="button"
-            onClick={() =>
-              dispatch({
-                type: 'dialog/opened',
-                dialog: { kind: 'add', source: { kind: 'files', paths: [] } }
-              })
-            }
-          >
-            Add song
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'dialog/opened', dialog: { kind: 'settings' } })}
-          >
-            Settings
-          </button>
-        </header>
+        <TopNav />
         <SongList />
       </section>
       <PlayerBar audioRef={audioRef} />
@@ -196,6 +208,10 @@ function AppShell(): ReactElement {
       {dialog?.kind === 'add' ? <AddSongDialog source={dialog.source} /> : null}
       {dialog?.kind === 'edit' ? <EditSongDialog songId={dialog.songId} /> : null}
       {dialog?.kind === 'settings' ? <SettingsDialog /> : null}
+      {dialog?.kind === 'tags' ? <TagsDialog /> : null}
+      {dialog?.kind === 'addToPlaylist' ? (
+        <AddToPlaylistDialog playlistId={dialog.playlistId} />
+      ) : null}
       {dialog?.kind === 'confirm' ? (
         <ConfirmDialog
           message={dialog.message}

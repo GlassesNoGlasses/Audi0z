@@ -128,14 +128,14 @@ test('seeks into the middle of a song', async () => {
 })
 
 test('filters the list from the search box', async () => {
-  await page.getByRole('searchbox', { name: 'Search songs' }).fill('bravo')
+  await page.getByRole('searchbox', { name: 'Search songs', exact: true }).fill('bravo')
   await expect(page.locator('.song-list .song-title')).toHaveText(['Bravo Beat'])
 })
 
 test('creates a playlist that lands in playlists.json', async () => {
   await page.getByRole('button', { name: 'New playlist' }).click()
   await page.getByRole('textbox', { name: 'New playlist name' }).fill('Late night')
-  await page.getByRole('button', { name: 'Create' }).click()
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
 
   await expect
     .poll(async () => {
@@ -143,6 +143,46 @@ test('creates a playlist that lands in playlists.json', async () => {
       return (JSON.parse(raw) as PlaylistsFile).playlists.map((playlist) => playlist.name)
     })
     .toEqual(['Late night'])
+})
+
+/**
+ * The one part of the app that cannot be proved anywhere but here: the renderer measures playing
+ * times off real decoded audio, and jsdom has no decoder to do it with.
+ */
+test('measures the playing times of the library and keeps them', async () => {
+  await expect(page.locator('.song-list .song-duration')).toHaveText([
+    `0:${CLIP_SECONDS}`,
+    `0:${CLIP_SECONDS}`
+  ])
+
+  await expect
+    .poll(async () => {
+      const raw = await readFile(path.join(fixture.root, 'library.json'), 'utf8')
+      return (JSON.parse(raw) as LibraryFile).songs.map((song) => song.durationSec)
+    })
+    .toEqual([CLIP_SECONDS, CLIP_SECONDS])
+})
+
+test('adds a song to a playlist from the add-to-playlist dialog', async () => {
+  await page.getByRole('button', { name: 'New playlist' }).click()
+  await page.getByRole('textbox', { name: 'New playlist name' }).fill('Late night')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+
+  // Viewing the playlist is what puts its own add button on the bar, beside the library's.
+  await page.getByRole('button', { name: 'Late night', exact: true }).click()
+  await page.getByRole('button', { name: 'Add songs to Late night', exact: true }).click()
+
+  const dialog = page.getByRole('dialog', { name: 'Add to Late night' })
+  await dialog.getByRole('searchbox', { name: 'Search songs to add' }).fill('alpha')
+  await dialog.getByRole('button', { name: 'Add Alpha Mix to Late night' }).click()
+
+  await expect(dialog.getByRole('button', { name: 'Alpha Mix is in Late night' })).toBeDisabled()
+  await expect
+    .poll(async () => {
+      const raw = await readFile(path.join(fixture.root, 'playlists.json'), 'utf8')
+      return (JSON.parse(raw) as PlaylistsFile).playlists[0]?.songIds
+    })
+    .toEqual(['song-alpha'])
 })
 
 test('adds a song chosen from the file picker', async () => {
@@ -159,7 +199,7 @@ test('adds a song chosen from the file picker', async () => {
     ;(dialog as unknown as { showOpenDialog: typeof stub }).showOpenDialog = stub
   }, sourcePath)
 
-  await page.getByRole('button', { name: 'Add song' }).click()
+  await page.getByRole('button', { name: 'Add song', exact: true }).click()
   await page.getByRole('button', { name: 'Choose files…' }).click()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Fixture Song')
   await page.getByRole('button', { name: 'Add to library' }).click()

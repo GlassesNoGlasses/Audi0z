@@ -1,4 +1,4 @@
-import type { Playlist, Settings, SongDto } from '../../../shared/types'
+import type { Playlist, Settings, SongDto, Tag } from '../../../shared/types'
 import { createPlaybackReducer, defaultRng, initialPlaybackState } from '../playback/engine'
 import type { PlaybackAction, PlaybackState, Rng } from '../playback/types'
 
@@ -29,11 +29,15 @@ export type Dialog =
   | { kind: 'add'; source: AddSource }
   | { kind: 'edit'; songId: string }
   | { kind: 'settings' }
+  | { kind: 'tags' }
+  | { kind: 'addToPlaylist'; playlistId: string }
   | { kind: 'confirm'; message: string; confirmLabel: string; intent: ConfirmIntent }
 
 export interface AppState {
   songs: SongDto[]
   playlists: Playlist[]
+  /** The tag registry: every tag that exists, with the colour it is drawn in. */
+  tags: Tag[]
   settings: Settings
   view: View
   query: string
@@ -50,6 +54,7 @@ export type AppAction =
   | { type: 'library/loaded'; songs: SongDto[] }
   | { type: 'library/songUpdated'; song: SongDto }
   | { type: 'library/songMissing'; songId: string }
+  | { type: 'tags/loaded'; tags: Tag[] }
   | { type: 'playlists/loaded'; playlists: Playlist[] }
   | { type: 'playlists/upserted'; playlist: Playlist }
   | { type: 'playlists/removed'; playlistId: string }
@@ -79,6 +84,7 @@ export function initialAppState(): AppState {
   return {
     songs: [],
     playlists: [],
+    tags: [],
     settings: { ...FALLBACK_SETTINGS },
     view: { kind: 'library' },
     query: '',
@@ -148,9 +154,13 @@ export function createAppReducer(
         return {
           ...state,
           songs: state.songs.map((song) =>
-            song.id === action.songId ? { ...song, exists: false } : song
+            // `sizeBytes` goes with `exists`: the DTO promises it is null exactly when the file is
+            // gone, and a stale size left behind here would be the one place that is not true.
+            song.id === action.songId ? { ...song, exists: false, sizeBytes: null } : song
           )
         }
+      case 'tags/loaded':
+        return { ...state, tags: action.tags }
       case 'playlists/loaded':
         return { ...state, playlists: action.playlists }
       case 'playlists/upserted': {

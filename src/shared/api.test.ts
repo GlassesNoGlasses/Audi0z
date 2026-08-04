@@ -51,11 +51,20 @@ describe('Api contract', () => {
       'library',
       'playlists',
       'settings',
+      'tags',
       'ytdlp'
     ])
     for (const [namespace, members] of Object.entries(shape)) {
       expect(members.length, `${namespace} has no members`).toBeGreaterThan(0)
     }
+  })
+
+  it('carries the tag registry and the two new library operations', () => {
+    const shape = shapeOf(preloadApi)
+
+    expect(shape.tags).toEqual(['create', 'list', 'remove', 'rename'])
+    expect(shape.library).toContain('compress')
+    expect(shape.library).toContain('showFolder')
   })
 
   it('implements every member as a function on both sides', () => {

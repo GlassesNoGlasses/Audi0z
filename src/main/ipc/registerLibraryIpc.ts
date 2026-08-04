@@ -1,9 +1,9 @@
 import type { IpcMain } from 'electron'
 import { IPC, MEDIA_SCHEME } from '../../shared/ipc'
-import type { AddSongRequest, Playlist, Settings, Song, SongDto } from '../../shared/types'
+import type { AddSongRequest, Playlist, Settings, Song, SongDto, Tag } from '../../shared/types'
 import { resolveAudioPath } from '../media/mediaProtocol'
 import { NotFoundError } from '../store/errors'
-import type { LibraryStore, PlaylistStore, SettingsStore } from '../store/storeTypes'
+import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
 
 /**
  * Every request/response channel the library UI needs, wired to the stores.
@@ -32,6 +32,11 @@ export interface LibraryIpcDeps {
   libraryStore: LibraryStore
   playlistStore: PlaylistStore
   settingsStore: SettingsStore
+  /**
+   * The tag registry. It knows nothing about songs, so this module owns the cascade: a rename or a
+   * removal here is followed by the matching pass over `libraryStore`.
+   */
+  tagStore: TagStore
   /** Absolute path of the library's `audio/` directory. */
   audioDir: string
   /**
@@ -44,15 +49,25 @@ export interface LibraryIpcDeps {
    * `library:list` keeps serving its own stale copy for the rest of the session.
    */
   importSong(request: AddSongRequest): Promise<Song>
+  /**
+   * Transcodes an already-imported song to Opus and records the swap (`compressExisting`), wired
+   * with the same `LibraryStore` instance for the same reason `importSong` is.
+   */
+  compressSong(id: string): Promise<Song>
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
   /**
-   * **Must not reject** — an unreadable path is `false`, never a rejection. `library:list` runs one
-   * of these per song inside a `Promise.all`, so a single rejection would fail the whole listing,
-   * and `library:remove` reads it to decide whether there is anything left to trash. The wired
-   * implementation (`wiring.fileExists`) catches everything for exactly this reason.
+   * **Must not reject** — an unreadable path is `false`, never a rejection. `library:remove` reads
+   * it to decide whether there is anything left to trash. The wired implementation
+   * (`wiring.fileExists`) catches everything for exactly this reason.
    */
   fileExists(absPath: string): Promise<boolean>
+  /**
+   * **Must not reject** — `null` means "could not measure" (missing, unreadable, not a file).
+   * `library:list` runs one of these per song inside a `Promise.all`, so a single rejection would
+   * fail the whole listing. `0` is a real size and must stay distinct from `null`.
+   */
+  fileSize(absPath: string): Promise<number | null>
   revealInFolder(absPath: string): void
 }
 
@@ -92,11 +107,22 @@ function parseAddSongRequest(value: unknown): AddSongRequest {
   }
 }
 
-function parseSongPatch(value: unknown): Partial<Pick<Song, 'title' | 'tags'>> {
+/** A playing time has to be a real, positive number of seconds — 0, NaN and Infinity are bugs. */
+function assertDuration(value: unknown, field: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    throw new InvalidPayloadError(`${field} must be a positive finite number`)
+  }
+  return value
+}
+
+function parseSongPatch(value: unknown): Partial<Pick<Song, 'title' | 'tags' | 'durationSec'>> {
   const raw = assertRecord(value, 'patch')
   return {
     ...(raw.title !== undefined ? { title: assertNonEmptyString(raw.title, 'patch.title') } : {}),
-    ...(raw.tags !== undefined ? { tags: assertStringArray(raw.tags, 'patch.tags') } : {})
+    ...(raw.tags !== undefined ? { tags: assertStringArray(raw.tags, 'patch.tags') } : {}),
+    ...(raw.durationSec !== undefined
+      ? { durationSec: assertDuration(raw.durationSec, 'patch.durationSec') }
+      : {})
   }
 }
 
@@ -157,8 +183,16 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
    */
   async function toDto(song: Song): Promise<SongDto> {
     const resolved = resolveAudioPath(deps.audioDir, song.fileName)
-    const exists = resolved === null ? false : await deps.fileExists(resolved)
-    return { ...song, exists, url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}` }
+    // One measurement answers both questions: a size that came back *is* the proof of existence,
+    // so there is no second filesystem call and no way for the two fields to disagree. A 0-byte
+    // file therefore reads as present, which is what it is.
+    const size = resolved === null ? null : await deps.fileSize(resolved)
+    return {
+      ...song,
+      exists: size !== null,
+      url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}`,
+      sizeBytes: size
+    }
   }
 
   ipc.handle(IPC.library.list, async (): Promise<SongDto[]> => {
@@ -197,6 +231,52 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
   ipc.handle(IPC.library.revealInFolder, async (_event, id: unknown): Promise<void> => {
     const song = await requireSong(id)
     deps.revealInFolder(audioPathOf(song))
+  })
+
+  /**
+   * The compressor records the swap itself (`replaceFile`), so this handler only re-derives the
+   * DTO — and it re-measures the file, which is the point: the new size is what the UI shows.
+   */
+  ipc.handle(IPC.library.compress, async (_event, id: unknown): Promise<SongDto> => {
+    const songId = assertNonEmptyString(id, 'id')
+    return toDto(await deps.compressSong(songId))
+  })
+
+  /** The folder itself, not a song inside it — so there is nothing to look up and nothing to trust. */
+  ipc.handle(IPC.library.showFolder, async (): Promise<void> => {
+    deps.revealInFolder(deps.audioDir)
+  })
+
+  ipc.handle(IPC.tags.list, (): Promise<Tag[]> => deps.tagStore.list())
+
+  ipc.handle(IPC.tags.create, (_event, name: unknown): Promise<Tag> =>
+    deps.tagStore.create(assertNonEmptyString(name, 'name'))
+  )
+
+  /**
+   * Registry first, then the songs — and the cascade uses the name the tag had *before* the
+   * rename, which is why the old tag is read up front. If the registry refuses the new name the
+   * cascade never runs, so the two can only disagree if the library write itself fails.
+   */
+  ipc.handle(IPC.tags.rename, async (_event, id: unknown, name: unknown): Promise<Tag> => {
+    const tagId = assertNonEmptyString(id, 'id')
+    const newName = assertNonEmptyString(name, 'name')
+    const existing = await deps.tagStore.getTag(tagId)
+    if (!existing) throw new NotFoundError(`No tag with id "${tagId}"`)
+
+    const renamed = await deps.tagStore.rename(tagId, newName)
+    await deps.libraryStore.renameTag(existing.name, renamed.name)
+    return renamed
+  })
+
+  /** Removing a tag that is not in the registry is a no-op: the end state is what was asked for. */
+  ipc.handle(IPC.tags.remove, async (_event, id: unknown): Promise<void> => {
+    const tagId = assertNonEmptyString(id, 'id')
+    const existing = await deps.tagStore.getTag(tagId)
+    if (!existing) return
+
+    await deps.tagStore.remove(tagId)
+    await deps.libraryStore.removeTag(existing.name)
   })
 
   ipc.handle(IPC.playlists.list, (): Promise<Playlist[]> => deps.playlistStore.list())

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseTags, titleFromPath } from './text'
+import { titleFromPath } from './text'
 
 describe('titleFromPath', () => {
   it('takes the file name without its extension', () => {
@@ -9,12 +9,5 @@ describe('titleFromPath', () => {
 
   it('leaves an extensionless name alone', () => {
     expect(titleFromPath('/music/Great Track')).toBe('Great Track')
-  })
-})
-
-describe('parseTags', () => {
-  it('trims and drops the empties', () => {
-    expect(parseTags(' slowed , , reverb ,')).toEqual(['slowed', 'reverb'])
-    expect(parseTags('   ')).toEqual([])
   })
 })

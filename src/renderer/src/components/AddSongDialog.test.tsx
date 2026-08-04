@@ -8,14 +8,32 @@ stubMediaElement()
 
 const URL_UNDER_TEST = 'https://example.com/watch?v=abc'
 
+const MB = 1024 * 1024
+
+const registry = [
+  { id: 't1', name: 'slowed', color: '#e0a35c' },
+  { id: 't2', name: 'reverb', color: '#3b2f8f' }
+]
+
 async function openAddDialog(user: ReturnType<typeof userEvent.setup>): Promise<void> {
   await user.click(screen.getByRole('button', { name: 'Add song' }))
+}
+
+/** The one bar the dialog draws while a download runs. */
+function progressTrack(): HTMLElement {
+  return screen.getByRole('progressbar', { name: 'Download progress' })
+}
+
+function progressFill(): HTMLElement {
+  const fill = progressTrack().querySelector<HTMLElement>('.progress-fill')
+  if (!fill) throw new Error('the progress bar rendered no fill')
+  return fill
 }
 
 describe('AddSongDialog — file source', () => {
   it('pre-fills the title from the file name, defaults compression from settings and adds', async () => {
     const user = userEvent.setup()
-    const api = seedApi({ settings: { compressByDefault: true } })
+    const api = seedApi({ settings: { compressByDefault: true }, tags: registry })
     vi.mocked(api.files.pickAudioFiles).mockResolvedValue(['/music/Great Track.mp3'])
     await renderApp()
 
@@ -27,7 +45,7 @@ describe('AddSongDialog — file source', () => {
     )
     expect(screen.getByRole('checkbox', { name: 'Compress to Opus' })).toBeChecked()
 
-    await user.type(screen.getByRole('textbox', { name: 'Tags (comma separated)' }), ' slowed , ,')
+    await user.click(screen.getByRole('button', { name: 'slowed' }))
     await user.click(screen.getByRole('button', { name: 'Add to library' }))
 
     expect(api.library.add).toHaveBeenCalledWith({
@@ -55,6 +73,57 @@ describe('AddSongDialog — file source', () => {
     expect(api.files.getPathForFile).toHaveBeenCalledTimes(2)
     expect(screen.getByRole('dialog', { name: 'Add song' })).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('One Track')
+  })
+})
+
+describe('AddSongDialog — tags', () => {
+  it('carries the chips that were picked, in the order the registry lists them', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ tags: registry })
+    vi.mocked(api.files.pickAudioFiles).mockResolvedValue(['/music/Great Track.mp3'])
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'Choose files…' }))
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Great Track')
+    )
+
+    // Picked out of order, and one of them picked twice — a chip is a toggle.
+    await user.click(screen.getByRole('button', { name: 'reverb' }))
+    await user.click(screen.getByRole('button', { name: 'slowed' }))
+    expect(screen.getByRole('button', { name: 'reverb' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'reverb' }))
+    expect(screen.getByRole('button', { name: 'reverb' })).toHaveAttribute('aria-pressed', 'false')
+
+    await user.click(screen.getByRole('button', { name: 'Add to library' }))
+
+    expect(api.library.add).toHaveBeenCalledWith(expect.objectContaining({ tags: ['slowed'] }))
+  })
+
+  /** Tags are created in one place only. Offering to make one here is what made them a mess. */
+  it('sends the user to the Tags button when the registry is empty', async () => {
+    const user = userEvent.setup()
+    seedApi()
+    await renderApp()
+
+    await openAddDialog(user)
+
+    expect(screen.getByText('No tags yet — create them from the Tags button.')).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /Tags/ })).toBeNull()
+  })
+
+  it('says what compressing saves, in bold, beside the checkbox', async () => {
+    const user = userEvent.setup()
+    seedApi()
+    await renderApp()
+
+    await openAddDialog(user)
+
+    expect(screen.getByText('Saves ~50%').tagName).toBe('STRONG')
+    // The preference itself is still addressable by exactly the words on it.
+    expect(screen.getByRole('checkbox', { name: 'Compress to Opus' })).toBeInTheDocument()
   })
 })
 
@@ -89,8 +158,108 @@ describe('AddSongDialog — url source', () => {
     act(() => {
       controls.emitDownloadProgress({ stage: 'downloading', percent: 42 })
     })
-    expect(screen.getByRole('progressbar')).toHaveAttribute('value', '42')
+    expect(progressTrack()).toHaveAttribute('aria-valuenow', '42')
+    expect(progressFill()).toHaveStyle({ width: '42%' })
     expect(screen.getByText('Downloading… 42%')).toBeInTheDocument()
+
+    act(() => {
+      controls.emitDownloadProgress({ stage: 'downloading', percent: 71 })
+    })
+    expect(progressFill()).toHaveStyle({ width: '71%' })
+  })
+
+  it('shows how far along in bytes when the download says', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    const controls = mockApiControls(api)
+    vi.mocked(api.download.start).mockImplementation(() => new Promise(() => undefined))
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Some Remix')
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+
+    act(() => {
+      controls.emitDownloadProgress({ stage: 'downloading', percent: 40, bytes: 4 * MB })
+    })
+    // Half a figure is no figure: without a total there is nothing to be 4 MB of.
+    expect(screen.queryByText(/4\.0 MB \//)).toBeNull()
+
+    act(() => {
+      controls.emitDownloadProgress({
+        stage: 'downloading',
+        percent: 40,
+        bytes: 4 * MB,
+        totalBytes: 10 * MB
+      })
+    })
+    expect(screen.getByText('4.0 MB / 10.0 MB')).toBeInTheDocument()
+  })
+
+  /** Saving and transcoding cannot report a percentage; the bar has to say "working" anyway. */
+  it('slides the bar when the stage has no percentage to report', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    const controls = mockApiControls(api)
+    vi.mocked(api.download.start).mockImplementation(() => new Promise(() => undefined))
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.type(screen.getByRole('textbox', { name: 'Title' }), 'Some Remix')
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+
+    act(() => {
+      controls.emitDownloadProgress({ stage: 'saving', percent: null })
+    })
+
+    expect(progressFill()).toHaveClass('progress-indeterminate')
+    expect(progressTrack()).not.toHaveAttribute('aria-valuenow')
+    expect(screen.getByText('Saving…')).toBeInTheDocument()
+  })
+
+  /**
+   * The bundled yt-dlp is a self-extracting binary: its first run after launch spends half a minute
+   * unpacking itself. Saying so is the difference between a slow probe and a hung dialog.
+   */
+  it('warns that the first probe after launch is slow, while it is running', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    vi.mocked(api.download.probe).mockImplementation(() => new Promise(() => undefined))
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    expect(
+      screen.queryByText('Fetching details… (the first fetch after launch can take ~30s)')
+    ).toBeNull()
+
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+
+    const hint = screen.getByText('Fetching details… (the first fetch after launch can take ~30s)')
+    expect(hint.querySelector('.spinner')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fetch details' })).toBeDisabled()
+  })
+
+  it('stops warning once the probe answers', async () => {
+    const user = userEvent.setup()
+    seedApi()
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+    await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
+    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Fetching details… (the first fetch after launch can take ~30s)')
+      ).toBeNull()
+    )
   })
 
   /**

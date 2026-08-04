@@ -67,6 +67,14 @@ describe('appReducer', () => {
     expect(state.songs.map((s) => s.exists)).toEqual([true, false, true])
   })
 
+  /** `SongDto` promises `sizeBytes` is null exactly when `exists` is false — including in here. */
+  it('clears the size of a song it flags as missing', () => {
+    const state = reducer(seeded(), { type: 'library/songMissing', songId: 'b' })
+
+    expect(state.songs[1].sizeBytes).toBeNull()
+    expect(state.songs.map((s) => s.sizeBytes === null)).toEqual([false, true, false])
+  })
+
   it('upserts and removes playlists', () => {
     const created = reducer(seeded(), {
       type: 'playlists/upserted',
@@ -98,6 +106,30 @@ describe('appReducer', () => {
     const opened = reducer(seeded(), { type: 'dialog/opened', dialog: { kind: 'settings' } })
     expect(opened.dialog).toEqual({ kind: 'settings' })
     expect(reducer(opened, { type: 'dialog/closed' }).dialog).toBeNull()
+  })
+
+  it('opens the tag and add-to-playlist dialogs', () => {
+    const tags = reducer(seeded(), { type: 'dialog/opened', dialog: { kind: 'tags' } })
+    expect(tags.dialog).toEqual({ kind: 'tags' })
+
+    const adding = reducer(tags, {
+      type: 'dialog/opened',
+      dialog: { kind: 'addToPlaylist', playlistId: 'p1' }
+    })
+    expect(adding.dialog).toEqual({ kind: 'addToPlaylist', playlistId: 'p1' })
+  })
+
+  it('starts with no tags and takes the registry as it is loaded', () => {
+    expect(initialAppState().tags).toEqual([])
+
+    const loaded = reducer(seeded(), {
+      type: 'tags/loaded',
+      tags: [{ id: 't1', name: 'slowed', color: '#5ca8e0' }]
+    })
+    expect(loaded.tags).toEqual([{ id: 't1', name: 'slowed', color: '#5ca8e0' }])
+
+    const emptied = reducer(loaded, { type: 'tags/loaded', tags: [] })
+    expect(emptied.tags).toEqual([])
   })
 
   it('stacks toasts and dismisses them by id', () => {

@@ -38,9 +38,10 @@ export interface ImportDeps {
   fs?: ImporterFs
 }
 
-const nodeFs: ImporterFs = { access, copyFile, rm }
+export const nodeFs: ImporterFs = { access, copyFile, rm }
 
-async function pathExists(fs: ImporterFs, p: string): Promise<boolean> {
+/** Shared with `compressExisting`, which takes the same fs seam and asks the same question. */
+export async function pathExists(fs: ImporterFs, p: string): Promise<boolean> {
   try {
     await fs.access(p)
     return true

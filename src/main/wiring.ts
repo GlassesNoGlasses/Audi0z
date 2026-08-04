@@ -1,4 +1,4 @@
-import { access } from 'node:fs/promises'
+import { access, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { AppError } from '../shared/types'
 
@@ -16,6 +16,23 @@ export async function fileExists(absPath: string): Promise<boolean> {
     return true
   } catch {
     return false
+  }
+}
+
+/**
+ * Size in bytes, or `null` for anything that cannot be measured — missing, unreadable, not a file.
+ *
+ * **Must not reject.** `library:list` runs one of these per song inside a `Promise.all`, so a
+ * single rejection would fail the whole listing; and the DTO's `exists` is derived from the result
+ * being non-null, so "I could not tell" has to be a value rather than a throw.
+ *
+ * A real 0-byte file answers `0`, which is deliberately distinct from `null`.
+ */
+export async function fileSize(absPath: string): Promise<number | null> {
+  try {
+    return (await stat(absPath)).size
+  } catch {
+    return null
   }
 }
 
