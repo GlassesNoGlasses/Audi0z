@@ -3,11 +3,11 @@ import { AddSongDialog } from './components/AddSongDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { EditSongDialog } from './components/EditSongDialog'
 import { PlayerBar } from './components/PlayerBar'
-import { SearchBox } from './components/SearchBox'
 import { SettingsDialog } from './components/SettingsDialog'
 import { Sidebar } from './components/Sidebar'
 import { SongList } from './components/SongList'
 import { ToastHost } from './components/ToastHost'
+import { TopNav } from './components/TopNav'
 import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -193,26 +193,7 @@ function AppShell(): ReactElement {
     <div className="app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
       <Sidebar />
       <section className="library">
-        <header className="toolbar">
-          <SearchBox />
-          <button
-            type="button"
-            onClick={() =>
-              dispatch({
-                type: 'dialog/opened',
-                dialog: { kind: 'add', source: { kind: 'files', paths: [] } }
-              })
-            }
-          >
-            Add song
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: 'dialog/opened', dialog: { kind: 'settings' } })}
-          >
-            Settings
-          </button>
-        </header>
+        <TopNav />
         <SongList />
       </section>
       <PlayerBar audioRef={audioRef} />
