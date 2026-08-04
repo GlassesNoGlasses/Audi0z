@@ -74,6 +74,15 @@ describe('AddToPlaylistDialog', () => {
     expect(await within(dialog()).findByText('No songs match your search.')).toBeInTheDocument()
   })
 
+  /** Nothing was searched for, so "nothing matched" would be a report on a search never made. */
+  it('says the library is empty rather than blaming a search nobody ran', async () => {
+    seedApi({ songs: [], playlists: [playlist('p1', 'Mixes', [])] })
+    await openDialog()
+
+    expect(within(dialog()).getByText('No songs in your library yet.')).toBeInTheDocument()
+    expect(within(dialog()).queryByText('No songs match your search.')).toBeNull()
+  })
+
   it('adds a song, flips its row and puts it in the playlist', async () => {
     const api = seedApi({ songs, playlists: [mixes] })
     const user = await openDialog()

@@ -75,7 +75,10 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
         />
 
         {matches.length === 0 ? (
-          <p className="dialog-hint">No songs match your search.</p>
+          // Nothing was typed, so there is no search to blame: the library itself is empty.
+          <p className="dialog-hint">
+            {query.trim() === '' ? 'No songs in your library yet.' : 'No songs match your search.'}
+          </p>
         ) : (
           <ul className="add-list">
             {matches.map((song) => {
