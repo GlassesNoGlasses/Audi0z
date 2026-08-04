@@ -107,6 +107,23 @@ describe('Sidebar', () => {
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune'])
   })
 
+  it('keeps playing when a playlist that was only being viewed is deleted', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Delete playlist Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    // The view has nowhere to be but the library; the queue was never the playlist's to take.
+    await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune']))
+    expect(nowPlaying()).toBe('Alpha Mix')
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+  })
+
   it('renames a playlist', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs, playlists: [mixes] })

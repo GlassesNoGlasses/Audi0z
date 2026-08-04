@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, type DragEvent, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type DragEvent, type ReactElement } from 'react'
 import { AddSongDialog } from './components/AddSongDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { EditSongDialog } from './components/EditSongDialog'
@@ -10,6 +10,7 @@ import { SongList } from './components/SongList'
 import { ToastHost } from './components/ToastHost'
 import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { errorMessage, isTrashFailure } from './lib/errors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
@@ -118,6 +119,33 @@ function AppShell(): ReactElement {
     onError: handleError
   })
 
+  /** What to come back to when unmuting — muting must not lose where the slider was. */
+  const lastAudibleVolume = useRef(1)
+
+  useEffect(() => {
+    if (settings.volume > 0) lastAudibleVolume.current = settings.volume
+  }, [settings.volume])
+
+  const togglePlay = useCallback(() => dispatch({ type: 'transport/togglePlay' }), [dispatch])
+
+  // Applied to the store first so the audio and the slider react on the keystroke, then persisted
+  // — the same order the volume slider itself uses.
+  const toggleMute = useCallback(() => {
+    const next = settings.volume === 0 ? lastAudibleVolume.current || 1 : 0
+    dispatch({ type: 'settings/updated', settings: { ...settings, volume: next } })
+    void window.api.settings
+      .set({ volume: next })
+      .then((updated) => dispatch({ type: 'settings/updated', settings: updated }))
+      .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
+  }, [dispatch, settings])
+
+  useKeyboardShortcuts({
+    enabled: dialog === null,
+    hasCurrentSong: playback.currentId !== null,
+    onTogglePlay: togglePlay,
+    onToggleMute: toggleMute
+  })
+
   function onDrop(event: DragEvent<HTMLDivElement>): void {
     event.preventDefault()
     const files = event.dataTransfer?.files
@@ -150,15 +178,10 @@ function AppShell(): ReactElement {
       .remove(intent.playlistId)
       .then(() => {
         dispatch({ type: 'playlists/removed', playlistId: intent.playlistId })
+        // The view has nowhere left to be. The QUEUE is not touched: it may well be the library's,
+        // playing happily, and if it was this playlist's then the order effect above empties it.
         if (state.view.kind === 'playlist' && state.view.id === intent.playlistId) {
           dispatch({ type: 'view/selected', view: { kind: 'library' } })
-          dispatch({
-            type: 'queue/selected',
-            queueId: LIBRARY_QUEUE_ID,
-            order: songs.map((song) => song.id),
-            shuffle: settings.libraryShuffle,
-            repeat: settings.libraryRepeat
-          })
         }
       })
       .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))

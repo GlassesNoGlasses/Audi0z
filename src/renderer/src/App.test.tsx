@@ -14,6 +14,11 @@ import {
 
 stubMediaElement()
 
+/** A shortcut press. Nothing is focused by default, so the key arrives on the body. */
+function press(key: string, target: Element = document.body): void {
+  fireEvent.keyDown(target, { key })
+}
+
 describe('App shell', () => {
   it('renders the app name', async () => {
     seedApi()
@@ -120,6 +125,95 @@ describe('App shell', () => {
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1))
     expect(screen.getByRole('alert')).toHaveTextContent('library.json is read-only')
     expect(songTitles()).toEqual(['Alpha Mix'])
+  })
+})
+
+describe('App keyboard shortcuts', () => {
+  const songs = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')]
+
+  it('plays and pauses the cued song with the space bar', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+    press(' ')
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+
+    press(' ')
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  it('leaves a cold queue alone — space resumes, it does not choose a song', async () => {
+    seedApi({ songs })
+    await renderApp()
+
+    press(' ')
+
+    expect(nowPlaying()).toBe('Nothing playing')
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+  })
+
+  it('stays out of the way while a dialog is open', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+
+    press(' ')
+    press('m')
+
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    expect(audioElement().volume).toBe(1)
+  })
+
+  it('stays out of the way while the user is typing', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const search = screen.getByRole('searchbox', { name: 'Search songs' })
+
+    press(' ', search)
+    press('m', search)
+
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+    expect(audioElement().volume).toBe(1)
+  })
+
+  it('mutes and unmutes with m, restoring the volume it was at', async () => {
+    const api = seedApi({ songs, settings: { volume: 0.7 } })
+    await renderApp()
+    expect(audioElement().volume).toBe(0.7)
+
+    press('m')
+
+    await waitFor(() => expect(api.settings.set).toHaveBeenLastCalledWith({ volume: 0 }))
+    expect(audioElement().volume).toBe(0)
+    expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('0')
+
+    press('m')
+
+    // Back to 0.7, not to full — the ref remembers what was audible last.
+    await waitFor(() => expect(api.settings.set).toHaveBeenLastCalledWith({ volume: 0.7 }))
+    expect(audioElement().volume).toBe(0.7)
+    expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('0.7')
+  })
+
+  it('says so when the muted volume cannot be persisted', async () => {
+    const api = seedApi({ songs })
+    vi.mocked(api.settings.set).mockRejectedValue(new Error('settings.json is read-only'))
+    await renderApp()
+
+    press('m')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('settings.json is read-only')
   })
 })
 
