@@ -17,6 +17,12 @@ export interface LibraryStore {
   getSong(id: string): Promise<Song | undefined>
   add(song: Song): Promise<Song>
   update(id: string, patch: Partial<Pick<Song, 'title' | 'tags' | 'durationSec'>>): Promise<Song>
+  /**
+   * Records a batch of measured playing times in a single persist, and answers with the songs it
+   * matched. Ids that are no longer in the library are skipped rather than refused — a song can be
+   * deleted between the probe that measured it and the write.
+   */
+  updateDurations(entries: ReadonlyArray<{ id: string; durationSec: number }>): Promise<Song[]>
   remove(id: string): Promise<void>
   /**
    * Rewrites one tag name across the whole library in a single persist. A song that already carries

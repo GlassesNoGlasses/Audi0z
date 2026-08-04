@@ -116,6 +116,29 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
     },
 
     /**
+     * The duration backfill's one write: every measurement in a single persist, the way `renameTag`
+     * does — a per-song persist would rewrite `library.json` once per probed song. Unknown ids are
+     * skipped, not refused: a song can be deleted between the probe and the flush.
+     */
+    async updateDurations(entries) {
+      const byId = new Map(entries.map((entry) => [entry.id, entry.durationSec]))
+      const current = await load()
+      const updated: Song[] = []
+      // In place, like the tag passes: `current` IS the cache every read is served from, so a
+      // rebuilt array would reach the disk while `list` kept answering with the old durations.
+      for (let index = 0; index < current.length; index++) {
+        const durationSec = byId.get(current[index].id)
+        if (durationSec === undefined) continue
+        const changed: Song = { ...current[index], durationSec }
+        current[index] = changed
+        updated.push(changed)
+      }
+      if (updated.length === 0) return []
+      await persist(current)
+      return updated.map(cloneSong)
+    },
+
+    /**
      * Renames one tag across the whole library.
      *
      * Exact string match: the tag registry is what decides two names are "the same", and it already

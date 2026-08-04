@@ -218,6 +218,45 @@ describe('update: durationSec', () => {
   })
 })
 
+describe('updateDurations', () => {
+  it('writes every measured duration in one pass and skips ids that are gone', async () => {
+    const store = createLibraryStore(lib.root)
+    const a = await store.add(draft({ title: 'A', fileName: 'a.wav', tags: [] }))
+    const b = await store.add(draft({ title: 'B', fileName: 'b.wav', tags: [] }))
+    resetWrites()
+
+    const updated = await store.updateDurations([
+      { id: a.id, durationSec: 173 },
+      { id: b.id, durationSec: 41 },
+      { id: 'ghost', durationSec: 9 }
+    ])
+
+    expect(writeCount()).toBe(1)
+    expect(updated.map((s) => [s.id, s.durationSec])).toEqual([
+      [a.id, 173],
+      [b.id, 41]
+    ])
+    const all = await store.list()
+    expect(all.find((s) => s.id === a.id)?.durationSec).toBe(173)
+    expect(all.find((s) => s.id === b.id)?.durationSec).toBe(41)
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([
+      { ...a, durationSec: 173 },
+      { ...b, durationSec: 41 }
+    ])
+  })
+
+  it('does not touch the file when nothing matched', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft())
+    resetWrites()
+
+    await expect(store.updateDurations([{ id: 'ghost', durationSec: 9 }])).resolves.toEqual([])
+
+    expect(writeCount()).toBe(0)
+    expect(await store.list()).toEqual([added])
+  })
+})
+
 describe('renameTag', () => {
   it('rewrites the tag on every song that carries it, in a single write', async () => {
     const store = createLibraryStore(lib.root)
