@@ -217,7 +217,8 @@ input[type='range'] {
   background: var(--accent);
   border-color: var(--accent);
   border-radius: 50%;
-  color: #16161a;
+  /* The page's own background: a dark glyph punched out of the accent fill. */
+  color: var(--bg);
   display: inline-flex;
   font-size: 13px;
   height: 30px;
@@ -491,11 +492,17 @@ input[type='range'] {
   margin: 0;
 }
 
+/* Long titles ellipsise inside the rows, which a flex item's automatic minimum width would undo. */
+.settings-files {
+  min-width: 0;
+}
+
 /* A chevron and a word, not a button-looking button: it opens a section of this dialog. */
 .disclosure {
   background: none;
   border: none;
   padding: 0;
+  text-align: left;
 }
 
 .file-list {

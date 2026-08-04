@@ -1,6 +1,7 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import type { SongDto } from '../../../shared/types'
 import { renderApp, seedApi, song, stubMediaElement } from '../testing/harness'
 
 stubMediaElement()
@@ -151,6 +152,30 @@ describe('SettingsDialog storage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Compressed "Alpha Mix"')
     await waitFor(() => expect(settings()).toHaveTextContent('1.6 MB'))
     // Nothing left to compress on that row.
+    expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
+  })
+
+  /** ffmpeg is expensive and the row is one click wide: a second run must not be startable. */
+  it('takes no second click while a file is being compressed', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
+    let finish = (_compressed: SongDto): void => {}
+    vi.mocked(api.library.compress).mockReturnValue(
+      new Promise<SongDto>((resolve) => {
+        finish = resolve
+      })
+    )
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    await user.click(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' }))
+
+    expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeDisabled()
+
+    await act(async () => {
+      finish(song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB }))
+    })
+
+    expect(api.library.compress).toHaveBeenCalledTimes(1)
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
   })
 
