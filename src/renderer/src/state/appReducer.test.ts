@@ -111,6 +111,38 @@ describe('appReducer', () => {
     expect(removed.playlists).toEqual([])
   })
 
+  /**
+   * The other half of the seam: `playlists/removed` is a playback action as well as a list one, so
+   * a deleted playlist cannot stay the queue — the toggles would write shuffle back to a dead id.
+   */
+  it('drops a deleted playlist from the queue as well as from the list', () => {
+    const listed = reducer(seeded(), {
+      type: 'playlists/upserted',
+      playlist: playlist('p1', 'Mixes', ['a'])
+    })
+    const expanded = reducer(listed, { type: 'playlist/expandToggled', playlistId: 'p1' })
+    const queued = reducer(expanded, {
+      type: 'queue/selected',
+      queueId: 'p1',
+      order: ['a'],
+      shuffle: false,
+      repeat: false,
+      startSongId: 'a'
+    })
+    expect(queued.playback.currentId).toBe('a')
+
+    const next = reducer(queued, { type: 'playlists/removed', playlistId: 'p1' })
+
+    expect(next.playlists).toEqual([])
+    expect(next.playback.queueId).toBeNull()
+    expect(next.playback.currentId).toBeNull()
+    expect(next.playback.order).toEqual([])
+    // The app-level half of the case still runs: nothing is left expanded either.
+    expect([...next.expandedPlaylists]).toEqual([])
+    // The songs themselves are the library's, not the playlist's.
+    expect(next.songs.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+  })
+
   it('toggles a playlist open and shut without touching the queue', () => {
     const before = seeded()
     const opened = reducer(before, { type: 'playlist/expandToggled', playlistId: 'p1' })

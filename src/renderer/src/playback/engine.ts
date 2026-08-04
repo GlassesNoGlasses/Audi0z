@@ -115,6 +115,8 @@ export function playbackReducer(
       return { ...state, repeat: action.value }
     case 'library/songsRemoved':
       return removeSongs(state, action.songIds)
+    case 'playlists/removed':
+      return removePlaylist(state, action.playlistId)
   }
 }
 
@@ -223,6 +225,29 @@ function removeSongs(state: PlaybackState, songIds: readonly string[]): Playback
     playedByQueue,
     currentId: currentRemoved ? null : state.currentId,
     isPlaying: currentRemoved ? false : state.isPlaying
+  }
+}
+
+/**
+ * A playlist was deleted: its played flags go with it, and if it was the queue then so does the
+ * queue. Stopping outright is `queue/selected` with nothing to start — there is no next queue to
+ * hand over to, and a `queueId` nobody can select again is the bug this exists to prevent.
+ */
+function removePlaylist(state: PlaybackState, playlistId: string): PlaybackState {
+  const playedByQueue: Record<string, PlayedMap> = {}
+  for (const [queueId, map] of Object.entries(state.playedByQueue)) {
+    if (queueId !== playlistId) playedByQueue[queueId] = map
+  }
+  if (state.queueId !== playlistId) return { ...state, playedByQueue }
+
+  return {
+    ...state,
+    playedByQueue,
+    queueId: null,
+    order: [],
+    currentId: null,
+    history: [],
+    isPlaying: false
   }
 }
 

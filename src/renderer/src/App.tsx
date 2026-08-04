@@ -186,8 +186,8 @@ function AppShell(): ReactElement {
       .remove(intent.playlistId)
       .then(() => {
         dispatch({ type: 'playlists/removed', playlistId: intent.playlistId })
-        // The view has nowhere left to be. The QUEUE is not touched: it may well be the library's,
-        // playing happily, and if it was this playlist's then the order effect above empties it.
+        // The view has nowhere left to be. The queue looks after itself: `playlists/removed` goes
+        // through the playback engine too, which stops it only if this playlist was the one queued.
         if (state.view.kind === 'playlist' && state.view.id === intent.playlistId) {
           dispatch({ type: 'view/selected', view: { kind: 'library' } })
         }
