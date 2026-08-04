@@ -296,8 +296,31 @@ input[type='range'] {
   gap: 6px;
 }
 
-.player-play {
+/*
+ * ▶ and ⏸ are different widths, so a button sized by its glyph resized on every play/pause and
+ * shoved the rest of the row sideways. Fixed boxes instead: the transport never moves.
+ */
+.player-transport button {
+  align-items: center;
+  display: inline-flex;
+  height: 32px;
+  justify-content: center;
+  /* The box is the size now, so the glyph gets the whole of it rather than fighting the padding. */
+  padding: 0;
+  width: 36px;
+}
+
+/* Specific enough to beat the `width` above. */
+.player-transport button.player-play {
   font-size: 16px;
+  width: 44px;
+}
+
+/* An enabled toggle has to be unmistakable, not a one-pixel border difference. */
+.player-toggles button[aria-pressed='true'] {
+  background: var(--panel-2);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .player-main {
