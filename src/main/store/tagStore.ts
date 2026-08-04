@@ -44,7 +44,7 @@ function cloneTag(tag: Tag): Tag {
  * HSL -> `#rrggbb`, per CSS Color 4. Local because this is the only colour arithmetic in the app
  * and a dependency for six lines of maths would not pay for itself.
  */
-export function hslToHex(hue: number, saturation: number, lightness: number): string {
+function hslToHex(hue: number, saturation: number, lightness: number): string {
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
   const second = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
   const min = lightness - chroma / 2
