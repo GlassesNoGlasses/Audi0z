@@ -44,6 +44,11 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions): void {
       // A held key would otherwise stutter play/pause dozens of times a second.
       if (event.repeat) return
 
+      // A combination belongs to the OS or to the app chrome, never to the transport: ⌘M is
+      // Minimize on macOS, and answering it here would silently mute — and persist that mute — as
+      // the window went down. Shift is not in the list: it is how the keyboard produces `M`.
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+
       const { enabled, hasCurrentSong, onTogglePlay, onToggleMute } = latest.current
       if (!enabled || isTyping(event.target)) return
 

@@ -46,6 +46,18 @@ function press(key: string, target: EventTarget = document.body, repeat = false)
   return event
 }
 
+/** A `keydown` carrying a modifier — how a system or app shortcut (⌘M, Ctrl+M) arrives. */
+function pressWith(key: string, modifier: 'metaKey' | 'ctrlKey' | 'altKey'): KeyboardEvent {
+  const event = new KeyboardEvent('keydown', {
+    key,
+    [modifier]: true,
+    bubbles: true,
+    cancelable: true
+  })
+  document.body.dispatchEvent(event)
+  return event
+}
+
 /** An element of `tag`, attached to the document so the event reaches `document`. */
 function attach(tag: string): HTMLElement {
   const element = document.createElement(tag)
@@ -165,6 +177,35 @@ describe('useKeyboardShortcuts — m', () => {
     press('m', document.body, true)
 
     expect(onToggleMute).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * A combination belongs to the OS or to the app chrome, never to the transport: on macOS ⌘M is
+ * Minimize, and answering it here would silently mute the player — and persist that mute — as the
+ * window went down.
+ */
+describe('useKeyboardShortcuts — modifiers', () => {
+  it.each(['metaKey', 'ctrlKey', 'altKey'] as const)('leaves %s combinations alone', (modifier) => {
+    const { onTogglePlay, onToggleMute } = setup()
+
+    const space = pressWith(' ', modifier)
+    pressWith('m', modifier)
+
+    expect(onTogglePlay).not.toHaveBeenCalled()
+    expect(onToggleMute).not.toHaveBeenCalled()
+    // Not swallowed either: the combination is somebody else's to handle.
+    expect(space.defaultPrevented).toBe(false)
+  })
+
+  /** Shift is not a combination here — it is how the keyboard produces `M` at all. */
+  it('still mutes on Shift+M', () => {
+    const { onToggleMute } = setup()
+
+    const event = new KeyboardEvent('keydown', { key: 'M', shiftKey: true, bubbles: true })
+    document.body.dispatchEvent(event)
+
+    expect(onToggleMute).toHaveBeenCalledTimes(1)
   })
 })
 
