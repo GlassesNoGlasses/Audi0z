@@ -49,9 +49,11 @@ function SongRowView({
   useEffect(() => {
     if (!menuOpen) return
 
+    // Deliberately does NOT `preventDefault`, unlike the dialogs': this menu is not modal, and a
+    // dialog can legitimately be open behind it (a file dropped on the window while it was up).
+    // Swallowing the key there would take two presses to get out of one Escape's worth of trouble.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
-      event.preventDefault()
       setMenuOpen(false)
       setTagsOpen(false)
     }
@@ -91,26 +93,29 @@ function SongRowView({
         {song.title}
       </button>
       {song.exists ? null : <span className="song-missing">File missing</span>}
-      <span className="song-tags">
-        {song.tags.map((name) => {
-          // A song may carry a tag the registry has never heard of (hand-edited JSON, or a tag
-          // deleted between two reads) — it still shows, in the stylesheet's grey.
-          const known = tags.find((tag) => tag.name === name)
-          return (
-            <span
-              key={name}
-              className="song-tag"
-              style={
-                known
-                  ? { background: known.color, color: readableTextColor(known.color) }
-                  : undefined
-              }
-            >
-              {name}
-            </span>
-          )
-        })}
-      </span>
+      {/* Nothing at all rather than an empty box: a flex gap either side of it is a gap for good. */}
+      {song.tags.length === 0 ? null : (
+        <span className="song-tags">
+          {song.tags.map((name) => {
+            // A song may carry a tag the registry has never heard of (hand-edited JSON, or a tag
+            // deleted between two reads) — it still shows, in the stylesheet's grey.
+            const known = tags.find((tag) => tag.name === name)
+            return (
+              <span
+                key={name}
+                className="song-tag"
+                style={
+                  known
+                    ? { background: known.color, color: readableTextColor(known.color) }
+                    : undefined
+                }
+              >
+                {name}
+              </span>
+            )
+          })}
+        </span>
+      )}
       <span className="song-size">{formatBytes(song.sizeBytes)}</span>
 
       <div className="song-menu" ref={menuRef}>

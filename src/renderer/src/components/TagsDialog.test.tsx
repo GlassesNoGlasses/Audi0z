@@ -11,9 +11,9 @@ const tags = [
   { id: 't2', name: 'reverb', color: '#3b2f8f' }
 ]
 
-/** Tag names as the song rows behind the dialog show them. */
+/** Tag chips as the song rows behind the dialog show them. A row with none draws none. */
 function songTags(): string[] {
-  return [...document.querySelectorAll('.song-list .song-tags')].map((el) => el.textContent ?? '')
+  return [...document.querySelectorAll('.song-list .song-tag')].map((el) => el.textContent ?? '')
 }
 
 /**
@@ -124,7 +124,8 @@ describe('TagsDialog', () => {
       expect(screen.queryByRole('button', { name: 'Delete tag slowed' })).toBeNull()
     )
     expect(screen.getByRole('button', { name: 'Delete tag reverb' })).toBeInTheDocument()
-    expect(songTags()).toEqual([''])
+    // The cascade reached the row: the chip it was drawing is gone with the tag.
+    expect(songTags()).toEqual([])
   })
 
   it('says so when a tag cannot be deleted', async () => {
