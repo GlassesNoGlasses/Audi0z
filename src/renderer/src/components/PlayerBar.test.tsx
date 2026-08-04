@@ -63,8 +63,10 @@ describe('PlayerBar toggles', () => {
     const api = seedApi({ songs })
     await renderApp()
 
-    // The styling of an enabled toggle keys off `aria-pressed`, so the flip is the anchor for it.
+    // The accent fill that marks an enabled toggle keys off `aria-pressed`, so both flips are the
+    // behavioural anchor for it.
     expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByRole('button', { name: 'Repeat' })).toHaveAttribute('aria-pressed', 'false')
 
     await user.click(screen.getByRole('button', { name: 'Shuffle' }))
     expect(api.settings.set).toHaveBeenCalledWith({ libraryShuffle: true })
