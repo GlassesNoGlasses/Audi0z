@@ -11,6 +11,7 @@ import { ToastHost } from './components/ToastHost'
 import { TopNav } from './components/TopNav'
 import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
+import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { errorMessage, isTrashFailure } from './lib/errors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
@@ -39,6 +40,9 @@ function AppShell(): ReactElement {
   const { songs, playlists, settings, playback, dialog } = state
 
   useApiEvents(dispatch)
+  // Songs are listed long before anything has decoded their headers; this measures them behind the
+  // list and persists what it finds, so the times only ever have to be read once.
+  useDurationBackfill(songs, dispatch)
 
   // Start-up: load everything, then make the Library the queue.
   useEffect(() => {
