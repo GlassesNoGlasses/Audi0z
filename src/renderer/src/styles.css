@@ -480,6 +480,64 @@ input[type='range'] {
   justify-content: flex-end;
 }
 
+/*
+ * Chips fill the row before they wrap, and the block of them stays centred and top-aligned however
+ * many there are — a registry of three should not sit in the middle of an empty panel.
+ */
+.tag-chips {
+  align-content: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+/* Its own colour and, from `readableTextColor`, ink that can be read on it. */
+.tag-chip {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 6px 3px 10px;
+}
+
+.tag-chip button {
+  background: none;
+  border: none;
+  /* Inherited from the chip, so the buttons are legible on every colour. */
+  color: inherit;
+  line-height: 1;
+  opacity: 0.7;
+  padding: 0 2px;
+}
+
+.tag-chip button:hover:not(:disabled) {
+  border-color: transparent;
+  opacity: 1;
+}
+
+/*
+ * Confirming inside the dialog that opened it: there is one dialog slot, so the global confirm
+ * would close the dialog the user is working in.
+ */
+.confirm-strip {
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  display: flex;
+  font-size: 12px;
+  gap: 8px;
+  padding: 8px 10px;
+}
+
+.confirm-strip span {
+  flex: 1;
+}
+
 .segmented {
   display: flex;
   gap: 4px;

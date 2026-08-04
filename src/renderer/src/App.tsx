@@ -6,6 +6,7 @@ import { PlayerBar } from './components/PlayerBar'
 import { SettingsDialog } from './components/SettingsDialog'
 import { Sidebar } from './components/Sidebar'
 import { SongList } from './components/SongList'
+import { TagsDialog } from './components/TagsDialog'
 import { ToastHost } from './components/ToastHost'
 import { TopNav } from './components/TopNav'
 import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
@@ -202,6 +203,8 @@ function AppShell(): ReactElement {
       {dialog?.kind === 'add' ? <AddSongDialog source={dialog.source} /> : null}
       {dialog?.kind === 'edit' ? <EditSongDialog songId={dialog.songId} /> : null}
       {dialog?.kind === 'settings' ? <SettingsDialog /> : null}
+      {dialog?.kind === 'tags' ? <TagsDialog /> : null}
+      {/* `addToPlaylist` has no dialog to render yet — its modal arrives with the song rows. */}
       {dialog?.kind === 'confirm' ? (
         <ConfirmDialog
           message={dialog.message}
