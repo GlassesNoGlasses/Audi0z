@@ -1,33 +1,11 @@
 import { useCallback, useMemo, type ReactElement } from 'react'
-import type { Playlist, SongDto } from '../../../shared/types'
 import { errorMessage } from '../lib/errors'
 import { filterSongs } from '../lib/search'
+import { songsInView, viewedPlaylist } from '../lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
-import type { AppState, View } from '../state/appReducer'
+import type { AppState } from '../state/appReducer'
 import { SongRow } from './SongRow'
-
-/** The playlist being viewed, or null in the Library view. */
-function viewedPlaylist(view: View, playlists: Playlist[]): Playlist | null {
-  if (view.kind === 'library') return null
-  return playlists.find((playlist) => playlist.id === view.id) ?? null
-}
-
-/**
- * The songs the current view is about, in the view's own order.
- *
- * A playlist may still reference a song that was deleted between two reads, so unknown ids are
- * dropped rather than rendered as holes.
- */
-function songsInView(songs: SongDto[], playlist: Playlist | null, view: View): SongDto[] {
-  if (view.kind === 'library') return songs
-  if (!playlist) return []
-  const byId = new Map(songs.map((song) => [song.id, song]))
-  return playlist.songIds.flatMap((id) => {
-    const song = byId.get(id)
-    return song ? [song] : []
-  })
-}
 
 export function SongList(): ReactElement {
   const state = useAppState()
