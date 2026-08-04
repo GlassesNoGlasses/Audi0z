@@ -11,3 +11,16 @@ export class NotFoundError extends Error {
     this.name = 'NotFound'
   }
 }
+
+/**
+ * Thrown when a write would collide with something already there — a second tag by the same name.
+ *
+ * Only the *message* survives IPC serialization (the class and its `name` do not), so it has to
+ * read as something a user can act on all by itself.
+ */
+export class ConflictError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'Conflict'
+  }
+}

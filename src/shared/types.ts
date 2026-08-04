@@ -17,6 +17,12 @@ export interface Song {
   sourceUrl?: string
   /** True when the audio was transcoded to Opus on the way in. */
   compressed: boolean
+  /**
+   * Playing time in whole seconds. Absent until something has measured it — the renderer probes it
+   * lazily off the `<audio>` element and writes it back, because reading it in the main process
+   * would mean an ffprobe run per song at startup.
+   */
+  durationSec?: number
 }
 
 /** A song as handed to the renderer: enriched with playback/presence info. */
@@ -25,6 +31,16 @@ export interface SongDto extends Song {
   exists: boolean
   /** `media://audio/<id>` */
   url: string
+  /** On-disk size in bytes; `null` exactly when `exists` is false. */
+  sizeBytes: number | null
+}
+
+/** A tag in the registry — the named, coloured thing the UI filters by. */
+export interface Tag {
+  id: string
+  name: string
+  /** '#rrggbb', assigned randomly at creation. */
+  color: string
 }
 
 export interface Playlist {
@@ -56,6 +72,11 @@ export interface LibraryFile {
 export interface PlaylistsFile {
   version: 1
   playlists: Playlist[]
+}
+
+export interface TagsFile {
+  version: 1
+  tags: Tag[]
 }
 
 export interface AddSongRequest {

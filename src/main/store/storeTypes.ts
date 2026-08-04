@@ -1,4 +1,4 @@
-import type { Playlist, Settings, Song } from '../../shared/types'
+import type { Playlist, Settings, Song, Tag } from '../../shared/types'
 
 /**
  * Persistence seam for the main process. WP2 implements these against atomic JSON files; other
@@ -16,8 +16,30 @@ export interface LibraryStore {
   /** Single-song lookup, used by the `media://` protocol handler on every range request. */
   getSong(id: string): Promise<Song | undefined>
   add(song: Song): Promise<Song>
-  update(id: string, patch: Partial<Pick<Song, 'title' | 'tags'>>): Promise<Song>
+  update(id: string, patch: Partial<Pick<Song, 'title' | 'tags' | 'durationSec'>>): Promise<Song>
   remove(id: string): Promise<void>
+  /**
+   * Rewrites one tag name across the whole library in a single persist. A song that already carries
+   * `newName` loses `oldName` rather than ending up with it twice.
+   */
+  renameTag(oldName: string, newName: string): Promise<void>
+  /** Drops one tag name from every song, in a single persist. */
+  removeTag(name: string): Promise<void>
+  /** Points a song at a different file — how an in-place compression is recorded. */
+  replaceFile(id: string, fileName: string, compressed: boolean): Promise<Song>
+}
+
+/**
+ * The named/coloured registry behind the plain tag strings songs carry. Names are unique
+ * case-insensitively; the cascade onto songs is the IPC layer's job, not this store's.
+ */
+export interface TagStore {
+  list(): Promise<Tag[]>
+  create(name: string): Promise<Tag>
+  rename(id: string, name: string): Promise<Tag>
+  /** Idempotent: removing an id that is not there is a no-op, not an error. */
+  remove(id: string): Promise<void>
+  getTag(id: string): Promise<Tag | undefined>
 }
 
 export interface PlaylistStore {
@@ -44,3 +66,5 @@ export interface SettingsStore {
 export type CreateLibraryStore = (dir: string) => LibraryStore
 export type CreatePlaylistStore = (dir: string) => PlaylistStore
 export type CreateSettingsStore = (dir: string) => SettingsStore
+/** `rng` defaults to `Math.random`; a test pins it to get a predictable tag colour. */
+export type CreateTagStore = (dir: string, rng?: () => number) => TagStore

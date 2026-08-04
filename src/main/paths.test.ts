@@ -8,7 +8,8 @@ import {
   libraryJsonPath,
   playlistsJsonPath,
   resolveLibraryRoot,
-  settingsJsonPath
+  settingsJsonPath,
+  tagsJsonPath
 } from './paths'
 
 const MUSIC_DIR = path.join(path.sep, 'Users', 'tester', 'Music')
@@ -56,6 +57,7 @@ describe('library file paths', () => {
     expect(libraryJsonPath(root)).toBe(path.join(root, 'library.json'))
     expect(playlistsJsonPath(root)).toBe(path.join(root, 'playlists.json'))
     expect(settingsJsonPath(root)).toBe(path.join(root, 'settings.json'))
+    expect(tagsJsonPath(root)).toBe(path.join(root, 'tags.json'))
     expect(audioDir(root)).toBe(path.join(root, 'audio'))
   })
 })
