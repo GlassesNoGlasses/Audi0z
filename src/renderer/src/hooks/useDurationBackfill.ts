@@ -132,7 +132,13 @@ export function useDurationBackfill(songs: SongDto[], dispatch: Dispatch<AppActi
         if (song === undefined) return
         const seconds = await read(song)
         if (seconds === null) continue
-        pending.current.push({ id: song.id, durationSec: Math.round(seconds) })
+        const durationSec = Math.round(seconds)
+        // A file under half a second rounds to 0, and the library refuses 0 as a playing time —
+        // it refuses the whole batch with it, so one of these would cost every measurement
+        // travelling alongside. Left out instead: the row keeps its placeholder and is never asked
+        // again, exactly the outcome the old write-per-song path had when that write was rejected.
+        if (durationSec <= 0) continue
+        pending.current.push({ id: song.id, durationSec })
         if (pending.current.length >= FLUSH_SIZE) await flush()
       }
     }

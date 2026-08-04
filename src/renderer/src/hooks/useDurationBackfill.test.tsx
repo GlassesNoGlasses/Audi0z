@@ -91,6 +91,30 @@ describe('useDurationBackfill', () => {
     ])
   })
 
+  /**
+   * A file under half a second rounds to 0, and the library refuses 0 as a playing time — it
+   * refuses the whole batch with it, so one such file would cost every measurement riding along.
+   * Left behind here instead, which is what the old write-per-song path did with the write it
+   * rejected: the row keeps its placeholder and is never asked again.
+   */
+  it('leaves behind a probe too short to round to a second rather than losing the batch', async () => {
+    const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
+    const api = seedApi({ songs: three })
+    backfill(three)
+
+    await waitFor(() => expect(probes).toHaveLength(2))
+    await reportDuration(probes[0], 173)
+    await reportDuration(probes[1], 0.4)
+    await waitFor(() => expect(probes).toHaveLength(3))
+    await reportDuration(probes[2], 12)
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.library.updateDurations).mock.calls[0][0]).toEqual([
+      { id: 'a', durationSec: 173 },
+      { id: 'c', durationSec: 12 }
+    ])
+  })
+
   /** A first launch has thousands of these, and none of them should wait for the last one. */
   it('flushes a full batch early rather than holding every measurement to the end', async () => {
     const nine = Array.from({ length: 9 }, (_, index) => song(`s${index}`, `Song ${index}`))
