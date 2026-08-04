@@ -139,9 +139,12 @@ export function Sidebar(): ReactElement {
                 </div>
                 {expanded ? (
                   <ul className="playlist-songs">
-                    {playlist.songIds.map((songId) => (
-                      <li key={songId}>{titleOf(songId)}</li>
-                    ))}
+                    {/* An expansion that renders nothing reads as broken rather than as empty. */}
+                    {playlist.songIds.length === 0 ? (
+                      <li className="playlist-empty">playlist is empty</li>
+                    ) : (
+                      playlist.songIds.map((songId) => <li key={songId}>{titleOf(songId)}</li>)
+                    )}
                   </ul>
                 ) : null}
               </li>

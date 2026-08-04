@@ -72,6 +72,17 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
   })
 
+  /** An expanded playlist that renders nothing reads as broken rather than as empty. */
+  it('says so when an expanded playlist has nothing in it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [playlist('p2', 'Later', [])] })
+    await renderApp()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Expand Later' }))
+
+    expect(within(sidebar()).getByText('playlist is empty')).toBeInTheDocument()
+  })
+
   it('creates a playlist', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs })
