@@ -2,9 +2,19 @@ import { useMemo, useState, type ReactElement } from 'react'
 import type { SongDto } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage } from '../lib/errors'
+import { errorMessage, isTrashFailure } from '../lib/errors'
 import { formatBytes, formatCompressionSaving } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
+
+/**
+ * Why the player's own song cannot be compressed.
+ *
+ * ffmpeg replaces the file in place, and the `<audio>` element streams it by Range request for as
+ * long as the song is cued — paused included. Swapping the file underneath makes the next request
+ * fail, and the app reads that failure as a file gone missing: the user would be told compression
+ * lost the song. Not offering it is the cheap, deterministic way out.
+ */
+const HELD_BY_PLAYER = 'Loaded in the player — compressing would replace the file it is streaming'
 
 /** Heaviest first; a file whose size could not be read has nothing to sort by, so it sinks. */
 function bySizeDescending(songs: SongDto[]): SongDto[] {
@@ -12,7 +22,7 @@ function bySizeDescending(songs: SongDto[]): SongDto[] {
 }
 
 export function SettingsDialog(): ReactElement {
-  const { settings, songs } = useAppState()
+  const { settings, songs, playback } = useAppState()
   const dispatch = useAppDispatch()
   const [updating, setUpdating] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
@@ -73,6 +83,9 @@ export function SettingsDialog(): ReactElement {
    * Re-reading the library only reshapes the queue's ORDER; the history and the played flags are
    * the engine's, and only this action clears the deleted song out of them. Left there, Prev would
    * cue a song that no longer exists and quietly kill the transport.
+   *
+   * The failure is enriched exactly as `App.confirmIntent` enriches the song row's own delete: the
+   * same refusal from the OS has to tell the user the same story from both places.
    */
   function remove(songId: string): void {
     setConfirmingId(null)
@@ -82,7 +95,14 @@ export function SettingsDialog(): ReactElement {
         dispatch({ type: 'library/songsRemoved', songIds: [songId] })
         await refreshLibrary(dispatch)
       })
-      .catch(fail)
+      .catch((error: unknown) => {
+        dispatch({
+          type: 'toast/pushed',
+          message: isTrashFailure(error)
+            ? `${errorMessage(error)} — the song is still in your library.`
+            : errorMessage(error)
+        })
+      })
   }
 
   return (
@@ -123,7 +143,8 @@ export function SettingsDialog(): ReactElement {
                         type="button"
                         className="btn-grey"
                         aria-label={`Compress ${song.title}`}
-                        disabled={compressing.has(song.id)}
+                        disabled={compressing.has(song.id) || song.id === playback.currentId}
+                        title={song.id === playback.currentId ? HELD_BY_PLAYER : undefined}
                         onClick={() => compress(song)}
                       >
                         Compress

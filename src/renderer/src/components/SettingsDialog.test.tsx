@@ -179,6 +179,45 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
   })
 
+  /**
+   * ffmpeg replaces the file in place. Doing that to the song the `<audio>` element is streaming
+   * makes its next Range request fail, and the app reads that failure as a missing file — so the
+   * user is told compression lost their song. The row simply does not offer it meanwhile.
+   */
+  it('does not offer to compress the song the player is holding', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    const held = within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })
+    expect(held).toBeDisabled()
+    expect(held.getAttribute('title')).toMatch(/player/i)
+    // Every other row is untouched: only the one file is under the player.
+    expect(within(settings()).getByRole('button', { name: 'Compress Bravo Beat' })).toBeEnabled()
+  })
+
+  it('offers it again once the player has moved on', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(screen.getByRole('button', { name: 'Bravo Beat' }))
+    expect(nowPlaying()).toBe('Bravo Beat')
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeEnabled()
+    expect(within(settings()).getByRole('button', { name: 'Compress Bravo Beat' })).toBeDisabled()
+  })
+
   it('says so when a file cannot be compressed', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     vi.mocked(api.library.compress).mockRejectedValue(
@@ -219,6 +258,23 @@ describe('SettingsDialog storage', () => {
 
     expect(api.library.remove).toHaveBeenCalledWith('a')
     await waitFor(() => expect(fileTitles()).toEqual(['Bravo Beat']))
+  })
+
+  /** The same failure has to tell the same story here as it does from the song row's own menu. */
+  it('says the song survived a delete the OS refused, exactly as the row does', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
+    vi.mocked(api.library.remove).mockRejectedValue(new Error('Failed to move item a.wav to trash'))
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    await user.click(within(settings()).getByRole('button', { name: 'Delete Alpha Mix' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Failed to move item a.wav to trash — the song is still in your library.'
+    )
+    // And it really is: the list never lost the row.
+    expect(fileTitles()).toEqual(['Alpha Mix'])
   })
 
   /**
