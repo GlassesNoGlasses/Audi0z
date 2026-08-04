@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type DragEvent, type ReactElement } from 'react'
 import { AddSongDialog } from './components/AddSongDialog'
+import { AddToPlaylistDialog } from './components/AddToPlaylistDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { EditSongDialog } from './components/EditSongDialog'
 import { PlayerBar } from './components/PlayerBar'
@@ -208,7 +209,9 @@ function AppShell(): ReactElement {
       {dialog?.kind === 'edit' ? <EditSongDialog songId={dialog.songId} /> : null}
       {dialog?.kind === 'settings' ? <SettingsDialog /> : null}
       {dialog?.kind === 'tags' ? <TagsDialog /> : null}
-      {/* `addToPlaylist` has no dialog to render yet — its modal arrives with the song rows. */}
+      {dialog?.kind === 'addToPlaylist' ? (
+        <AddToPlaylistDialog playlistId={dialog.playlistId} />
+      ) : null}
       {dialog?.kind === 'confirm' ? (
         <ConfirmDialog
           message={dialog.message}
