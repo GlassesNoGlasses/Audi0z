@@ -467,6 +467,89 @@ input[type='range'] {
   gap: 6px;
 }
 
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.compress-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compress-estimate {
+  color: var(--fg);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.storage-row {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  margin: 0;
+}
+
+/* A chevron and a word, not a button-looking button: it opens a section of this dialog. */
+.disclosure {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.file-list {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  list-style: none;
+  margin: 6px 0 0;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.file-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.file-row:last-child {
+  border-bottom: none;
+}
+
+/* Tabular so the column of sizes lines up down the list. */
+.file-size {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 62px;
+  text-align: right;
+}
+
+.file-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The quiet alternative to `.danger`: an action that is offered, not urged. */
+.btn-grey {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+/* The strip drops below the row it belongs to rather than squeezing into it. */
+.file-row .confirm-strip {
+  flex-basis: 100%;
+}
+
 .dialog-hint {
   color: var(--muted);
   font-size: 12px;
