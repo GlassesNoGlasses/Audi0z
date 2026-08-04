@@ -3,7 +3,8 @@ import type { DownloadProgress } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { errorMessage, isBusy, isCancelled } from '../lib/errors'
-import { parseTags, titleFromPath } from '../lib/text'
+import { formatBytes, formatCompressionSaving } from '../lib/format'
+import { titleFromPath } from '../lib/text'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 import type { AddSource } from '../state/appReducer'
 
@@ -23,6 +24,13 @@ function stageLabel(progress: DownloadProgress): string {
   }
 }
 
+/** How far along in bytes — only when there is both a numerator and a denominator to show. */
+function bytesLabel(progress: DownloadProgress): string | null {
+  const { bytes, totalBytes } = progress
+  if (bytes === undefined || totalBytes === undefined) return null
+  return `${formatBytes(bytes)} / ${formatBytes(totalBytes)}`
+}
+
 /**
  * Both ways into the library.
  *
@@ -34,7 +42,7 @@ function stageLabel(progress: DownloadProgress): string {
  * instead of silently ignoring everything past the first.
  */
 export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
-  const { settings } = useAppState()
+  const { settings, tags } = useAppState()
   const dispatch = useAppDispatch()
 
   const [mode, setMode] = useState<'files' | 'url'>(source.kind === 'url' ? 'url' : 'files')
@@ -43,10 +51,13 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   const [title, setTitle] = useState(
     source.kind === 'files' && source.paths.length > 0 ? titleFromPath(source.paths[0]) : ''
   )
-  const [tags, setTags] = useState('')
+  /** Registry names, not free text: this dialog picks from the tags that exist, it never adds one. */
+  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
   const [compress, setCompress] = useState(settings.compressByDefault)
   /** Anything in flight: the form must not be submitted twice or edited out from under a request. */
   const [busy, setBusy] = useState(false)
+  /** A *probe* in flight, which is the one wait long enough to need explaining. */
+  const [probing, setProbing] = useState(false)
   /**
    * A *download* in flight, which is narrower than `busy` and is the only thing `download.cancel()`
    * can reach. Tracked apart from `busy` because the action row swaps the close button for
@@ -54,10 +65,15 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
    */
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
+  /** What the probe said this URL runs to, when it said — the only playing time known before import. */
+  const [probedDurationSec, setProbedDurationSec] = useState<number | undefined>(undefined)
 
   // Subscribed for the dialog's whole life, not just while a download runs: the first progress
   // line can arrive before `start` has even resolved its promise.
   useEffect(() => window.api.download.onProgress(setProgress), [])
+
+  // Registry order, so the same three chips always arrive in the same order.
+  const chosenTags = tags.filter((tag) => picked.has(tag.name)).map((tag) => tag.name)
 
   const close = (): void => dispatch({ type: 'dialog/closed' })
   const fail = (error: unknown): void =>
@@ -70,6 +86,14 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   // Escape does whatever the button next to it does — cancels a running download rather than
   // walking away and orphaning it, and otherwise closes.
   useEscapeKey(() => (downloading ? cancelDownload() : close()))
+
+  function toggleTag(name: string): void {
+    setPicked((current) => {
+      const next = new Set(current)
+      if (!next.delete(name)) next.add(name)
+      return next
+    })
+  }
 
   function chooseFiles(): void {
     setBusy(true)
@@ -86,18 +110,25 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
 
   function fetchDetails(): void {
     setBusy(true)
+    setProbing(true)
     void window.api.download
       .probe(url.trim())
-      .then((result) => setTitle(result.title))
+      .then((result) => {
+        setTitle(result.title)
+        setProbedDurationSec(result.durationSec)
+      })
       .catch(fail)
-      .finally(() => setBusy(false))
+      .finally(() => {
+        setBusy(false)
+        setProbing(false)
+      })
   }
 
   function addFile(): void {
     const [sourcePath, ...rest] = paths
     setBusy(true)
     void window.api.library
-      .add({ sourcePath, title: title.trim(), tags: parseTags(tags), compress })
+      .add({ sourcePath, title: title.trim(), tags: chosenTags, compress })
       .then(async () => {
         await refreshLibrary(dispatch)
         if (rest.length === 0) {
@@ -107,7 +138,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
         // More files were dropped or picked: re-arm the form for the next one.
         setPaths(rest)
         setTitle(titleFromPath(rest[0]))
-        setTags('')
+        setPicked(new Set())
       })
       .catch(fail)
       .finally(() => setBusy(false))
@@ -118,7 +149,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
     setDownloading(true)
     setProgress(null)
     void window.api.download
-      .start({ url: url.trim(), title: title.trim(), tags: parseTags(tags), compress })
+      .start({ url: url.trim(), title: title.trim(), tags: chosenTags, compress })
       .then(async () => {
         await refreshLibrary(dispatch)
         close()
@@ -193,6 +224,17 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
               <button type="button" onClick={fetchDetails} disabled={busy || url.trim() === ''}>
                 Fetch details
               </button>
+              {/*
+                The bundled yt-dlp is self-extracting: its first run after launch spends half a
+                minute unpacking itself, and a dialog that says nothing for thirty seconds is a
+                hung one as far as anybody watching is concerned.
+              */}
+              {probing ? (
+                <p className="dialog-hint hint-busy">
+                  <span className="spinner" aria-hidden />
+                  Fetching details… (the first fetch after launch can take ~30s)
+                </p>
+              ) : null}
             </div>
           )}
 
@@ -200,27 +242,72 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
             Title
             <input value={title} onChange={(event) => setTitle(event.target.value)} />
           </label>
-          <label className="field">
-            Tags (comma separated)
-            <input value={tags} onChange={(event) => setTags(event.target.value)} />
-          </label>
-          <label className="checkbox">
-            <input
-              type="checkbox"
-              checked={compress}
-              onChange={(event) => setCompress(event.target.checked)}
-            />
-            Compress to Opus
-          </label>
+
+          <div className="field">
+            <span>Tags</span>
+            {tags.length === 0 ? (
+              <p className="dialog-hint">No tags yet — create them from the Tags button.</p>
+            ) : (
+              <div className="tag-picker" role="group" aria-label="Tags">
+                {tags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    aria-pressed={picked.has(tag.name)}
+                    onClick={() => toggleTag(tag.name)}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/*
+            The estimate sits beside the label rather than inside it: the checkbox is named by its
+            label, and a saving figure in there would rename the preference itself.
+          */}
+          <div className="checkbox-row">
+            <label className="checkbox">
+              <input
+                type="checkbox"
+                checked={compress}
+                onChange={(event) => setCompress(event.target.checked)}
+              />
+              Compress to Opus
+            </label>
+            <span className="compress-note">
+              —{' '}
+              <strong className="compress-estimate">
+                {/* Nothing has weighed the source yet, so this is the generic quote until it has. */}
+                {formatCompressionSaving(null, mode === 'url' ? probedDurationSec : undefined)}
+              </strong>
+            </span>
+          </div>
 
           {progress ? (
             <div className="download-progress">
-              <progress
+              <div
+                className="progress-track"
+                role="progressbar"
                 aria-label="Download progress"
-                max={100}
-                {...(progress.percent === null ? {} : { value: progress.percent })}
-              />
-              <span>{stageLabel(progress)}</span>
+                aria-valuemin={0}
+                aria-valuemax={100}
+                {...(progress.percent === null ? {} : { 'aria-valuenow': progress.percent })}
+              >
+                {/* Saving and transcoding report no percentage: the bar slides instead of filling. */}
+                <div
+                  className={`progress-fill${progress.percent === null ? ' progress-indeterminate' : ''}`}
+                  style={progress.percent === null ? undefined : { width: `${progress.percent}%` }}
+                />
+              </div>
+              <span className="download-label">
+                <span className="spinner" aria-hidden />
+                <span>{stageLabel(progress)}</span>
+                {bytesLabel(progress) === null ? null : (
+                  <span className="download-bytes">{bytesLabel(progress)}</span>
+                )}
+              </span>
             </div>
           ) : null}
 
