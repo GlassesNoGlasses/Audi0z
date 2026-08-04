@@ -39,6 +39,10 @@ export type PlaybackAction =
       /**
        * Play this song in the new queue rather than stopping. Set when the switch was caused by
        * the user playing something (a row click); left out when only the queue itself changed.
+       *
+       * Caller's precondition: the id must be present in the `order` dispatched alongside it. The
+       * engine does not validate it — both callers pick it out of that very list, so it holds by
+       * construction.
        */
       startSongId?: string
     }
