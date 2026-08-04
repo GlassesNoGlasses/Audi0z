@@ -44,15 +44,17 @@ function AppShell(): ReactElement {
     let cancelled = false
     void (async () => {
       try {
-        const [loadedSettings, loadedSongs, loadedPlaylists] = await Promise.all([
+        const [loadedSettings, loadedSongs, loadedPlaylists, loadedTags] = await Promise.all([
           window.api.settings.get(),
           window.api.library.list(),
-          window.api.playlists.list()
+          window.api.playlists.list(),
+          window.api.tags.list()
         ])
         if (cancelled) return
         dispatch({ type: 'settings/updated', settings: loadedSettings })
         dispatch({ type: 'library/loaded', songs: loadedSongs })
         dispatch({ type: 'playlists/loaded', playlists: loadedPlaylists })
+        dispatch({ type: 'tags/loaded', tags: loadedTags })
         dispatch({
           type: 'queue/selected',
           queueId: LIBRARY_QUEUE_ID,

@@ -26,6 +26,24 @@ describe('App shell', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('my-music-library')
   })
 
+  /**
+   * The registry is loaded and re-loaded alongside the songs: a tag renamed or deleted anywhere
+   * cascades through the songs, so the two have to be read together or the chips and the rows
+   * disagree.
+   */
+  it('reads the tag registry at start-up and again when the library changes', async () => {
+    const api = seedApi({ tags: [{ id: 't1', name: 'slowed', color: '#5ca8e0' }] })
+    const controls = mockApiControls(api)
+    await renderApp()
+    expect(api.tags.list).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      controls.emitLibraryChanged()
+    })
+
+    await waitFor(() => expect(api.tags.list).toHaveBeenCalledTimes(2))
+  })
+
   it('refetches the library when the main process says it changed', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     const controls = mockApiControls(api)

@@ -108,6 +108,30 @@ describe('appReducer', () => {
     expect(reducer(opened, { type: 'dialog/closed' }).dialog).toBeNull()
   })
 
+  it('opens the tag and add-to-playlist dialogs', () => {
+    const tags = reducer(seeded(), { type: 'dialog/opened', dialog: { kind: 'tags' } })
+    expect(tags.dialog).toEqual({ kind: 'tags' })
+
+    const adding = reducer(tags, {
+      type: 'dialog/opened',
+      dialog: { kind: 'addToPlaylist', playlistId: 'p1' }
+    })
+    expect(adding.dialog).toEqual({ kind: 'addToPlaylist', playlistId: 'p1' })
+  })
+
+  it('starts with no tags and takes the registry as it is loaded', () => {
+    expect(initialAppState().tags).toEqual([])
+
+    const loaded = reducer(seeded(), {
+      type: 'tags/loaded',
+      tags: [{ id: 't1', name: 'slowed', color: '#5ca8e0' }]
+    })
+    expect(loaded.tags).toEqual([{ id: 't1', name: 'slowed', color: '#5ca8e0' }])
+
+    const emptied = reducer(loaded, { type: 'tags/loaded', tags: [] })
+    expect(emptied.tags).toEqual([])
+  })
+
   it('stacks toasts and dismisses them by id', () => {
     const one = reducer(seeded(), { type: 'toast/pushed', message: 'disk on fire' })
     const two = reducer(one, { type: 'toast/pushed', message: 'network on fire' })
