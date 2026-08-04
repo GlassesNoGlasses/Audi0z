@@ -67,6 +67,14 @@ describe('appReducer', () => {
     expect(state.songs.map((s) => s.exists)).toEqual([true, false, true])
   })
 
+  /** `SongDto` promises `sizeBytes` is null exactly when `exists` is false — including in here. */
+  it('clears the size of a song it flags as missing', () => {
+    const state = reducer(seeded(), { type: 'library/songMissing', songId: 'b' })
+
+    expect(state.songs[1].sizeBytes).toBeNull()
+    expect(state.songs.map((s) => s.sizeBytes === null)).toEqual([false, true, false])
+  })
+
   it('upserts and removes playlists', () => {
     const created = reducer(seeded(), {
       type: 'playlists/upserted',

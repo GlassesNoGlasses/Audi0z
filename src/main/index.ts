@@ -225,7 +225,11 @@ function startup(): void {
       })
       return result.canceled ? [] : result.filePaths
     },
-    sendProgress: sendToWindow
+    sendProgress: sendToWindow,
+    // The download DTO measures the file it just wrote, so `exists`/`sizeBytes` mean the same
+    // thing here as they do in `library:list`.
+    audioDir: audio,
+    fileSize
   })
 
   createWindow()

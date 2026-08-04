@@ -2,6 +2,7 @@ import type { IpcMain } from 'electron'
 import { IPC, IPC_EVENTS, MEDIA_SCHEME } from '../../shared/ipc'
 import type { DownloadProgress, DownloadRequest, Song, SongDto } from '../../shared/types'
 import type { Downloader } from '../ingest/downloader'
+import { resolveAudioPath } from '../media/mediaProtocol'
 
 /**
  * The ingest half of the main-process IPC surface: downloads, the file picker and the yt-dlp
@@ -21,6 +22,13 @@ export interface IngestIpcDeps {
    * runs inside the download's progress path, so a destroyed window has to be checked for here.
    */
   sendProgress(channel: string, progress: DownloadProgress): void
+  /** Absolute path of the library's `audio/` directory — the same one `registerLibraryIpc` gets. */
+  audioDir: string
+  /**
+   * **Must not reject** — `null` means "could not measure". Used to fill the download DTO's
+   * `sizeBytes`, which `SongDto` promises is null exactly when `exists` is false.
+   */
+  fileSize(absPath: string): Promise<number | null>
 }
 
 function invalid(message: string): Error {
@@ -64,22 +72,26 @@ function assertDownloadRequest(value: unknown): DownloadRequest {
 }
 
 /**
- * A freshly imported song is on disk by definition, so `exists` is true and the media URL follows
- * straight from the id. (WP2's library IPC builds the same DTO for songs read back from the store.)
+ * Builds the DTO for a freshly downloaded song. Same shape and same rules as the one
+ * `registerLibraryIpc` builds for songs read back from the store, deliberately: one measurement
+ * answers both questions, so `exists` and `sizeBytes` cannot disagree and a 0-byte file reads as
+ * present rather than missing.
  *
- * `sizeBytes` is left null rather than stat'd here: this module has no `audioDir` and no filesystem
- * seam, and the renderer reloads the library on `libraryChanged` anyway — that listing goes through
- * `registerLibraryIpc`, which does measure it.
+ * The file was just written, so this normally resolves to a real size — but it is measured rather
+ * than assumed, because `SongDto` promises `sizeBytes` is null *exactly* when `exists` is false and
+ * the renderer is entitled to read it that way.
  *
  * The id is encoded because `mediaProtocol` decodes it: ids are uuids in practice, but
  * `library.json` is hand-editable, and the two halves have to agree whatever is in there.
  */
-function toSongDto(song: Song): SongDto {
+async function toSongDto(song: Song, deps: IngestIpcDeps): Promise<SongDto> {
+  const resolved = resolveAudioPath(deps.audioDir, song.fileName)
+  const size = resolved === null ? null : await deps.fileSize(resolved)
   return {
     ...song,
-    exists: true,
+    exists: size !== null,
     url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}`,
-    sizeBytes: null
+    sizeBytes: size
   }
 }
 
@@ -92,7 +104,7 @@ export function registerIngestIpc(ipc: Pick<IpcMain, 'handle'>, deps: IngestIpcD
   ipc.handle(IPC.download.probe, async (_event, url) => deps.downloader.probe(assertUrl(url)))
 
   ipc.handle(IPC.download.start, async (_event, req) =>
-    toSongDto(await deps.downloader.start(assertDownloadRequest(req)))
+    toSongDto(await deps.downloader.start(assertDownloadRequest(req)), deps)
   )
 
   ipc.handle(IPC.download.cancel, async () => {

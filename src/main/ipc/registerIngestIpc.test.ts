@@ -1,8 +1,11 @@
+import path from 'node:path'
 import type { IpcMain } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
 import { IPC, IPC_EVENTS } from '../../shared/ipc'
 import type { DownloadProgress, Song, SongDto } from '../../shared/types'
 import { registerIngestIpc } from './registerIngestIpc'
+
+const AUDIO_DIR = path.join(path.sep, 'library', 'audio')
 
 const SONG: Song = {
   id: 'song-1',
@@ -47,7 +50,9 @@ function setup() {
     downloader,
     updateYtDlp: vi.fn(async () => ({ version: '2026.07.04' })),
     pickAudioFiles: vi.fn(async () => ['/music/a.mp3']),
-    sendProgress: vi.fn()
+    sendProgress: vi.fn(),
+    audioDir: AUDIO_DIR,
+    fileSize: vi.fn(async (_absPath: string): Promise<number | null> => 8192)
   }
 
   const unsubscribe = registerIngestIpc(ipc, deps)
@@ -89,13 +94,11 @@ describe('registerIngestIpc', () => {
       sourceUrl: 'https://example.test/v/1'
     })
 
-    // `sizeBytes` is null here by design: this module has no audio directory to stat against, and
-    // the renderer's next `library:list` — which does — fills it in.
     await expect(invoke(IPC.download.start, VALID_REQUEST)).resolves.toEqual({
       ...SONG,
       exists: true,
       url: `media://audio/${SONG.id}`,
-      sizeBytes: null
+      sizeBytes: 8192
     })
     expect(downloader.start).toHaveBeenCalledWith(VALID_REQUEST)
 
@@ -199,5 +202,54 @@ describe('registerIngestIpc', () => {
 
     expect(dto.url).toBe(`media://audio/${encodeURIComponent(id)}`)
     expect(decodeURIComponent(new URL(dto.url).pathname.slice(1))).toBe(id)
+  })
+})
+
+/**
+ * `SongDto` promises `sizeBytes` is null *exactly* when `exists` is false, and the renderer is
+ * entitled to read it that way (`song.exists ? format(song.sizeBytes) : '—'`). A freshly downloaded
+ * song is no exception, so this handler measures the file rather than shrugging with a null.
+ */
+describe('download:start DTO', () => {
+  it('measures the downloaded file inside the audio directory', async () => {
+    const { deps, invoke } = setup()
+
+    const dto = await invoke<SongDto>(IPC.download.start, VALID_REQUEST)
+
+    expect(deps.fileSize).toHaveBeenCalledExactlyOnceWith(path.join(AUDIO_DIR, SONG.fileName))
+    expect(dto.sizeBytes).toBe(8192)
+    expect(dto.exists).toBe(true)
+  })
+
+  it('keeps sizeBytes and exists in step when the file cannot be measured', async () => {
+    const { deps, invoke } = setup()
+    deps.fileSize.mockResolvedValue(null)
+
+    const dto = await invoke<SongDto>(IPC.download.start, VALID_REQUEST)
+
+    expect(dto.sizeBytes).toBeNull()
+    expect(dto.exists).toBe(false)
+  })
+
+  it('reports a zero-byte download as existing', async () => {
+    const { deps, invoke } = setup()
+    deps.fileSize.mockResolvedValue(0)
+
+    const dto = await invoke<SongDto>(IPC.download.start, VALID_REQUEST)
+
+    expect(dto.sizeBytes).toBe(0)
+    expect(dto.exists).toBe(true)
+  })
+
+  /** `fileName` is written by the importer, but the same containment rule applies as everywhere. */
+  it('refuses to measure a fileName that resolves outside the audio directory', async () => {
+    const { deps, downloader, invoke } = setup()
+    downloader.start.mockResolvedValue({ ...SONG, fileName: '../../etc/passwd' })
+
+    const dto = await invoke<SongDto>(IPC.download.start, VALID_REQUEST)
+
+    expect(deps.fileSize).not.toHaveBeenCalled()
+    expect(dto.sizeBytes).toBeNull()
+    expect(dto.exists).toBe(false)
   })
 })

@@ -148,7 +148,9 @@ export function createAppReducer(
         return {
           ...state,
           songs: state.songs.map((song) =>
-            song.id === action.songId ? { ...song, exists: false } : song
+            // `sizeBytes` goes with `exists`: the DTO promises it is null exactly when the file is
+            // gone, and a stale size left behind here would be the one place that is not true.
+            song.id === action.songId ? { ...song, exists: false, sizeBytes: null } : song
           )
         }
       case 'playlists/loaded':
