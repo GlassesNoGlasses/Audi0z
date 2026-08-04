@@ -126,6 +126,12 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
      * `tags:rename` invoke, and a per-song persist would rewrite `library.json` once per song.
      */
     async renameTag(oldName, newName) {
+      // Renaming a tag to the name it already has is something the UI can ask for (the rename
+      // field's confirm button does not care that nothing changed), and it must mean nothing.
+      // Without this the merge branch below reads "the song already carries the new name" as
+      // "drop the old one" — and deletes the tag from every song that had it.
+      if (oldName === newName) return
+
       const current = await load()
       let changed = false
       for (let index = 0; index < current.length; index++) {

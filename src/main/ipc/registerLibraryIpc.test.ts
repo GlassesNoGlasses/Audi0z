@@ -533,6 +533,19 @@ describe('tag channels', () => {
     expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['Slowed'])
   })
 
+  /** Opening the rename field, changing nothing and confirming must not wipe the tag. */
+  it('leaves every song alone when a tag is renamed to the name it already has', async () => {
+    const harness = setup()
+    const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
+    const song = await harness.libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+
+    const renamed = await harness.invoke<Tag>(IPC.tags.rename, created.id, 'slowed')
+
+    expect(renamed).toEqual(created)
+    expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['slowed', 'edit'])
+    expect(await harness.tagStore.list()).toEqual([created])
+  })
+
   it('leaves the songs alone when the rename is refused', async () => {
     const harness = setup()
     await harness.invoke<Tag>(IPC.tags.create, 'reverb')

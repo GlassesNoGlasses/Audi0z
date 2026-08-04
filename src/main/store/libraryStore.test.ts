@@ -253,6 +253,25 @@ describe('renameTag', () => {
     expect((await store.list())[0].tags).toEqual(['slow', 'edit'])
   })
 
+  /**
+   * The registry lets a tag be "renamed" to the name it already has (the rename dialog's confirm
+   * button does not care that nothing changed), and the IPC layer cascades unconditionally. The
+   * merge branch must not read that as "this song already has the new name, so drop the old one" —
+   * that would wipe the tag off every song carrying it.
+   */
+  it('is a no-op when the new name is identical to the old one', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
+    const second = await store.add(draft({ title: 'second', tags: ['slowed'] }))
+    resetWrites()
+
+    await store.renameTag('slowed', 'slowed')
+
+    expect(writeCount()).toBe(0)
+    expect((await store.list()).map((song) => song.tags)).toEqual([['slowed', 'edit'], ['slowed']])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([first, second])
+  })
+
   it('matches the tag exactly, leaving near-misses alone', async () => {
     const store = createLibraryStore(lib.root)
     await store.add(draft({ tags: ['Slowed', 'slowed-2'] }))

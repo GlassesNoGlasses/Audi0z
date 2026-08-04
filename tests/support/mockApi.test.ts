@@ -235,6 +235,18 @@ describe('tags', () => {
     ])
   })
 
+  /** Mirrors `libraryStore.renameTag`: renaming to the same name must not wipe the tag. */
+  it('leaves every song alone when a tag is renamed to the name it already has', async () => {
+    const api = createMockApi({
+      tags: [tag('t1', 'slowed')],
+      songs: [song('a', { tags: ['slowed', 'edit'] })]
+    })
+
+    await expect(api.tags.rename('t1', 'slowed')).resolves.toMatchObject({ name: 'slowed' })
+
+    await expect(api.library.list()).resolves.toMatchObject([{ tags: ['slowed', 'edit'] }])
+  })
+
   it('drops the tag from every song when it is removed', async () => {
     const api = createMockApi({
       tags: [tag('t1', 'slowed')],

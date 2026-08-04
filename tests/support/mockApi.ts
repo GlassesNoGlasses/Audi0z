@@ -108,9 +108,11 @@ function cloneTag(tag: Tag): Tag {
 
 /**
  * Same rule as `libraryStore.renameTag`: a song that already carries `next` loses `previous` rather
- * than ending up with the same tag twice.
+ * than ending up with the same tag twice — but renaming a tag to its own name is a no-op, or the
+ * merge branch would delete it instead.
  */
 function renameIn(tags: string[], previous: string, next: string): string[] {
+  if (previous === next) return tags
   if (!tags.includes(previous)) return tags
   if (tags.includes(next)) return tags.filter((name) => name !== previous)
   return tags.map((name) => (name === previous ? next : name))
