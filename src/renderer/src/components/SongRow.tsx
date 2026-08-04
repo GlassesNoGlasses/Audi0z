@@ -1,6 +1,25 @@
-import { memo, useEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement
+} from 'react'
 import type { Playlist, SongDto, Tag } from '../../../shared/types'
 import { formatBytes, formatDuration, readableTextColor } from '../lib/format'
+
+/**
+ * The items the keyboard can reach, in the order they are drawn: the tag toggles the Tags submenu
+ * adds are in, the disabled empty-registry note is out. Module scope, so the layout effect below
+ * can walk the menu without taking a new dependency on every render.
+ */
+function menuItemsIn(popup: HTMLElement | null): HTMLButtonElement[] {
+  return Array.from(
+    popup?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not([disabled])') ?? []
+  )
+}
 
 export interface SongRowProps {
   song: SongDto
@@ -39,7 +58,33 @@ function SongRowView({
 }: SongRowProps): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  const [flipUp, setFlipUp] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const popupRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+
+  /**
+   * Where the popup hangs, and what the keyboard lands on — both settled before the first paint,
+   * so the menu is never seen in the wrong place or with nothing focused.
+   */
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      setFlipUp(false)
+      return
+    }
+    const wrapper = menuRef.current
+    const popup = popupRef.current
+    if (wrapper && popup) {
+      const bounds = (
+        wrapper.closest('.song-list') ?? document.documentElement
+      ).getBoundingClientRect()
+      const anchor = wrapper.getBoundingClientRect()
+      const height = popup.getBoundingClientRect().height
+      // Flip only when down overflows AND up actually fits — a menu taller than both stays down.
+      setFlipUp(anchor.bottom + height > bounds.bottom && anchor.top - height >= bounds.top)
+    }
+    menuItemsIn(popupRef.current)[0]?.focus()
+  }, [menuOpen])
 
   /**
    * Registered only while the menu is up. `useEscapeKey` is deliberately not used: it binds for the
@@ -56,6 +101,9 @@ function SongRowView({
       if (event.key !== 'Escape' || event.defaultPrevented) return
       setMenuOpen(false)
       setTagsOpen(false)
+      // Escape only. An outside click has already chosen where the user is going, and dragging
+      // focus back to a button they just left would undo their own gesture.
+      triggerRef.current?.focus()
     }
     // `mousedown` rather than `click`: the menu has to be gone before whatever was clicked reacts.
     const onPointerDown = (event: MouseEvent): void => {
@@ -71,6 +119,32 @@ function SongRowView({
       document.removeEventListener('mousedown', onPointerDown)
     }
   }, [menuOpen])
+
+  /**
+   * The arrow keys walk the items and wrap round the ends; Home/End jump to them. The items are
+   * out of the tab order, so this is the only way through the menu from the keyboard.
+   */
+  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
+    const items = menuItemsIn(popupRef.current)
+    if (items.length === 0) return
+    const index = items.indexOf(document.activeElement as HTMLButtonElement)
+    const focusAt = (at: number): void =>
+      items[((at % items.length) + items.length) % items.length]?.focus()
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      focusAt(index + 1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      focusAt(index - 1)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      focusAt(0)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      focusAt(items.length - 1)
+    }
+  }
 
   /** Every item but the tag toggles is a one-shot: it acts and the menu is done. */
   function act(run: () => void): void {
@@ -122,6 +196,7 @@ function SongRowView({
         <button
           type="button"
           className="song-menu-button"
+          ref={triggerRef}
           aria-label={`Options for ${song.title}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
@@ -134,10 +209,17 @@ function SongRowView({
         </button>
 
         {menuOpen ? (
-          <div className="song-menu-popup" role="menu">
+          <div
+            className={`song-menu-popup${flipUp ? ' song-menu-popup--up' : ''}`}
+            role="menu"
+            aria-label={`Options for ${song.title}`}
+            ref={popupRef}
+            onKeyDown={onMenuKeyDown}
+          >
             <button
               type="button"
               role="menuitem"
+              tabIndex={-1}
               aria-expanded={tagsOpen}
               onClick={() => setTagsOpen((open) => !open)}
             >
@@ -145,13 +227,19 @@ function SongRowView({
             </button>
             {tagsOpen ? <TagItems song={song} tags={tags} onToggleTag={onToggleTag} /> : null}
 
-            <button type="button" role="menuitem" onClick={() => act(() => onEdit(song.id))}>
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              onClick={() => act(() => onEdit(song.id))}
+            >
               Edit
             </button>
             {containingPlaylist ? (
               <button
                 type="button"
                 role="menuitem"
+                tabIndex={-1}
                 onClick={() => act(() => onRemoveFromPlaylist(containingPlaylist.id, song.id))}
               >
                 Remove from &quot;{containingPlaylist.name}&quot;
@@ -160,6 +248,7 @@ function SongRowView({
             <button
               type="button"
               role="menuitem"
+              tabIndex={-1}
               className="danger"
               onClick={() => act(() => onDelete(song.id))}
             >
@@ -185,7 +274,7 @@ interface TagItemsProps {
 function TagItems({ song, tags, onToggleTag }: TagItemsProps): ReactElement {
   if (tags.length === 0) {
     return (
-      <button type="button" role="menuitem" className="menu-note" disabled>
+      <button type="button" role="menuitem" tabIndex={-1} className="menu-note" disabled>
         No tags yet — create them from Tags.
       </button>
     )
@@ -200,6 +289,7 @@ function TagItems({ song, tags, onToggleTag }: TagItemsProps): ReactElement {
             key={tag.id}
             type="button"
             role="menuitemcheckbox"
+            tabIndex={-1}
             aria-checked={has}
             className="menu-check-item"
             onClick={() => onToggleTag(song.id, tag.name)}

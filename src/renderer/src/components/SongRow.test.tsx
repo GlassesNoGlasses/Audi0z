@@ -195,6 +195,103 @@ describe('SongRow menu', () => {
     await user.click(within(sidebar()).getByRole('button', { name: 'Library' }))
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
   })
+
+  /** A screen reader hears one menu per row; only the song's name tells them which row it belongs to. */
+  it('names the menu after its song', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Options for Alpha Mix' }))
+
+    expect(screen.getByRole('menu', { name: 'Options for Alpha Mix' })).toBeInTheDocument()
+  })
+
+  it('walks its items with the arrow keys, wrapping at the ends', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    const menu = await openMenu(user, 'Alpha Mix')
+    const items = within(menu).getAllByRole('menuitem')
+
+    expect(items[0]).toHaveFocus() // focus lands on open
+    await user.keyboard('{ArrowDown}')
+    expect(items[1]).toHaveFocus()
+    await user.keyboard('{End}')
+    expect(items[items.length - 1]).toHaveFocus()
+    await user.keyboard('{ArrowDown}')
+    expect(items[0]).toHaveFocus() // wraps
+    await user.keyboard('{ArrowUp}')
+    expect(items[items.length - 1]).toHaveFocus()
+    await user.keyboard('{Home}')
+    expect(items[0]).toHaveFocus()
+  })
+
+  it('hands focus back to the ⋯ button when Escape closes the menu', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await openMenu(user, 'Alpha Mix')
+    await user.keyboard('{Escape}')
+
+    expect(screen.getByRole('button', { name: 'Options for Alpha Mix' })).toHaveFocus()
+  })
+
+  /** An outside click has already chosen where the user is going; stealing focus back would undo it. */
+  it('leaves focus alone when a click outside closes the menu', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await openMenu(user, 'Alpha Mix')
+    await user.click(screen.getByRole('button', { name: 'Bravo Beat' }))
+
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Options for Alpha Mix' })).not.toHaveFocus()
+  })
+
+  /**
+   * jsdom has no layout, so the flip decision is driven by stubbed rects: a popup whose natural
+   * position overflows the list's bottom, with room above, must get the --up modifier.
+   */
+  it('flips upward when its natural position would clip into the bottom of the list', async () => {
+    const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      if (this.classList.contains('song-menu-popup')) {
+        return DOMRect.fromRect({ y: 560, height: 160 })
+      }
+      if (this.classList.contains('song-menu')) {
+        return DOMRect.fromRect({ y: 540, width: 28, height: 20 })
+      }
+      if (this.classList.contains('song-list')) return DOMRect.fromRect({ y: 0, height: 600 })
+      return DOMRect.fromRect({})
+    })
+    try {
+      const user = userEvent.setup()
+      seedApi({ songs })
+      await renderApp()
+
+      const menu = await openMenu(user, 'Alpha Mix')
+
+      expect(menu).toHaveClass('song-menu-popup--up')
+    } finally {
+      rects.mockRestore()
+    }
+  })
+
+  /** The default all-zero jsdom rects are the "there is room below" case: no modifier, no flip. */
+  it('stays put when there is room below it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    const menu = await openMenu(user, 'Alpha Mix')
+
+    expect(menu).not.toHaveClass('song-menu-popup--up')
+  })
 })
 
 describe('SongRow tag menu', () => {

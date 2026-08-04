@@ -385,6 +385,12 @@ input[type='range'] {
   z-index: 5;
 }
 
+/* At the bottom of the list the popup would clip into the scroll edge, so it hangs upward. */
+.song-menu-popup--up {
+  bottom: 100%;
+  top: auto;
+}
+
 .song-menu-popup button {
   background: none;
   border: none;
