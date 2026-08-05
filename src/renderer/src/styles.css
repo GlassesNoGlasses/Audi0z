@@ -397,9 +397,10 @@ input[type='range'] {
   border-color: var(--accent);
 }
 
-/* Tabular and fixed-width so the two columns of figures line up down the whole list. */
+/* Tabular and fixed-width so the columns of figures line up down the whole list. */
 .song-duration,
-.song-size {
+.song-size,
+.song-added {
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -411,6 +412,12 @@ input[type='range'] {
 
 .song-size {
   min-width: 62px;
+  text-align: right;
+}
+
+/* Wide enough for the widest MM/DD/YYYY, so the size beside it never shifts row to row. */
+.song-added {
+  min-width: 74px;
   text-align: right;
 }
 

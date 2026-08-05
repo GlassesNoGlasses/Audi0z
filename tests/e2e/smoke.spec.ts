@@ -106,6 +106,12 @@ test.afterEach(async () => {
 test('opens the window and lists the library from disk', async () => {
   await expect(page.getByRole('button', { name: 'Alpha Mix', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Bravo Beat', exact: true })).toBeVisible()
+
+  // MM/DD/YYYY only by shape — the literal day depends on the machine's timezone.
+  await expect(page.locator('.song-list .song-added')).toHaveText([
+    /^\d{2}\/\d{2}\/\d{4}$/,
+    /^\d{2}\/\d{2}\/\d{4}$/
+  ])
 })
 
 test('plays a song over the media:// protocol', async () => {

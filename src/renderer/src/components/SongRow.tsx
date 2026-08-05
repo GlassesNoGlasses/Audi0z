@@ -8,7 +8,7 @@ import {
   type ReactElement
 } from 'react'
 import type { Playlist, SongDto, Tag } from '../../../shared/types'
-import { formatBytes, formatDuration, readableTextColor } from '../lib/format'
+import { formatBytes, formatDate, formatDuration, readableTextColor } from '../lib/format'
 
 /**
  * The items the keyboard can reach, in the order they are drawn: the tag toggles the Tags submenu
@@ -196,6 +196,7 @@ function SongRowView({
           })}
         </span>
       )}
+      <span className="song-added">{formatDate(song.addedAt)}</span>
       <span className="song-size">{formatBytes(song.sizeBytes)}</span>
 
       <div className="song-menu" ref={menuRef}>

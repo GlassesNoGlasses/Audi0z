@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   formatBytes,
   formatCompressionSaving,
+  formatDate,
   formatDuration,
   OPUS_BYTES_PER_SEC,
   readableTextColor
@@ -44,6 +45,19 @@ describe('formatDuration', () => {
     expect(formatDuration(173.9)).toBe('2:53')
     // Past an hour it keeps counting minutes rather than growing a third field.
     expect(formatDuration(3725)).toBe('62:05')
+  })
+})
+
+describe('formatDate', () => {
+  it('writes the local-time date as MM/DD/YYYY', () => {
+    // Built from local-time parts, so the expectation holds in every timezone.
+    expect(formatDate(new Date(2024, 0, 15, 12, 30).toISOString())).toBe('01/15/2024')
+    expect(formatDate(new Date(2025, 11, 3, 8, 0).toISOString())).toBe('12/03/2025')
+  })
+
+  it('says a placeholder while the date is unreadable', () => {
+    expect(formatDate('not-a-date')).toBe('––/––/––––')
+    expect(formatDate('')).toBe('––/––/––––')
   })
 })
 

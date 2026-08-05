@@ -65,6 +65,23 @@ describe('SongRow', () => {
     expect(within(bravo).getByText('—')).toHaveClass('song-size')
   })
 
+  it('dates the row between the tags and the size', async () => {
+    // The stamp is built from local-time parts, so the day it reads back as — and therefore the
+    // literal below — is the same in every timezone the suite might run in.
+    const addedAt = new Date(2024, 0, 15, 12, 30).toISOString()
+    seedApi({ songs: [song('a', 'Alpha Mix', { addedAt, tags: ['slowed'], sizeBytes: 4 * MB })] })
+    await renderApp()
+
+    const [alpha] = [...document.querySelectorAll<HTMLElement>('.song-row')]
+    const added = within(alpha).getByText('01/15/2024')
+    expect(added).toHaveClass('song-added')
+    // Placement, which formatDate's own tests cannot see: after the tags, before the size.
+    const tag = within(alpha).getByText('slowed')
+    const size = within(alpha).getByText('4.0 MB')
+    expect(tag.compareDocumentPosition(added) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(added.compareDocumentPosition(size) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('paints a tag in the registry colour, and one the registry has never heard of in grey', async () => {
     seedApi({
       songs: [song('a', 'Alpha Mix', { tags: ['slowed', 'bootleg'] })],
