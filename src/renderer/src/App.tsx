@@ -118,7 +118,12 @@ function AppShell(): ReactElement {
     [dispatch, songs, playback.order]
   )
 
-  const audioRef = useAudioElement({
+  const {
+    ref: audioRef,
+    seekBy,
+    beginScrub,
+    endScrub
+  } = useAudioElement({
     songId: current?.id ?? null,
     src: current?.url ?? null,
     playToken: playback.playToken,
@@ -152,7 +157,8 @@ function AppShell(): ReactElement {
     enabled: dialog === null,
     hasCurrentSong: playback.currentId !== null,
     onTogglePlay: togglePlay,
-    onToggleMute: toggleMute
+    onToggleMute: toggleMute,
+    onSeekBy: seekBy
   })
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
@@ -198,7 +204,7 @@ function AppShell(): ReactElement {
         <TopNav />
         <SongList />
       </section>
-      <PlayerBar audioRef={audioRef} />
+      <PlayerBar audioRef={audioRef} beginScrub={beginScrub} endScrub={endScrub} />
       <ToastHost />
 
       {dialog?.kind === 'add' ? <AddSongDialog source={dialog.source} /> : null}

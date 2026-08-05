@@ -234,6 +234,41 @@ describe('App keyboard shortcuts', () => {
     expect(audioElement().volume).toBe(1)
   })
 
+  /**
+   * The click leaves focus on the row's own button, which is where the arrows are actually pressed.
+   * jsdom never reports a duration, so only the lower clamp is in play here — and it is the one
+   * that matters: three presses past the start must not leave the element at a negative time.
+   */
+  it('arrow keys skip ten seconds either way, clamped at the start', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const audio = audioElement()
+    audio.currentTime = 15
+
+    await user.keyboard('{ArrowRight}')
+    expect(audio.currentTime).toBe(25)
+
+    await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}')
+    expect(audio.currentTime).toBe(0)
+
+    // Element-local: the store never hears about a seek, so the transport still reads as playing.
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+  })
+
+  it('leaves the arrows alone with nothing cued', async () => {
+    seedApi({ songs })
+    await renderApp()
+    const audio = audioElement()
+    audio.currentTime = 5
+
+    press('ArrowRight')
+
+    expect(audio.currentTime).toBe(5)
+  })
+
   it('mutes and unmutes with m, restoring the volume it was at', async () => {
     const api = seedApi({ songs, settings: { volume: 0.7 } })
     await renderApp()

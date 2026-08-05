@@ -1,20 +1,24 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * The app's global keys: space for play/pause, `m` for mute.
+ * The app's global keys: space for play/pause, `m` for mute, ←/→ to skip.
  *
  * Bound to `document`, like `useEscapeKey`, because focus is rarely on the player bar when the
  * user reaches for them — and read through a ref so the listener is registered once rather than
  * re-registered on every render, while still seeing the current callbacks.
  */
 
+/** How far one arrow press moves the song, in seconds. */
+const SEEK_STEP_SEC = 10
+
 export interface KeyboardShortcutsOptions {
   /** False disables everything (a dialog is open). */
   enabled: boolean
-  /** Space only acts when a song is actually cued. */
+  /** Space and the arrows only act when a song is actually cued. */
   hasCurrentSong: boolean
   onTogglePlay(): void
   onToggleMute(): void
+  onSeekBy(delta: number): void
 }
 
 /** Somewhere the user is typing: every key belongs to them, none to the player. */
@@ -53,8 +57,20 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions): void {
       // the window went down. Shift is not in the list: it is how the keyboard produces `M`.
       if (event.metaKey || event.ctrlKey || event.altKey) return
 
-      const { enabled, hasCurrentSong, onTogglePlay, onToggleMute } = latest.current
+      const { enabled, hasCurrentSong, onTogglePlay, onToggleMute, onSeekBy } = latest.current
       if (!enabled || isTyping(event.target)) return
+
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        // The row menu's own arrow navigation runs first (React handlers beat this document
+        // listener) and marks the event; a menu must never scrub the song behind it.
+        if (event.defaultPrevented) return
+        const target = event.target instanceof HTMLElement ? event.target : null
+        if (target?.closest('[role="menu"]') != null) return
+        if (!hasCurrentSong) return
+        event.preventDefault()
+        onSeekBy(event.key === 'ArrowLeft' ? -SEEK_STEP_SEC : SEEK_STEP_SEC)
+        return
+      }
 
       if (event.key === ' ') {
         const target = event.target instanceof HTMLElement ? event.target : null

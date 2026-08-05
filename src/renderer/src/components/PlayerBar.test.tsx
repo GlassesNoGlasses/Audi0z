@@ -122,6 +122,52 @@ describe('PlayerBar sliders', () => {
     expect(audio.currentTime).toBe(20)
   })
 
+  /**
+   * The drag is bracketed by the pointer, not by the store: decoding at every value the slider
+   * passes through is the garble the silence exists to avoid, and doing it through `isPlaying`
+   * would flicker the ⏸ glyph for the length of the drag.
+   */
+  it('goes quiet under a pointer drag and comes back on release', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+
+    const audio = audioElement()
+    stubDuration(audio, 30)
+    fireEvent.durationChange(audio)
+    const seek = screen.getByRole('slider', { name: 'Seek' })
+
+    fireEvent.pointerDown(seek)
+    fireEvent.change(seek, { target: { value: '20' } })
+
+    expect(audio.paused).toBe(true)
+    expect(audio.currentTime).toBe(20)
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+
+    fireEvent.pointerUp(seek)
+
+    expect(audio.paused).toBe(false)
+  })
+
+  it('leaves the song where the drag left it when the pointer is cancelled', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+
+    const audio = audioElement()
+    stubDuration(audio, 30)
+    fireEvent.durationChange(audio)
+    const seek = screen.getByRole('slider', { name: 'Seek' })
+
+    fireEvent.pointerDown(seek)
+    fireEvent.pointerCancel(seek)
+
+    // A cancelled pointer sends no `pointerup`; without this the song would stay silent for good.
+    expect(audio.paused).toBe(false)
+  })
+
   it('persists the volume once, after the slider settles', async () => {
     const api = seedApi({ songs })
     await renderApp()
