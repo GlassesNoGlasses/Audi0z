@@ -1,4 +1,5 @@
 import { act, render, screen, type RenderResult } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, vi, type Mock } from 'vitest'
 import {
   createMockApi,
@@ -90,6 +91,21 @@ export function appRoot(): HTMLElement {
 
 export function sidebar(): HTMLElement {
   return screen.getByRole('complementary')
+}
+
+/**
+ * Chooses a mode from the top bar's sort menu, which closes behind every choice — so `presses`
+ * is how many times to open it and click the same item, and a descending sort is two.
+ */
+export async function sortView(
+  user: ReturnType<typeof userEvent.setup>,
+  item: string | RegExp,
+  presses = 1
+): Promise<void> {
+  for (let press = 0; press < presses; press += 1) {
+    await user.click(screen.getByRole('button', { name: 'Sort songs' }))
+    await user.click(screen.getByRole('menuitemradio', { name: item }))
+  }
 }
 
 /** Titles currently listed in the main song list, in display order. */

@@ -1,11 +1,15 @@
 import type { Playlist, SongDto } from '../../../shared/types'
-import type { View } from '../state/appReducer'
+import type { SortMode, View } from '../state/appReducer'
 
 /**
- * What the current view is about.
+ * What the current view is about, and in what order.
  *
  * Shared rather than owned by `SongList`: the top bar's play button has to queue exactly the songs
  * the list is showing, and two answers to "which songs are in view" would eventually disagree.
+ *
+ * The order is part of that answer, which is why the sort lives here too: the list, the play
+ * button and `App`'s queue re-sync all order through `songsInView` or `sortSongs` and nowhere
+ * else, so a sorted view is a sorted queue rather than a list that disagrees with what plays next.
  */
 
 /** The playlist being viewed, or null in the Library view. */
@@ -15,17 +19,44 @@ export function viewedPlaylist(view: View, playlists: Playlist[]): Playlist | nu
 }
 
 /**
- * The songs the current view is about, in the view's own order.
+ * A copy of the songs in the order the sort asks for, or the list itself when there is no sort —
+ * the identity is what lets the callers' memos treat "no sort" as costing nothing.
+ *
+ * `sort` is stable, so songs the comparator cannot separate (two added in the same millisecond)
+ * stay in the order they arrived in.
+ */
+export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
+  if (sort === null) return songs
+  const { field, direction } = sort
+  const flip = direction === 'asc' ? 1 : -1
+  return [...songs].sort((a, b) => {
+    if (field === 'addedAt') return a.addedAt < b.addedAt ? -flip : a.addedAt > b.addedAt ? flip : 0
+    // A song nobody has measured has nothing to sort by, so it sinks — in both directions,
+    // matching how the storage list treats an unreadable size.
+    if (a.durationSec === undefined) return b.durationSec === undefined ? 0 : 1
+    if (b.durationSec === undefined) return -1
+    return (a.durationSec - b.durationSec) * flip
+  })
+}
+
+/**
+ * The songs the current view is about, in the sort's order or — with no sort — the view's own.
  *
  * A playlist may still reference a song that was deleted between two reads, so unknown ids are
  * dropped rather than rendered as holes.
  */
-export function songsInView(songs: SongDto[], playlist: Playlist | null, view: View): SongDto[] {
-  if (view.kind === 'library') return songs
+export function songsInView(
+  songs: SongDto[],
+  playlist: Playlist | null,
+  view: View,
+  sort: SortMode
+): SongDto[] {
+  if (view.kind === 'library') return sortSongs(songs, sort)
   if (!playlist) return []
   const byId = new Map(songs.map((song) => [song.id, song]))
-  return playlist.songIds.flatMap((id) => {
+  const picked = playlist.songIds.flatMap((id) => {
     const song = byId.get(id)
     return song ? [song] : []
   })
+  return sortSongs(picked, sort)
 }

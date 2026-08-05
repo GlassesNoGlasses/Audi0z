@@ -13,6 +13,7 @@ import {
   seedApi,
   sidebar,
   song,
+  sortView,
   stubMediaElement
 } from '../testing/harness'
 import { TopNav } from './TopNav'
@@ -36,7 +37,7 @@ interface Seed {
 }
 
 function Probe(): ReactElement {
-  const { playback, dialog } = useAppState()
+  const { playback, dialog, sort } = useAppState()
   return (
     <div>
       <span data-testid="playing">{playback.currentId ?? 'nothing'}</span>
@@ -44,6 +45,7 @@ function Probe(): ReactElement {
       <span data-testid="isPlaying">{playback.isPlaying ? 'playing' : 'paused'}</span>
       <span data-testid="playToken">{playback.playToken}</span>
       <span data-testid="dialog">{dialog === null ? 'none' : JSON.stringify(dialog)}</span>
+      <span data-testid="sort">{sort === null ? 'manual' : `${sort.field} ${sort.direction}`}</span>
     </div>
   )
 }
@@ -93,7 +95,7 @@ async function reseed(result: RenderResult, seed: Seed, rng?: Rng): Promise<void
   })
 }
 
-function probe(name: 'playing' | 'queue' | 'isPlaying' | 'playToken' | 'dialog'): string {
+function probe(name: 'playing' | 'queue' | 'isPlaying' | 'playToken' | 'dialog' | 'sort'): string {
   return screen.getByTestId(name).textContent ?? ''
 }
 
@@ -222,6 +224,107 @@ describe('TopNav buttons', () => {
   it('offers it nowhere else — the Library is not a playlist', async () => {
     await renderTopNav({ songs })
     expect(screen.queryByRole('button', { name: /Add songs to/ })).toBeNull()
+  })
+})
+
+describe('TopNav sort menu', () => {
+  function trigger(): HTMLElement {
+    return screen.getByRole('button', { name: 'Sort songs' })
+  }
+
+  it('opens and shuts the menu from its own button', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    await user.click(trigger())
+
+    expect(screen.getByRole('menu', { name: 'Sort songs' })).toBeInTheDocument()
+    expect(trigger()).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(trigger())
+
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(trigger()).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  /** Oldest first, then newest first: the second press on the mode in force is the flip. */
+  it('sorts by date added ascending, and flips direction on the next press', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await sortView(user, /^Date added/)
+    expect(probe('sort')).toBe('addedAt asc')
+
+    await sortView(user, /^Date added/)
+    expect(probe('sort')).toBe('addedAt desc')
+  })
+
+  /** A different field is a fresh question, so it is asked ascending rather than inheriting. */
+  it('starts a new field ascending rather than carrying the last direction over', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await sortView(user, /^Date added/, 2)
+    expect(probe('sort')).toBe('addedAt desc')
+
+    await sortView(user, /^Duration/)
+    expect(probe('sort')).toBe('durationSec asc')
+  })
+
+  it('goes back to the stored order from Manual order', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await sortView(user, /^Duration/)
+    await sortView(user, 'Manual order')
+
+    expect(probe('sort')).toBe('manual')
+  })
+
+  it('ticks the mode in force and shuts behind the choice', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+    await user.click(trigger())
+
+    const items = (): HTMLElement[] => screen.getAllByRole('menuitemradio')
+    expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false'
+    ])
+
+    await user.click(screen.getByRole('menuitemradio', { name: /^Duration/ }))
+    expect(screen.queryByRole('menu')).toBeNull()
+
+    await user.click(trigger())
+    expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
+      'false',
+      'false',
+      'true'
+    ])
+  })
+
+  it('shuts on Escape, handing focus back to the button that opened it', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await user.click(trigger())
+    await user.keyboard('{Escape}')
+
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(document.activeElement).toBe(trigger())
+    expect(probe('sort')).toBe('manual')
+  })
+
+  it('shuts on a click outside itself', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await user.click(trigger())
+    await user.click(screen.getByTestId('sort'))
+
+    expect(screen.queryByRole('menu')).toBeNull()
   })
 })
 

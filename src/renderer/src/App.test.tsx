@@ -10,6 +10,7 @@ import {
   seedApi,
   song,
   songTitles,
+  sortView,
   stubMediaElement
 } from './testing/harness'
 
@@ -150,6 +151,39 @@ describe('App shell', () => {
     await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(1))
     expect(screen.getByRole('alert')).toHaveTextContent('library.json is read-only')
     expect(songTitles()).toEqual(['Alpha Mix'])
+  })
+})
+
+describe('App sorting', () => {
+  const byDate = [
+    song('a', 'Alpha Mix', { addedAt: '2024-01-01T00:00:00.000Z' }),
+    song('b', 'Bravo Beat', { addedAt: '2024-02-01T00:00:00.000Z' }),
+    song('c', 'Charlie Tune', { addedAt: '2024-03-01T00:00:00.000Z' })
+  ]
+
+  /**
+   * The whole point of sorting in `songsInView`: the queue re-sync applies the same order, so what
+   * plays next is what the list now shows. Sorting is not a queue switch, though — it reorders
+   * around the song already playing rather than restarting it.
+   */
+  it('reorders the playing queue behind the song that is playing', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: byDate })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    // Twice: the first press is ascending, which this library is already in.
+    await sortView(user, /^Date added/, 2)
+
+    expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    // Alpha Mix is the last of the new order, so next wraps to the top of it — under the old
+    // queue it would have been Bravo Beat.
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Charlie Tune')
   })
 })
 

@@ -66,6 +66,16 @@ Played flags are per-queue and live **in memory only** — they are never persis
   changes only what is listed — playback carries on untouched. The queue follows when the user
   plays a song from another view: that song starts in the new queue. A queue switch with no song
   to start still stops playback (no surprise cross-fade between contexts).
+- **Sorting belongs to the view, and the queue follows it.** The top bar's sort menu orders
+  whatever is on screen — Library or playlist — by date added or playing time, ascending on the
+  first press of a mode and flipping on the next. Manual, the default, is the stored order: the
+  library's insertion order, a playlist's own. The sort is a **view-layer, session-only** thing —
+  one field on the renderer's state tree, written to neither `settings.json` nor the playlist, so
+  a relaunch is back to Manual and no stored order is ever rewritten. It is applied in exactly one
+  place (`songsInView`/`sortSongs`), which is what keeps the list, the top bar's play button and
+  the queue re-sync agreeing: reordering the view reorders the queue behind the song that is
+  playing, without interrupting it. Songs the duration backfill has not reached yet have no
+  playing time to sort by, so they sink to the end in both directions.
 - **One download at a time**; the URL flow is two-step: `probe` → user confirms title/tags →
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash

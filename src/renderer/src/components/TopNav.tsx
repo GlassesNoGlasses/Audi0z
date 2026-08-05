@@ -1,9 +1,13 @@
-import { useMemo, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { songsInView, viewedPlaylist } from '../lib/viewSongs'
 import { defaultRng } from '../playback/engine'
 import { LIBRARY_QUEUE_ID, type Rng } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
+import type { SortMode } from '../state/appReducer'
 import { SearchBox } from './SearchBox'
+
+/** What the menu can order by. Null is not one of them: it is the stored order, listed as Manual. */
+type SortField = NonNullable<SortMode>['field']
 
 export interface TopNavProps {
   /** Picks which song a shuffled view starts on. Injected by the tests, `Math.random` in the app. */
@@ -15,14 +19,46 @@ export interface TopNavProps {
  * not about a single song.
  */
 export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
-  const { songs, playback, playlists, settings, view } = useAppState()
+  const { songs, playback, playlists, settings, sort, view } = useAppState()
   const dispatch = useAppDispatch()
 
   const containingPlaylist = useMemo(() => viewedPlaylist(view, playlists), [view, playlists])
   const inView = useMemo(
-    () => songsInView(songs, containingPlaylist, view),
-    [songs, containingPlaylist, view]
+    () => songsInView(songs, containingPlaylist, view, sort),
+    [songs, containingPlaylist, view, sort]
   )
+
+  const [sortOpen, setSortOpen] = useState(false)
+  const sortRef = useRef<HTMLDivElement>(null)
+  const sortTriggerRef = useRef<HTMLButtonElement>(null)
+
+  /**
+   * Registered only while the menu is up, exactly as the row menu's is, and deliberately without
+   * `preventDefault`: this menu is not modal, a dialog can be open behind it (a file dropped on
+   * the window while it was up), and swallowing the key would cost two presses to leave one menu.
+   */
+  useEffect(() => {
+    if (!sortOpen) return
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      setSortOpen(false)
+      // Escape only. An outside click has already chosen where the user is going.
+      sortTriggerRef.current?.focus()
+    }
+    // `mousedown` rather than `click`: the menu has to be gone before whatever was clicked reacts.
+    const onPointerDown = (event: MouseEvent): void => {
+      if (sortRef.current?.contains(event.target as Node)) return
+      setSortOpen(false)
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('mousedown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('mousedown', onPointerDown)
+    }
+  }, [sortOpen])
 
   // A playlist that has just been deleted leaves the view pointing at nothing for a render; the
   // button is disabled anyway, so the name only has to stay distinct from the transport's own
@@ -62,6 +98,22 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     })
   }
 
+  /**
+   * A field is asked for ascending the first time — oldest first, shortest first — and the next
+   * press on the one already in force flips it. Manual hands the view back to its stored order.
+   * Every choice shuts the menu: it is a radio group, not somewhere to stay.
+   */
+  function choose(field: SortField | null): void {
+    setSortOpen(false)
+    dispatch({
+      type: 'sort/changed',
+      sort:
+        field === null
+          ? null
+          : { field, direction: sort?.field === field && sort.direction === 'asc' ? 'desc' : 'asc' }
+    })
+  }
+
   return (
     <header className="topnav">
       <button
@@ -94,6 +146,50 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
       <span className="topnav-spacer" />
 
+      <div className="sort-menu-anchor" ref={sortRef}>
+        <button
+          type="button"
+          className="topnav-icon"
+          ref={sortTriggerRef}
+          aria-label="Sort songs"
+          aria-haspopup="menu"
+          aria-expanded={sortOpen}
+          onClick={() => setSortOpen((open) => !open)}
+        >
+          <SortIcon />
+        </button>
+        {sortOpen ? (
+          <div className="sort-menu" role="menu" aria-label="Sort songs">
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort === null}
+              onClick={() => choose(null)}
+            >
+              Manual order
+            </button>
+            {/* The arrow is part of the name on purpose: `aria-checked` says which mode is on,
+                and nothing else would say which way round it runs. */}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort?.field === 'addedAt'}
+              onClick={() => choose('addedAt')}
+            >
+              Date added {sort?.field === 'addedAt' ? (sort.direction === 'asc' ? '↓' : '↑') : ''}
+            </button>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort?.field === 'durationSec'}
+              onClick={() => choose('durationSec')}
+            >
+              Duration {sort?.field === 'durationSec' ? (sort.direction === 'asc' ? '↓' : '↑') : ''}
+            </button>
+          </div>
+        ) : null}
+      </div>
+
       <button
         type="button"
         className="topnav-icon"
@@ -121,6 +217,28 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
         Settings
       </button>
     </header>
+  )
+}
+
+/** Shortening bars: the shape a sorted list makes, and the one every other app draws this with. */
+function SortIcon(): ReactElement {
+  return (
+    <svg
+      className="icon"
+      viewBox="0 0 16 16"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2.5 4h11" />
+      <path d="M2.5 8h7" />
+      <path d="M2.5 12h3.5" />
+    </svg>
   )
 }
 

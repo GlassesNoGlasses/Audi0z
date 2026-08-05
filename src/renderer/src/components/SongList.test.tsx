@@ -9,6 +9,7 @@ import {
   sidebar,
   song,
   songTitles,
+  sortView,
   stubMediaElement
 } from '../testing/harness'
 
@@ -56,6 +57,43 @@ describe('SongList', () => {
     // library's wrap-around to Alpha Mix.
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Bravo Beat')
+  })
+
+  it('lists the library newest first once the sort asks for it', async () => {
+    const user = userEvent.setup()
+    seedApi({
+      songs: [
+        song('a', 'Alpha Mix', { addedAt: '2024-01-01T00:00:00.000Z' }),
+        song('b', 'Bravo Beat', { addedAt: '2024-02-01T00:00:00.000Z' }),
+        song('c', 'Charlie Tune', { addedAt: '2024-03-01T00:00:00.000Z' })
+      ]
+    })
+    await renderApp()
+
+    // Twice: the first press is ascending, which this library is already in.
+    await sortView(user, /^Date added/, 2)
+
+    expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
+  })
+
+  /**
+   * The backfill measures songs behind the list, so a library being sorted by playing time will
+   * routinely hold some that have none yet. They go to the end rather than leading with a blank.
+   */
+  it('sinks a song with no playing time to the end of a duration sort', async () => {
+    const user = userEvent.setup()
+    seedApi({
+      songs: [
+        song('a', 'Alpha Mix', { durationSec: 200 }),
+        song('b', 'Bravo Beat'),
+        song('c', 'Charlie Tune', { durationSec: 100 })
+      ]
+    })
+    await renderApp()
+
+    await sortView(user, /^Duration/)
+
+    expect(songTitles()).toEqual(['Charlie Tune', 'Alpha Mix', 'Bravo Beat'])
   })
 
   it('queues the whole view even when the search has filtered it down', async () => {

@@ -251,6 +251,47 @@ input[type='range'] {
   color: var(--fg);
 }
 
+/*
+ * The bar clips nothing, so the menu below can hang off it — this only has to be what it hangs
+ * from. `flex` rather than the default block: a block wraps the button in a line box, and the
+ * descender space under it would sit the icon a couple of pixels above the ones either side.
+ */
+.sort-menu-anchor {
+  display: flex;
+  position: relative;
+}
+
+/* The same surface a row's ⋯ menu is drawn on: one popup, one language, wherever it opens. */
+.sort-menu {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 5;
+}
+
+.sort-menu button {
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  padding: 6px 10px;
+  text-align: left;
+  /* The direction arrow arrives and leaves as the mode changes; the item must not rewrap under it. */
+  white-space: nowrap;
+}
+
+.sort-menu button:hover {
+  background: var(--panel);
+  border-color: transparent;
+}
+
 .search-box {
   flex: 1;
   max-width: 380px;
