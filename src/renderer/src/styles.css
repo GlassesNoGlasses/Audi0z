@@ -449,7 +449,8 @@ input[type='range'] {
 }
 
 /* The registry's colour arrives inline; this is what a tag it has never heard of falls back to. */
-.song-tag {
+.song-tag,
+.menu-tag-chip {
   background: var(--panel-2);
   border-radius: 999px;
   color: var(--muted);
@@ -524,7 +525,15 @@ input[type='range'] {
 }
 
 .song-menu-popup button.menu-check-item {
+  align-items: center;
+  display: flex;
+  gap: 6px;
   padding-left: 6px;
+}
+
+/* A long tag name ellipsizes inside its pill rather than widening the whole popup. */
+.menu-tag-chip {
+  max-width: 160px;
 }
 
 .menu-note {

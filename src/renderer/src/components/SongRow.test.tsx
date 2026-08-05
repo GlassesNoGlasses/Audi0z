@@ -383,6 +383,21 @@ describe('SongRow tag menu', () => {
     )
   })
 
+  it('draws the menu tag items as the same chips the row wears', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, tags: registry })
+    await renderApp()
+
+    const menu = await openMenu(user, 'Alpha Mix')
+    await user.click(within(menu).getByRole('menuitem', { name: 'Tags' }))
+
+    const chip = within(menu).getByText('slowed')
+    expect(chip).toHaveClass('menu-tag-chip')
+    expect(chip).toHaveStyle({ backgroundColor: '#e0a35c', color: '#000000' })
+    // The chip must not have grown a focus stop of its own — the walker owns the buttons.
+    expect(within(menu).getByRole('menuitemcheckbox', { name: 'slowed' })).toBeInTheDocument()
+  })
+
   it('sends the user to the Tags dialog when the registry is empty', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs })

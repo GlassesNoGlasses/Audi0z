@@ -8,7 +8,8 @@ import {
   type ReactElement
 } from 'react'
 import type { Playlist, SongDto, Tag } from '../../../shared/types'
-import { formatBytes, formatDate, formatDuration, readableTextColor } from '../lib/format'
+import { formatBytes, formatDate, formatDuration } from '../lib/format'
+import { TagChip } from './TagChip'
 
 /**
  * The items the keyboard can reach, in the order they are drawn: the tag toggles the Tags submenu
@@ -180,19 +181,7 @@ function SongRowView({
             // A song may carry a tag the registry has never heard of (hand-edited JSON, or a tag
             // deleted between two reads) — it still shows, in the stylesheet's grey.
             const known = tags.find((tag) => tag.name === name)
-            return (
-              <span
-                key={name}
-                className="song-tag"
-                style={
-                  known
-                    ? { background: known.color, color: readableTextColor(known.color) }
-                    : undefined
-                }
-              >
-                {name}
-              </span>
-            )
+            return <TagChip key={name} name={name} color={known?.color} className="song-tag" />
           })}
         </span>
       )}
@@ -305,7 +294,12 @@ function TagItems({ song, tags, onToggleTag }: TagItemsProps): ReactElement {
             <span className="menu-check" aria-hidden="true">
               {has ? '✓' : ''}
             </span>
-            {tag.name}
+            {/*
+             * The chip is the item's only visible text, so the button's accessible name is still
+             * the tag name alone. Everything in the registry has a colour, so the menu never draws
+             * the chip's uncoloured fallback.
+             */}
+            <TagChip name={tag.name} color={tag.color} className="menu-tag-chip" />
           </button>
         )
       })}
