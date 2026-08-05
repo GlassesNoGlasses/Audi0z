@@ -96,6 +96,57 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'true')
   })
 
+  /**
+   * The other half of that split, drawn rather than merely honoured: `aria-current` says which
+   * entry is being BROWSED, and the marker below says which one the sound is coming from. They are
+   * independent axes, so a test that only ever looked at a view whose queue it also owned would
+   * not be able to tell the two apart.
+   */
+  it('marks the playlist the sound is coming from, not the one being browsed', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [playlist('p1', 'Late night', ['a'])] })
+    await renderApp()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Late night' }))
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(within(sidebar()).getByRole('button', { name: 'Library' }))
+
+    const entry = within(sidebar()).getByRole('button', { name: 'Late night' })
+    expect(entry).toHaveClass('is-playing-source')
+    expect(entry).not.toHaveAttribute('aria-current')
+
+    const library = within(sidebar()).getByRole('button', { name: 'Library' })
+    expect(library).not.toHaveClass('is-playing-source')
+    expect(library).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('marks the Library entry when the library itself is the queue', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+
+    expect(within(sidebar()).getByRole('button', { name: 'Library' })).toHaveClass(
+      'is-playing-source'
+    )
+    expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).not.toHaveClass(
+      'is-playing-source'
+    )
+  })
+
+  /**
+   * Boot cues the library queue unconditionally, with nothing playing. Marking the entry then would
+   * claim sound is coming from a library nobody has pressed play on yet.
+   */
+  it('marks nothing while the queue is only cued at boot', async () => {
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    expect(nowPlaying()).toBe('Nothing playing')
+    expect(document.querySelector('.is-playing-source')).toBeNull()
+  })
+
   it('expands a playlist without disturbing the queue', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes] })

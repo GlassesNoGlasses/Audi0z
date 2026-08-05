@@ -168,6 +168,16 @@ input[type='range'] {
   color: var(--accent);
 }
 
+/*
+ * The queue's home: browsed or not, this is where the sound is coming from. An inset shadow rather
+ * than a border, so lighting an entry up cannot shove the list sideways — and it composes with the
+ * rule above when the user happens to be browsing the playing list.
+ */
+.sidebar-entry.is-playing-source {
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--accent);
+}
+
 .playlist-list,
 .playlist-songs {
   list-style: none;

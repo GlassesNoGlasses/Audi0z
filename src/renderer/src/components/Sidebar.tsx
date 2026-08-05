@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactElement } from 'react'
 import type { Playlist } from '../../../shared/types'
 import { errorMessage } from '../lib/errors'
+import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
 /**
@@ -11,11 +12,15 @@ import { useAppDispatch, useAppState } from '../state/AppContext'
  * song from the view they moved to (`SongList`). Expanding an entry to peek at its songs is
  * deliberately not even a view change.
  *
+ * Which is why the entries carry two independent marks: `aria-current` is the view the user is
+ * browsing, and `is-playing-source` is where the sound is coming from. Wander off the playing
+ * playlist and they part company — that parting is the whole point of the second one.
+ *
  * The playlist filter is local state, like `AddToPlaylistDialog`'s: the store's `query` is the song
  * list's, and narrowing the sidebar is not a request to narrow what is being browsed.
  */
 export function Sidebar(): ReactElement {
-  const { songs, playlists, view, expandedPlaylists } = useAppState()
+  const { songs, playlists, view, expandedPlaylists, playback } = useAppState()
   const dispatch = useAppDispatch()
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
@@ -35,6 +40,11 @@ export function Sidebar(): ReactElement {
   // order: a filtered list says nothing about where the hidden playlists go, and a row that is
   // being renamed has a text field in it that a drag would fight for the pointer.
   const canDrag = filter.trim() === '' && renamingId === null
+
+  // Cued-but-silent (the boot state) is not "playing from": the marker needs a current song. Boot
+  // loads the library queue whether or not anyone has pressed play, so `queueId` alone would light
+  // Library up on a silent app. Deleting the playing playlist nulls `queueId`, so this self-clears.
+  const playingQueueId = playback.currentId === null ? null : playback.queueId
 
   const titleOf = (songId: string): string =>
     songs.find((song) => song.id === songId)?.title ?? 'Unknown song'
@@ -95,7 +105,11 @@ export function Sidebar(): ReactElement {
       <nav className="sidebar-nav">
         <button
           type="button"
-          className="sidebar-entry"
+          className={
+            playingQueueId === LIBRARY_QUEUE_ID
+              ? 'sidebar-entry is-playing-source'
+              : 'sidebar-entry'
+          }
           aria-current={view.kind === 'library' ? 'true' : undefined}
           onClick={selectLibrary}
         >
@@ -181,7 +195,11 @@ export function Sidebar(): ReactElement {
                     <>
                       <button
                         type="button"
-                        className="sidebar-entry"
+                        className={
+                          playingQueueId === playlist.id
+                            ? 'sidebar-entry is-playing-source'
+                            : 'sidebar-entry'
+                        }
                         aria-current={
                           view.kind === 'playlist' && view.id === playlist.id ? 'true' : undefined
                         }
