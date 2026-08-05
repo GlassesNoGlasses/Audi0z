@@ -3,7 +3,7 @@
   --bg: #16161a;
   --panel: #1d1d22;
   --panel-2: #24242b;
-  --line: #2f2f38;
+  --line: #363642;
   --fg: #ececed;
   --muted: #9a9aa2;
   --accent: #7c8cff;
@@ -184,8 +184,14 @@ input[type='range'] {
 
 .playlist-row {
   align-items: center;
+  border-radius: var(--radius);
   display: flex;
   gap: 2px;
+  padding: 2px 4px;
+}
+
+.playlist-row:hover {
+  background: var(--panel-2);
 }
 
 .playlist-row button:not(.sidebar-entry) {
@@ -355,33 +361,40 @@ input[type='range'] {
 }
 
 .song-list {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  gap: 4px;
   list-style: none;
   margin: 0;
   overflow-y: auto;
   padding: 4px 8px;
 }
 
-/* A ruled list, not a stack of pills: the border is what separates one song from the next. */
+/*
+ * A stack of bounded surfaces, not a ruled list: the gap between rows separates one song from the
+ * next, and each row carries its own ground. `position: relative` is load-bearing — the row's
+ * overflow menu is hung off it rather than laid out in the row.
+ */
 .song-row {
   align-items: center;
-  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   display: flex;
   gap: 10px;
   padding: 8px 10px;
   position: relative;
 }
 
-.song-row:last-child {
-  border-bottom: none;
-}
-
 .song-row:hover {
-  background: var(--panel);
+  background: var(--panel-2);
 }
 
+/* After the hover rule on purpose: the two match on specificity, so playing beats pointed-at. */
 .song-row.is-current {
-  background: var(--panel-2);
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+  border-color: var(--accent);
 }
 
 /* Tabular and fixed-width so the two columns of figures line up down the whole list. */
@@ -735,6 +748,11 @@ input[type='range'] {
   border-bottom: none;
 }
 
+/* The list is bordered as a whole, so a row can only step forward by its fill. */
+.file-row:hover {
+  background: var(--panel-2);
+}
+
 /* Tabular so the column of sizes lines up down the list. */
 .file-size {
   color: var(--muted);
@@ -830,6 +848,7 @@ input[type='range'] {
 
 .add-row {
   align-items: center;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   display: flex;
   gap: 12px;
@@ -971,7 +990,10 @@ input[type='range'] {
   gap: 4px;
 }
 
+/* The same accent fill the transport toggles and the tag picker use, for the same reason: the global
+   hover already moves the border, so only a fill can say "on" at a glance. */
 .segmented button[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
   border-color: var(--accent);
   color: var(--accent);
 }
