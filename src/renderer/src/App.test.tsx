@@ -207,10 +207,10 @@ describe('App keyboard shortcuts', () => {
   })
 
   /**
-   * The click leaves focus on the row's own button — the exact state the replay bug lived in, and
-   * the one the tests firing on the body cannot reach. A play-token bump is what re-runs
-   * `useAudioElement`'s load effect, so an unmoved `play()` count is the proof that space paused
-   * the song rather than starting it again from the top.
+   * Since v3.1 the click itself hands focus back to the body, so space reaches the transport
+   * rather than the row's own button — the state the replay bug lived in is now unreachable by
+   * mouse. A play-token bump is what re-runs `useAudioElement`'s load effect, so an unmoved
+   * `play()` count is the proof that space paused the song rather than starting it from the top.
    */
   it('space after clicking a song pauses it rather than replaying it', async () => {
     const user = userEvent.setup()
@@ -218,7 +218,8 @@ describe('App keyboard shortcuts', () => {
     await renderApp()
 
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Alpha Mix' }))
+    // v3.1: a mouse click no longer parks focus on the row — the shortcuts own the keyboard.
+    expect(document.activeElement).toBe(document.body)
     const plays = playSpy().mock.calls.length
 
     await user.keyboard(' ')
@@ -269,9 +270,9 @@ describe('App keyboard shortcuts', () => {
   })
 
   /**
-   * The click leaves focus on the row's own button, which is where the arrows are actually pressed.
-   * jsdom never reports a duration, so only the lower clamp is in play here — and it is the one
-   * that matters: three presses past the start must not leave the element at a negative time.
+   * The click drops focus to the body, which is where the arrows are actually pressed. jsdom never
+   * reports a duration, so only the lower clamp is in play here — and it is the one that matters:
+   * three presses past the start must not leave the element at a negative time.
    */
   it('arrow keys skip ten seconds either way, clamped at the start', async () => {
     const user = userEvent.setup()

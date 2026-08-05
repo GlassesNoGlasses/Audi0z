@@ -12,6 +12,7 @@ import { ToastHost } from './components/ToastHost'
 import { TopNav } from './components/TopNav'
 import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
+import { useClickFocusReset } from './hooks/useClickFocusReset'
 import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { errorMessage, trashFailureMessage } from './lib/errors'
@@ -163,6 +164,10 @@ function AppShell(): ReactElement {
       .then((updated) => dispatch({ type: 'settings/updated', settings: updated }))
       .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
   }, [dispatch, settings])
+
+  // Every mouse click hands the keyboard back: without this the shortcuts below reach a focused
+  // button or slider instead of the transport, and the click leaves a focus ring behind.
+  useClickFocusReset()
 
   useKeyboardShortcuts({
     enabled: dialog === null,
