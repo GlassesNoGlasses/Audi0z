@@ -5,6 +5,7 @@ import { mockApiControls } from '../../../tests/support/mockApi'
 import {
   audioElement,
   nowPlaying,
+  playSpy,
   renderApp,
   seedApi,
   song,
@@ -169,6 +170,28 @@ describe('App keyboard shortcuts', () => {
     press(' ')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
     expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  /**
+   * The click leaves focus on the row's own button — the exact state the replay bug lived in, and
+   * the one the tests firing on the body cannot reach. A play-token bump is what re-runs
+   * `useAudioElement`'s load effect, so an unmoved `play()` count is the proof that space paused
+   * the song rather than starting it again from the top.
+   */
+  it('space after clicking a song pauses it rather than replaying it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const plays = playSpy().mock.calls.length
+
+    await user.keyboard(' ')
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(nowPlaying()).toBe('Alpha Mix')
+    expect(playSpy()).toHaveBeenCalledTimes(plays)
   })
 
   it('leaves a cold queue alone — space resumes, it does not choose a song', async () => {

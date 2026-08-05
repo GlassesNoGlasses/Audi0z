@@ -65,6 +65,13 @@ function attach(tag: string): HTMLElement {
   return element
 }
 
+/** The same, marked the way a song row marks its title button to hand space to the transport. */
+function optedIn(tag: string): HTMLElement {
+  const element = attach(tag)
+  element.setAttribute('data-space-transport', '')
+  return element
+}
+
 afterEach(() => {
   document.body.replaceChildren()
 })
@@ -127,6 +134,30 @@ describe('useKeyboardShortcuts — space', () => {
 
     // Handling it here too would fire the button AND the transport off one press.
     expect(onTogglePlay).not.toHaveBeenCalled()
+  })
+
+  it('claims space from a control marked data-space-transport and toggles the transport', () => {
+    const { onTogglePlay } = setup()
+
+    const event = press(' ', optedIn('button'))
+
+    expect(onTogglePlay).toHaveBeenCalledTimes(1)
+    // Load-bearing beyond the scroll: preventing the keydown is what cancels the button's own
+    // keyup click, and that click is what used to replay the song from the top.
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  /**
+   * The opt-in claims space only when there is something to toggle. With a cold queue the guard
+   * falls through un-prevented, so the row keeps its native activation and space starts it.
+   */
+  it('hands an opted-in control its space back when no song is cued', () => {
+    const { onTogglePlay } = setup({ hasCurrentSong: false })
+
+    const event = press(' ', optedIn('button'))
+
+    expect(onTogglePlay).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
   })
 
   it('ignores a key held down', () => {

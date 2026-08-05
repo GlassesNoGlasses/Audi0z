@@ -164,6 +164,10 @@ function SongRowView({
         // A song whose file has gone has nothing to play, so the whole row is inert.
         disabled={!song.exists}
         aria-current={isCurrent ? 'true' : undefined}
+        // The row keeps focus after a click, and space there means pause, not play this again.
+        // `useKeyboardShortcuts` reads the attribute; Enter is untouched, so the row is still
+        // reachable and activatable from the keyboard alone.
+        data-space-transport=""
         onClick={() => onPlay(song.id)}
       >
         {song.title}

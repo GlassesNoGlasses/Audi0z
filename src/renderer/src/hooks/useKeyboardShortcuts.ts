@@ -20,7 +20,11 @@ export interface KeyboardShortcutsOptions {
 /** Somewhere the user is typing: every key belongs to them, none to the player. */
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
-/** Space already activates these. Acting on it too would fire the control AND the transport. */
+/**
+ * Space already activates these. Acting on it too would fire the control AND the transport — so
+ * they keep the key, unless they sit inside something carrying `data-space-transport`, the opt-in
+ * a control uses to say its own activation is the wrong answer to a space press.
+ */
 const SPACE_ACTIVATED_TAGS = new Set(['BUTTON', 'A'])
 
 function tagOf(target: EventTarget | null): string | null {
@@ -53,10 +57,16 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions): void {
       if (!enabled || isTyping(event.target)) return
 
       if (event.key === ' ') {
-        if (SPACE_ACTIVATED_TAGS.has(tagOf(event.target) ?? '')) return
+        const target = event.target instanceof HTMLElement ? event.target : null
+        // Song rows opt back in via `data-space-transport`: space on a focused row belongs to the
+        // transport, not to replaying the row (Enter still activates it). The preventDefault below
+        // is load-bearing twice over — it stops the page scroll AND cancels the button's native
+        // keyup click, which is what used to restart the song.
+        const optedIn = target?.closest('[data-space-transport]') != null
+        if (!optedIn && SPACE_ACTIVATED_TAGS.has(tagOf(event.target) ?? '')) return
         // Deliberately not a cold start: space resumes what is cued, it does not choose a song.
+        // An opted-in control lands here un-prevented, so its own activation still gets the press.
         if (!hasCurrentSong) return
-        // Otherwise the window scrolls under the song list on every press.
         event.preventDefault()
         onTogglePlay()
         return
