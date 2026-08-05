@@ -742,6 +742,12 @@ input[type='range'] {
   overflow-wrap: anywhere;
 }
 
+.settings-update {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
 /* ---------- add to playlist ---------- */
 
 /* A tall panel of rows rather than a form: it is a list to work down, not a thing to fill in. */

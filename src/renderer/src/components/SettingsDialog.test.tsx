@@ -63,6 +63,26 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 
+  /**
+   * Every control in here persists the moment it is used, so the footer has nothing to submit and
+   * nothing to take back — dismissal is its whole job. The one button in it pins that, and pins
+   * that Update yt-dlp now lives in the body instead.
+   */
+  it('closes from the ok button', async () => {
+    seedApi()
+    const user = await openSettings()
+
+    const footer = settings().querySelector('.dialog-actions')
+    expect([...(footer?.querySelectorAll('button') ?? [])].map((el) => el.textContent)).toEqual([
+      'Ok'
+    ])
+    expect(within(settings()).getByRole('button', { name: 'Update yt-dlp' })).toBeVisible()
+
+    await user.click(within(settings()).getByRole('button', { name: 'Ok' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
+  })
+
   it('says what compressing saves, in bold, next to the preference', async () => {
     seedApi()
     await openSettings()

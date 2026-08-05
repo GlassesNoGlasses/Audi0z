@@ -231,12 +231,20 @@ export function SettingsDialog(): ReactElement {
           Compression re-encodes to Opus 96k on the way in. It saves space and loses a little
           quality.
         </p>
-        <div className="dialog-actions">
+        {/*
+          Updating yt-dlp is a thing this dialog does, not a way out of it: every preference here
+          persists the moment it is used, so the footer has nothing to submit and nothing to take
+          back — only Ok.
+        */}
+        <div className="settings-update">
           <button type="button" disabled={updating} onClick={updateYtDlp}>
             Update yt-dlp
           </button>
+          <span className="compress-note">Refreshes which sites downloads support.</span>
+        </div>
+        <div className="dialog-actions">
           <button type="button" onClick={close}>
-            Close
+            Ok
           </button>
         </div>
       </div>
