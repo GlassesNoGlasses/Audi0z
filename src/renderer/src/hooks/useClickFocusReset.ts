@@ -15,7 +15,10 @@ export function useClickFocusReset(): void {
   useEffect(() => {
     function onClick(event: MouseEvent): void {
       if (event.detail === 0) return
-      const target = event.target instanceof HTMLElement ? event.target : null
+      // `Element`, not `HTMLElement`: an icon button is all glyph, so the click lands on the
+      // `<svg>` (or a `<path>` inside it), and SVG elements are not HTMLElements. Narrowing any
+      // tighter would skip every icon in the app. `closest` lives on `Element` either way.
+      const target = event.target instanceof Element ? event.target : null
       const control = target?.closest<HTMLElement>('button, input[type="range"]')
       if (!control) return
       if (control.closest('[role="menu"]') !== null) return

@@ -10,6 +10,11 @@ function Harness(): ReactElement {
       <button type="button">Plain</button>
       <input type="range" aria-label="Seek" />
       <input type="search" aria-label="Find" />
+      <button type="button" aria-label="Icon">
+        <svg aria-hidden="true" viewBox="0 0 16 16">
+          <path d="M0 0h16v16H0z" />
+        </svg>
+      </button>
       <button type="button" aria-haspopup="menu">
         Trigger
       </button>
@@ -38,6 +43,20 @@ describe('useClickFocusReset', () => {
     slider.focus()
     fireEvent.click(slider, { detail: 1 })
     expect(slider).not.toHaveFocus()
+  })
+
+  it('drops focus when the click lands on a button’s svg icon', () => {
+    // An icon button is all glyph: the click target is the <svg>, not the button. SVG elements are
+    // not HTMLElements, so a narrowing that forgets them skips every icon in the app — including
+    // TopNav's "Add song", where a parked focus turns the next space into "open the dialog again".
+    render(<Harness />)
+    const button = screen.getByRole('button', { name: 'Icon' })
+    const icon = button.querySelector('path')
+    expect(icon).not.toBeNull()
+    button.focus()
+    fireEvent.click(icon as Element, { detail: 1, bubbles: true })
+    expect(button).not.toHaveFocus()
+    expect(document.body).toHaveFocus()
   })
 
   it('leaves a keyboard-activated click alone', () => {
