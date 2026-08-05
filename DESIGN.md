@@ -71,9 +71,23 @@ Played flags are per-queue and live **in memory only** — they are never persis
   operation succeeded (abort on trash failure — never orphan the record).
 - **Compression is optional**: an `ffmpeg` transcode to Opus 128k, chosen per-add and defaulted
   from settings.
-- **v1 ships unsigned builds** (mac dmg, win nsis, linux AppImage).
+- **Targets are mac dmg, win nsis, linux AppImage**, and the macOS build is **ad-hoc signed, not
+  unsigned**. Packaging rewrites the bundle and breaks the seal Electron ships with, which macOS
+  refuses outright on arm64, so an `afterPack` hook (`build/adhocSign.js`) runs `codesign --sign -`
+  over the packed `.app`. That buys no Gatekeeper trust: the first launch still needs right-click
+  Open.
 - Played flags are **not persisted**; shuffle/repeat **are** persisted per playlist (the Library
   view's own shuffle/repeat live in `settings.json`).
+- **Tag rename and delete are not transactional.** The registry (`tags.json`) is written first, then
+  the cascade through `library.json` — two files, two writes, no rollback. A refused registry write
+  never cascades, so only a failed library write can leave the two disagreeing, and what it strands
+  is a tag string on the songs that no registry entry names any more (re-running the rename will not
+  clear it — the registry already holds the new name).
+- **`event:libraryChanged` is declared but never sent.** The main process pushes only
+  `event:downloadProgress` and `event:error`; the renderer re-reads the library itself after every
+  mutation. The channel and its `onLibraryChanged` subscription are kept for the day a change from
+  outside (another window, a synced folder) has to be pushed — the test mock emits it, which is what
+  keeps that path exercised.
 
 ## Repository layout
 
@@ -87,11 +101,17 @@ tests/
   support/     mock Api, WAV generator, tmp library helpers (no binary fixtures)
   e2e/         Playwright tests driving the built Electron binary
 scripts/       fetch-ytdlp.mjs (pinned, checksum-verified binary download)
+build/         packaging assets: entitlements, the ad-hoc sign hook, the icon + its AVIF source
 ```
 
 Cross-directory imports are plain relative paths (`../shared/types`) — there are no path aliases
 to keep the four build configs (`electron.vite.config.ts`, `vitest.config.ts`, the two tsconfigs)
 free of resolution drift.
+
+The app icon is generated from `build/icon-source.avif` with macOS system tools: center-crop to a
+square on the 528px short side, upscale to 1024 for the `icon.png` master, then a `sips` size ladder
+off that master into `iconutil -c icns`. electron-builder finds `build/icon.icns` and
+`build/icon.png` by convention (`directories.buildResources`) — no config key points at them.
 
 ## Contracts
 
