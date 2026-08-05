@@ -41,6 +41,8 @@ function Probe(): ReactElement {
     <div>
       <span data-testid="playing">{playback.currentId ?? 'nothing'}</span>
       <span data-testid="queue">{playback.order.join(' ')}</span>
+      <span data-testid="isPlaying">{playback.isPlaying ? 'playing' : 'paused'}</span>
+      <span data-testid="playToken">{playback.playToken}</span>
       <span data-testid="dialog">{dialog === null ? 'none' : JSON.stringify(dialog)}</span>
     </div>
   )
@@ -61,23 +63,37 @@ function Seeder({ seed, children }: { seed: Seed; children: ReactNode }): ReactE
   return ready ? <>{children}</> : null
 }
 
+function bar(seed: Seed, rng?: Rng): ReactElement {
+  return (
+    <AppProvider>
+      <Seeder seed={seed}>
+        <TopNav rng={rng} />
+        <Probe />
+      </Seeder>
+    </AppProvider>
+  )
+}
+
 async function renderTopNav(seed: Seed = {}, rng?: Rng): Promise<RenderResult> {
   let result: RenderResult | undefined
   await act(async () => {
-    result = render(
-      <AppProvider>
-        <Seeder seed={seed}>
-          <TopNav rng={rng} />
-          <Probe />
-        </Seeder>
-      </AppProvider>
-    )
+    result = render(bar(seed, rng))
   })
   if (!result) throw new Error('renderTopNav: render produced nothing')
   return result
 }
 
-function probe(name: 'playing' | 'queue' | 'dialog'): string {
+/**
+ * Moves the mounted bar to another view. A fresh `seed` object re-runs the Seeder's effect, and
+ * none of what it re-dispatches touches `playback` — so whatever is playing goes on playing.
+ */
+async function reseed(result: RenderResult, seed: Seed, rng?: Rng): Promise<void> {
+  await act(async () => {
+    result.rerender(bar(seed, rng))
+  })
+}
+
+function probe(name: 'playing' | 'queue' | 'isPlaying' | 'playToken' | 'dialog'): string {
   return screen.getByTestId(name).textContent ?? ''
 }
 
@@ -120,6 +136,49 @@ describe('TopNav play button', () => {
   it('has nothing to play in an empty view', async () => {
     await renderTopNav()
     expect(screen.getByRole('button', { name: 'Play Library' })).toBeDisabled()
+  })
+
+  /**
+   * The play token is the assertion that matters: `useAudioElement` reloads the source whenever it
+   * moves, so an unchanged token is what proves the pause did not rewind the song.
+   */
+  it('pauses the view it is already playing instead of restarting it', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    const token = probe('playToken')
+    await user.click(screen.getByRole('button', { name: 'Pause Library' }))
+
+    expect(probe('isPlaying')).toBe('paused')
+    expect(probe('playing')).toBe('a')
+    expect(probe('playToken')).toBe(token)
+  })
+
+  it('resumes a paused view from where it stopped', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    const token = probe('playToken')
+    await user.click(screen.getByRole('button', { name: 'Pause Library' }))
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+
+    expect(probe('isPlaying')).toBe('playing')
+    expect(probe('playing')).toBe('a')
+    expect(probe('playToken')).toBe(token)
+  })
+
+  it('still hands the queue over when a different view is playing', async () => {
+    const user = userEvent.setup()
+    const result = await renderTopNav({ songs, playlists: [mixes] })
+
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    await reseed(result, { songs, playlists: [mixes], view: { kind: 'playlist', id: 'p1' } })
+    await user.click(screen.getByRole('button', { name: 'Play Mixes' }))
+
+    expect(probe('queue')).toBe('c a')
+    expect(probe('playing')).toBe('c')
   })
 })
 

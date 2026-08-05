@@ -15,7 +15,7 @@ export interface TopNavProps {
  * not about a single song.
  */
 export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
-  const { songs, playlists, settings, view } = useAppState()
+  const { songs, playback, playlists, settings, view } = useAppState()
   const dispatch = useAppDispatch()
 
   const containingPlaylist = useMemo(() => viewedPlaylist(view, playlists), [view, playlists])
@@ -25,21 +25,36 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   )
 
   // A playlist that has just been deleted leaves the view pointing at nothing for a render; the
-  // button is disabled anyway, so the name only has to stay distinct from the transport's "Play".
+  // button is disabled anyway, so the name only has to stay distinct from the transport's own
+  // "Play" and "Pause" — which the view name suffix does.
   const viewName = view.kind === 'library' ? 'Library' : (containingPlaylist?.name ?? 'playlist')
+
+  const viewQueueId = view.kind === 'library' ? LIBRARY_QUEUE_ID : view.id
+  // The button is a toggle exactly when this view's queue is the one loaded in the transport.
+  const viewIsCued = playback.queueId === viewQueueId && playback.currentId !== null
+  const viewPlaying = viewIsCued && playback.isPlaying
 
   /**
    * Playing the view hands the queue over to it, exactly as playing one of its rows does — with
    * the view's own shuffle and repeat, and starting where shuffle says rather than always at the
    * top. The search is not consulted: it filters what is shown, never what is queued.
+   *
+   * Once the view is the queue, handing it over again would throw away what the listener is in the
+   * middle of — back to song one (or a fresh shuffle pick), history and played flags gone — so the
+   * button becomes the transport's play/pause instead.
    */
   function playView(): void {
+    if (viewIsCued) {
+      dispatch({ type: 'transport/togglePlay' })
+      return
+    }
+
     const ids = inView.map((song) => song.id)
     if (ids.length === 0) return
     const shuffle = containingPlaylist ? containingPlaylist.shuffle : settings.libraryShuffle
     dispatch({
       type: 'queue/selected',
-      queueId: view.kind === 'library' ? LIBRARY_QUEUE_ID : view.id,
+      queueId: viewQueueId,
       order: ids,
       shuffle,
       repeat: containingPlaylist ? containingPlaylist.repeat : settings.libraryRepeat,
@@ -52,11 +67,11 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
       <button
         type="button"
         className="topnav-play"
-        aria-label={`Play ${viewName}`}
+        aria-label={viewPlaying ? `Pause ${viewName}` : `Play ${viewName}`}
         disabled={inView.length === 0}
         onClick={playView}
       >
-        ▶
+        {viewPlaying ? '⏸' : '▶'}
       </button>
 
       <SearchBox />
