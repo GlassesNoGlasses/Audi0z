@@ -21,6 +21,7 @@ Three processes, one direction of trust: the renderer asks, the main process doe
   - `library.json` — `{ version: 1, songs: Song[] }`
   - `playlists.json` — `{ version: 1, playlists: Playlist[] }`
   - `settings.json` — `Settings`
+  - `tags.json` — `{ version: 1, tags: Tag[] }`, the registry behind the plain strings songs carry
   - `audio/<uuid><ext>` — the audio files themselves
 - **JSON stores** with **atomic writes** (write to a temp file, then rename over the target) so a
   crash mid-write can never truncate the library.
@@ -115,6 +116,12 @@ off that master into `iconutil -c icns`. electron-builder finds `build/icon.icns
 
 ## Contracts
 
-`src/shared/types.ts`, `src/shared/api.ts`, `src/shared/ipc.ts` and
-`src/main/store/storeTypes.ts` are **frozen**: they are the seam between work packages. Changing
-them means changing every package that depends on them.
+`src/shared/types.ts`, `src/shared/api.ts`, `src/shared/ipc.ts` and `src/main/store/storeTypes.ts`
+are the seam between the three processes. They are not frozen — v2 widened them and this branch
+added `library.updateDurations` and dropped `revealInFolder` — but they only move **additively, or
+by a sweep that removes**: a member is never quietly redefined under its callers, and either way one
+commit lands the change in all four consumers at once. Those are the contract
+(`src/shared/api.ts`), the bridge (`src/preload/index.ts`), the test double
+(`tests/support/mockApi.ts`) and the main-process handler that answers the channel
+(`src/main/ipc/`). Half a sweep does not compile, and the seam the compiler cannot see across — the
+mock — is held to the preload's exact shape by `src/shared/api.test.ts`.
