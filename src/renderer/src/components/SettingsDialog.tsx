@@ -66,13 +66,23 @@ export function SettingsDialog(): ReactElement {
     })
   }
 
+  /**
+   * Resolving is not the same as having compressed. A re-encode that came out no smaller is thrown
+   * away and the original kept — a real outcome with nothing to show for it, so the toast is the
+   * only place the user can learn the file did not change and the row is still offering Compress.
+   */
   function compress(song: SongDto): void {
     markCompressing(song.id, true)
     void window.api.library
       .compress(song.id)
-      .then((updated) => {
+      .then(({ song: updated, shrank }) => {
         dispatch({ type: 'library/songUpdated', song: updated })
-        dispatch({ type: 'toast/pushed', message: `Compressed "${updated.title}"` })
+        dispatch({
+          type: 'toast/pushed',
+          message: shrank
+            ? `Compressed "${updated.title}"`
+            : `"${updated.title}" is already smaller than an Opus re-encode — kept the original`
+        })
       })
       .catch(fail)
       .finally(() => markCompressing(song.id, false))

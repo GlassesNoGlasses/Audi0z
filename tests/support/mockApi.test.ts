@@ -212,11 +212,12 @@ describe('song size and duration', () => {
 })
 
 describe('library.compress', () => {
-  it('marks the song compressed, renames the file and shrinks the reported size', async () => {
+  it('marks the song compressed, renames the file, shrinks the reported size and says it shrank', async () => {
     const api = createMockApi({ songs: [song('a', { sizeBytes: 5_000_001 })] })
 
-    const compressed = await api.library.compress('a')
+    const { song: compressed, shrank } = await api.library.compress('a')
 
+    expect(shrank).toBe(true)
     expect(compressed).toMatchObject({
       compressed: true,
       fileName: 'a.opus',

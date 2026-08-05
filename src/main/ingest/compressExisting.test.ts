@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, rename, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
@@ -33,11 +33,19 @@ async function addSongWithFile(overrides: Partial<Song> = {}): Promise<Song> {
 
 type Transcode = (opts: { src: string; dst: string }) => Promise<void>
 
-/** A transcode that actually produces an output file, the way ffmpeg would. */
-function fakeTranscode(): ReturnType<typeof vi.fn<Transcode>> {
+/**
+ * A transcode that actually produces an output file, the way ffmpeg would. `bytes` is what it
+ * writes, so a test that cares can decide whether the re-encode came out smaller than its source.
+ */
+function fakeTranscode(bytes = 'opus bytes'): ReturnType<typeof vi.fn<Transcode>> {
   return vi.fn<Transcode>(async ({ dst }) => {
-    await writeFile(dst, 'opus bytes')
+    await writeFile(dst, bytes)
   })
+}
+
+/** Where the re-encode is written before the size comparison decides whether it may be kept. */
+function stagedPath(id: string): string {
+  return path.join(lib.audio, `${id}.opus.staged`)
 }
 
 beforeEach(async () => {
@@ -50,11 +58,11 @@ afterEach(async () => {
 })
 
 describe('compressExisting', () => {
-  it('transcodes to <id>.opus, records the swap and deletes the old file', async () => {
+  it('transcodes to <id>.opus, records the swap, deletes the old file and reports it shrank', async () => {
     const song = await addSongWithFile({ fileName: 'original.wav' })
     const transcode = fakeTranscode()
 
-    const compressed = await compressExisting(song.id, {
+    const result = await compressExisting(song.id, {
       audioDir: lib.audio,
       libraryStore,
       transcode
@@ -62,35 +70,83 @@ describe('compressExisting', () => {
 
     expect(transcode).toHaveBeenCalledExactlyOnceWith({
       src: path.join(lib.audio, 'original.wav'),
-      dst: path.join(lib.audio, `${song.id}.opus`)
+      dst: stagedPath(song.id)
     })
-    expect(compressed).toEqual({ ...song, fileName: `${song.id}.opus`, compressed: true })
-    await expect(libraryStore.getSong(song.id)).resolves.toEqual(compressed)
+    expect(result.shrank).toBe(true)
+    expect(result.song).toEqual({ ...song, fileName: `${song.id}.opus`, compressed: true })
+    await expect(libraryStore.getSong(song.id)).resolves.toEqual(result.song)
     expect(await readdir(lib.audio)).toEqual([`${song.id}.opus`])
   })
 
   /**
-   * `transcode` stages through `<dst>.part` and renames, so an uncompressed `.opus` source whose
-   * name already matches the target is an in-place atomic replace — and deleting "the old file"
-   * afterwards would delete the file that was just written.
+   * The tie goes to the original: an equal-sized re-encode is all cost and no gain, so the
+   * comparison is `>=`, not `>`. Nothing is recorded either — the row still says uncompressed, so
+   * the offer comes back and the user has lost nothing but the ffmpeg run.
+   */
+  it('keeps the original when the opus re-encode is not smaller', async () => {
+    const song = await addSongWithFile({ fileName: 'original.wav' })
+    const { size } = await stat(path.join(lib.audio, 'original.wav'))
+    const transcode = fakeTranscode('x'.repeat(size))
+
+    const result = await compressExisting(song.id, {
+      audioDir: lib.audio,
+      libraryStore,
+      transcode
+    })
+
+    expect(result.shrank).toBe(false)
+    expect(result.song.compressed).toBe(false)
+    expect(result.song.fileName).toBe('original.wav')
+    await expect(libraryStore.getSong(song.id)).resolves.toEqual(song)
+    // The staged opus is gone and the original never moved.
+    expect(await readdir(lib.audio)).toEqual(['original.wav'])
+  })
+
+  /**
+   * An uncompressed `.opus` already named after its id has `src === dst`, so the re-encode is
+   * staged beside the target rather than written onto it — transcoding straight onto the source
+   * would destroy it before the size comparison could save it. The delete afterwards is skipped,
+   * or it would remove the file that was just renamed into place.
    */
   it('replaces an uncompressed .opus in place without deleting anything', async () => {
     const id = 'already-named'
     const song = await addSongWithFile({ id, fileName: `${id}.opus` })
     const transcode = fakeTranscode()
 
-    const compressed = await compressExisting(song.id, {
+    const result = await compressExisting(song.id, {
       audioDir: lib.audio,
       libraryStore,
       transcode
     })
 
     const dst = path.join(lib.audio, `${id}.opus`)
-    expect(transcode).toHaveBeenCalledExactlyOnceWith({ src: dst, dst })
-    expect(compressed.compressed).toBe(true)
-    expect(compressed.fileName).toBe(`${id}.opus`)
+    expect(transcode).toHaveBeenCalledExactlyOnceWith({ src: dst, dst: stagedPath(id) })
+    expect(result.shrank).toBe(true)
+    expect(result.song.compressed).toBe(true)
+    expect(result.song.fileName).toBe(`${id}.opus`)
     expect(existsSync(dst)).toBe(true)
     expect(await readFile(dst, 'utf8')).toBe('opus bytes')
+    expect(await readdir(lib.audio)).toEqual([`${id}.opus`])
+  })
+
+  /** The same `src === dst` case, but with nothing to keep: the source must survive intact. */
+  it('leaves an uncompressed .opus alone when the re-encode is not smaller', async () => {
+    const id = 'already-named'
+    const song = await addSongWithFile({ id, fileName: `${id}.opus` })
+    const dst = path.join(lib.audio, `${id}.opus`)
+    const original = await readFile(dst, 'utf8')
+    const transcode = fakeTranscode('x'.repeat(original.length))
+
+    const result = await compressExisting(song.id, {
+      audioDir: lib.audio,
+      libraryStore,
+      transcode
+    })
+
+    expect(result.shrank).toBe(false)
+    expect(result.song.compressed).toBe(false)
+    expect(await readFile(dst, 'utf8')).toBe(original)
+    expect(await readdir(lib.audio)).toEqual([`${id}.opus`])
   })
 
   it('throws NotFound for an unknown id without transcoding', async () => {
@@ -153,22 +209,27 @@ describe('compressExisting', () => {
   it('still succeeds when the old file refuses to go', async () => {
     const song = await addSongWithFile({ fileName: 'original.wav' })
     const transcode = fakeTranscode()
+    // Only `rm` misbehaves: the sizes still have to be read and the staged file still has to land,
+    // or the run would fail for a reason that has nothing to do with the delete under test.
     const fs = {
       access: vi.fn(async () => {}),
       copyFile: vi.fn(async () => {}),
+      stat,
+      rename,
       rm: vi.fn(async () => {
         throw new Error('EBUSY')
       })
     }
 
-    const compressed = await compressExisting(song.id, {
+    const result = await compressExisting(song.id, {
       audioDir: lib.audio,
       libraryStore,
       transcode,
       fs
     })
 
-    expect(compressed.compressed).toBe(true)
+    expect(result.shrank).toBe(true)
+    expect(result.song.compressed).toBe(true)
     expect(fs.rm).toHaveBeenCalledWith(path.join(lib.audio, 'original.wav'), { force: true })
   })
 })

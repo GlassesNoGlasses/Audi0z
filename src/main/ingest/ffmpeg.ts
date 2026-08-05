@@ -36,9 +36,10 @@ export function resolveFfmpegPath({
  * was left, and the re-encode could land *bigger* than the file it replaced. 96k is
  * near-transparent for music and sits far enough under those sources to actually shrink them.
  *
- * `-f opus` is required, not belt-and-braces: the output is staged as `<name>.opus.part`, and
- * ffmpeg infers the container from the file extension, so `.part` would fail the run outright with
- * "Unable to find a suitable output format".
+ * `-f opus` is required, not belt-and-braces: the output is staged as `<dst>.part`, and ffmpeg
+ * infers the container from the file extension, so `.part` would fail the run outright with
+ * "Unable to find a suitable output format". Both callers now hand in a `<id>.opus.staged` dst of
+ * their own — a name ffmpeg has even less chance of reading — so the flag carries the whole job.
  */
 export function buildTranscodeArgs(src: string, dst: string): string[] {
   return [

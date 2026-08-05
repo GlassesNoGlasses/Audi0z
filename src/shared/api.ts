@@ -1,6 +1,7 @@
 import type {
   AddSongRequest,
   AppError,
+  CompressResult,
   DownloadProgress,
   DownloadRequest,
   Playlist,
@@ -28,8 +29,13 @@ export interface Api {
     /** One write for a whole batch of measured durations; ids that vanished mid-flight are skipped. */
     updateDurations(entries: Array<{ id: string; durationSec: number }>): Promise<SongDto[]>
     remove(id: string): Promise<void>
-    /** Transcodes an already-imported song to Opus in place. Rejects if it is already compressed. */
-    compress(id: string): Promise<SongDto>
+    /**
+     * Transcodes an already-imported song to Opus in place. Rejects if it is already compressed.
+     *
+     * Resolving is not the same as having compressed: a re-encode that came out no smaller is
+     * thrown away and the original kept, which resolves with `shrank: false` and an unchanged song.
+     */
+    compress(id: string): Promise<CompressResult>
     /** Opens the library's `audio/` directory itself, rather than a single song inside it. */
     showFolder(): Promise<void>
   }

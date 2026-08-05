@@ -39,7 +39,10 @@ export type MockApiSeedSong = Omit<SongDto, 'sizeBytes'> & { sizeBytes?: number 
 /** What a song weighs when the seed does not say. Roughly a four-minute 128k file. */
 export const DEFAULT_MOCK_SIZE_BYTES = 4_000_000
 
-/** Compressing is assumed to save ~25%, the shape of a real 96k Opus run on a ~128k source. */
+/**
+ * What a mock compression leaves behind: the ~25% saving the Settings dialog quotes, so a test can
+ * click Compress and see a figure that agrees with the estimate the same UI printed beside it.
+ */
 const COMPRESSED_SIZE_RATIO = 0.75
 
 /** Cycled rather than random: a tag's colour has to be the same on every run of a test. */
@@ -257,6 +260,8 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         }
         libraryChanged.emit()
       }),
+      // Always the winning outcome: the kept-the-original path is rarer than the one every test
+      // means when it clicks Compress, so a test that wants it says so with `mockResolvedValue`.
       compress: vi.fn(async (songId) => {
         const song = findSong(songId)
         song.compressed = true
@@ -264,7 +269,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         if (song.sizeBytes !== null)
           song.sizeBytes = Math.round(song.sizeBytes * COMPRESSED_SIZE_RATIO)
         libraryChanged.emit()
-        return cloneSong(song)
+        return { song: cloneSong(song), shrank: true }
       }),
       // Nothing to do but be observable: `vi.fn` is the recording.
       showFolder: vi.fn(async () => {})

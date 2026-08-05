@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { SongDto } from '../../../shared/types'
+import type { CompressResult } from '../../../shared/types'
 import { nowPlaying, renderApp, seedApi, song, stubMediaElement } from '../testing/harness'
 
 stubMediaElement()
@@ -155,12 +155,34 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
   })
 
+  /**
+   * A re-encode that came out no smaller resolves exactly like one that worked, so `shrank` is the
+   * only thing telling them apart — and the user has to be told the file was left as it was, or a
+   * "Compressed" toast over an unchanged size reads as the app losing track of itself.
+   */
+  it('says it kept the original when the re-encode would not have been smaller', async () => {
+    const unchanged = song('a', 'Alpha Mix', { sizeBytes: 4 * MB })
+    const api = seedApi({ songs: [unchanged] })
+    vi.mocked(api.library.compress).mockResolvedValue({ song: unchanged, shrank: false })
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    await user.click(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '"Alpha Mix" is already smaller than an Opus re-encode — kept the original'
+    )
+    // Nothing changed on disk or in the row, so the offer is still there to take again.
+    expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeEnabled()
+    expect(settings()).toHaveTextContent('4.0 MB')
+  })
+
   /** ffmpeg is expensive and the row is one click wide: a second run must not be startable. */
   it('takes no second click while a file is being compressed', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
-    let finish = (_compressed: SongDto): void => {}
+    let finish = (_result: CompressResult): void => {}
     vi.mocked(api.library.compress).mockReturnValue(
-      new Promise<SongDto>((resolve) => {
+      new Promise<CompressResult>((resolve) => {
         finish = resolve
       })
     )
@@ -172,7 +194,10 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeDisabled()
 
     await act(async () => {
-      finish(song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB }))
+      finish({
+        song: song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB }),
+        shrank: true
+      })
     })
 
     expect(api.library.compress).toHaveBeenCalledTimes(1)

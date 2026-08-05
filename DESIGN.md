@@ -70,9 +70,16 @@ Played flags are per-queue and live **in memory only** — they are never persis
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash
   operation succeeded (abort on trash failure — never orphan the record).
-- **Compression is optional**: an `ffmpeg` transcode to Opus 96k, chosen per-add and defaulted
-  from settings. 96k rather than 128k because the downloader's own `bestaudio[ext=m4a]` is already
-  ~128k AAC: matching it left no saving worth the re-encode, and could grow the file instead.
+- **Compression is optional, and asking for it is not a promise of it**: an `ffmpeg` transcode to
+  Opus 96k, chosen per-add and defaulted from settings. 96k rather than 128k because the
+  downloader's own `bestaudio[ext=m4a]` is already ~128k AAC: matching it left no saving worth the
+  re-encode, and could grow the file instead. Since a lean lossy source can still re-encode bigger,
+  both compression paths stage the output beside the target and measure it against the source
+  before committing, and the tie goes to the original. On import, a re-encode that is not smaller
+  is deleted and the source copied in as it stands (`compressed: false`). For the Settings
+  dialog's per-song Compress, nothing at all is recorded — the row stays uncompressed, the file
+  never moves, and the handler answers `shrank: false` so the UI can say the original was kept
+  rather than claim a compression that did not happen.
 - **Targets are mac dmg, win nsis, linux AppImage**, and the macOS build is **ad-hoc signed, not
   unsigned**. Packaging rewrites the bundle and breaks the seal Electron ships with, which macOS
   refuses outright on arm64, so an `afterPack` hook (`build/adhocSign.js`) runs `codesign --sign -`

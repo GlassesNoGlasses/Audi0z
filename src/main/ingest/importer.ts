@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { access, copyFile, rm } from 'node:fs/promises'
+import { access, copyFile, rename, rm, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { Song } from '../../shared/types'
 import type { LibraryStore } from '../store/storeTypes'
@@ -8,6 +8,9 @@ import type { LibraryStore } from '../store/storeTypes'
  * The one place a file becomes a library song — file picker, drag-and-drop and URL download all
  * funnel through here, so "copy or transcode, then record, and never leave a half-import behind"
  * is written once.
+ *
+ * `compress: true` is a request, not a promise: the re-encode is staged and measured, and a source
+ * the Opus run could not beat is copied in as it stands.
  */
 
 export interface ImportRequest {
@@ -26,6 +29,9 @@ export interface ImportRequest {
 export interface ImporterFs {
   access(p: string): Promise<void>
   copyFile(src: string, dst: string): Promise<void>
+  /** Only `size` is ever read — a fake owes nothing else. */
+  stat(p: string): Promise<{ size: number }>
+  rename(from: string, to: string): Promise<void>
   rm(p: string, opts?: { force?: boolean }): Promise<void>
 }
 
@@ -38,7 +44,7 @@ export interface ImportDeps {
   fs?: ImporterFs
 }
 
-export const nodeFs: ImporterFs = { access, copyFile, rm }
+export const nodeFs: ImporterFs = { access, copyFile, stat, rename, rm }
 
 /** Shared with `compressExisting`, which takes the same fs seam and asks the same question. */
 export async function pathExists(fs: ImporterFs, p: string): Promise<boolean> {
@@ -60,14 +66,32 @@ export async function importFile(req: ImportRequest, deps: ImportDeps): Promise<
   }
 
   const id = randomUUID()
-  const extension = req.compress ? '.opus' : path.extname(req.sourcePath).toLowerCase()
-  const fileName = `${id}${extension}`
-  const target = path.join(deps.audioDir, fileName)
+  // Where a re-encode goes before it has earned the right to be the song. Staged rather than
+  // written at `<id>.opus` because a re-encode that is not smaller never gets that name.
+  const staged = path.join(deps.audioDir, `${id}.opus.staged`)
+
+  // Both start as the plain-copy answer; only a re-encode that actually shrank moves them.
+  let fileName = `${id}${path.extname(req.sourcePath).toLowerCase()}`
+  let target = path.join(deps.audioDir, fileName)
+  let compressed = false
 
   try {
     if (req.compress) {
-      await deps.transcode({ src: req.sourcePath, dst: target })
+      await deps.transcode({ src: req.sourcePath, dst: staged })
+      // Opus is not guaranteed to win: an already-lean lossy source can re-encode bigger, and the
+      // user asked for a smaller file, not for Opus.
+      const [source, opus] = await Promise.all([fs.stat(req.sourcePath), fs.stat(staged)])
+      compressed = opus.size < source.size
+    }
+
+    if (compressed) {
+      fileName = `${id}.opus`
+      target = path.join(deps.audioDir, fileName)
+      await fs.rename(staged, target)
     } else {
+      // Best effort, like the source delete below: a staged file that refuses to go is a stray few
+      // megabytes beside a song that imported fine, not a reason to fail the import.
+      if (req.compress) await fs.rm(staged, { force: true }).catch(() => undefined)
       await fs.copyFile(req.sourcePath, target)
     }
 
@@ -77,7 +101,7 @@ export async function importFile(req: ImportRequest, deps: ImportDeps): Promise<
       title: req.title,
       tags: [...req.tags],
       addedAt: new Date().toISOString(),
-      compressed: req.compress
+      compressed
     }
     if (req.sourceUrl !== undefined) song.sourceUrl = req.sourceUrl
 
@@ -89,8 +113,12 @@ export async function importFile(req: ImportRequest, deps: ImportDeps): Promise<
 
     return added
   } catch (error) {
-    // Anything at all went wrong: the audio directory must look untouched.
-    await fs.rm(target, { force: true }).catch(() => undefined)
+    // Anything at all went wrong: the audio directory must look untouched. Both names, because
+    // which of them exists depends on how far down the compress path the failure happened.
+    await Promise.all([
+      fs.rm(staged, { force: true }).catch(() => undefined),
+      fs.rm(target, { force: true }).catch(() => undefined)
+    ])
     throw error
   }
 }
