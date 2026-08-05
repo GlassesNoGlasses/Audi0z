@@ -43,7 +43,7 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
 
   const held = new Set(playlist.songIds)
   // Deliberately outside the `matches` memo: `held` turns over on every `playlists/upserted`, and a
-  // memo keyed on the query alone would keep offering a song the playlist has just taken.
+  // memo keyed on the songs and the query would keep offering a song the playlist has just taken.
   const offered = matches.filter((song) => !held.has(song.id))
 
   function add(songId: string): void {

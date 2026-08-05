@@ -1,6 +1,6 @@
-import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   nowPlaying,
   playlist,
@@ -127,9 +127,11 @@ describe('Sidebar', () => {
 
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
 
-    expect(within(sidebar()).getByRole('button', { name: 'Library' })).toHaveClass(
-      'is-playing-source'
-    )
+    const library = within(sidebar()).getByRole('button', { name: 'Library' })
+    expect(library).toHaveClass('is-playing-source')
+    // The two axes are independent, not exclusive: the library is both the view being browsed and
+    // the queue being heard, so one entry carries both marks at once.
+    expect(library).toHaveAttribute('aria-current', 'true')
     expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).not.toHaveClass(
       'is-playing-source'
     )
@@ -334,6 +336,54 @@ describe('Sidebar', () => {
     expect(api.playlists.reorder).toHaveBeenCalledWith(['p2', 'p3', 'p1'])
     // The list is the store's answer, not the guess the drag made — nothing moves until it lands.
     await waitFor(() => expect(itemNames()).toEqual(['Bravo', 'Chill', 'Alpha']))
+    expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
+  })
+
+  /**
+   * A file dragged in from the OS never went through the sidebar's own `dragStart`, so `dragId` is
+   * still null and every handler on the row has to leave the event completely alone. The proof is
+   * that the drop arrives at the app root's handler and opens the add dialog: the sidebar's `onDrop`
+   * calls `stopPropagation`, so a row that had taken this drag would have swallowed it here.
+   */
+  it('lets a drag it never started fall through to the app root', async () => {
+    const api = seedApi({ songs, playlists: three })
+    await renderApp()
+
+    const [alpha] = items()
+    const files = [new File(['x'], 'One Track.mp3', { type: 'audio/mpeg' })]
+    const dataTransfer = { files, types: ['Files'] } as unknown as DataTransfer
+
+    dragOverAt(alpha, dataTransfer, 45)
+
+    // No seam drawn: the row is not offering to receive anything.
+    expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
+
+    await act(async () => {
+      fireEvent.drop(alpha, { dataTransfer })
+    })
+
+    expect(screen.getByRole('dialog', { name: 'Add song' })).toBeInTheDocument()
+    expect(api.playlists.reorder).not.toHaveBeenCalled()
+  })
+
+  /** The store is the order of record, so a reorder it refused must leave the list where it was. */
+  it('says so and keeps the old order when the reorder will not save', async () => {
+    const api = seedApi({ songs, playlists: three })
+    vi.mocked(api.playlists.reorder).mockRejectedValue(new Error('playlists.json is read-only'))
+    await renderApp()
+
+    const [alpha, , chill] = items()
+    chill.getBoundingClientRect = () =>
+      ({ top: 40, height: 20, bottom: 60, left: 0, right: 100, width: 100, x: 0, y: 40 }) as DOMRect
+
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(chill, dataTransfer, 55)
+    fireEvent.drop(chill, { dataTransfer })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('playlists.json is read-only')
+    expect(itemNames()).toEqual(['Alpha', 'Bravo', 'Chill'])
+    // The drag is over either way — the failure must not leave a seam painted on the list.
     expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
   })
 

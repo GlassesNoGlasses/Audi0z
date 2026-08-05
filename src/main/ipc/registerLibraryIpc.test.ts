@@ -267,6 +267,17 @@ describe(IPC.library.list, () => {
     )
 
     const pending = harness.invoke<SongDto[]>(IPC.library.list)
+    // Releasing straight away would pass whether or not the gate is awaited, since the swap would
+    // already have happened by the time the record is re-read. So prove the listener is *stuck*
+    // first: the gate is the only thing here that is not already resolved, and the sentinel is a
+    // macrotask, so a listing that had run to completion — its continuation being a microtask —
+    // would win this race.
+    const raced = Promise.race([
+      pending.then(() => 'settled'),
+      new Promise<string>((resolve) => setImmediate(() => resolve('waiting')))
+    ])
+    expect(await raced).toBe('waiting')
+
     release()
 
     const [dto] = await pending

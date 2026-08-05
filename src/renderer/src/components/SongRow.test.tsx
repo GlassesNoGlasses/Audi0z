@@ -393,6 +393,10 @@ describe('SongRow tag menu', () => {
 
     const chip = within(menu).getByText('slowed')
     expect(chip).toHaveClass('menu-tag-chip')
+    // ...and only that class: the popup lives inside `.song-list`, which is exactly what TagsDialog's
+    // tests read row chips through (`.song-list .song-tag`), so a shared class name here would put
+    // the menu's chips into their count.
+    expect(chip).not.toHaveClass('song-tag')
     expect(chip).toHaveStyle({ backgroundColor: '#e0a35c', color: '#000000' })
     // The chip must not have grown a focus stop of its own — the walker owns the buttons.
     expect(within(menu).getByRole('menuitemcheckbox', { name: 'slowed' })).toBeInTheDocument()

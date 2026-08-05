@@ -108,6 +108,21 @@ describe('AddToPlaylistDialog', () => {
     expect(within(dialog()).queryByText('No songs match your search.')).toBeNull()
   })
 
+  /**
+   * The fourth quadrant, and the one the other three can hide: a full playlist AND a search that
+   * matched nothing. "Every match" would be a report on matches there were none of, so the search
+   * gets the blame it has earned.
+   */
+  it('blames the search, not the playlist, when a full playlist is searched for nothing', async () => {
+    seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'b', 'c'])] })
+    const user = await openDialog()
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search songs to add' }), 'zzz')
+
+    expect(await within(dialog()).findByText('No songs match your search.')).toBeInTheDocument()
+    expect(within(dialog()).queryByText('Every match is already in this playlist.')).toBeNull()
+  })
+
   it('adds a song, takes its row away and puts it in the playlist', async () => {
     const api = seedApi({ songs, playlists: [mixes] })
     const user = await openDialog()
