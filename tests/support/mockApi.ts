@@ -39,8 +39,8 @@ export type MockApiSeedSong = Omit<SongDto, 'sizeBytes'> & { sizeBytes?: number 
 /** What a song weighs when the seed does not say. Roughly a four-minute 128k file. */
 export const DEFAULT_MOCK_SIZE_BYTES = 4_000_000
 
-/** Compressing is assumed to save 60%, so the UI has a delta worth showing. */
-const COMPRESSED_SIZE_RATIO = 0.4
+/** Compressing is assumed to save ~25%, the shape of a real 96k Opus run on a ~128k source. */
+const COMPRESSED_SIZE_RATIO = 0.75
 
 /** Cycled rather than random: a tag's colour has to be the same on every run of a test. */
 const MOCK_TAG_COLORS = ['#e05c5c', '#e0a35c', '#5ce07a', '#5ca8e0', '#a35ce0']

@@ -67,7 +67,7 @@ describe('SettingsDialog', () => {
     seedApi()
     await openSettings()
 
-    const estimate = screen.getByText('Saves ~50%')
+    const estimate = screen.getByText('Saves ~25%')
     expect(estimate.tagName).toBe('STRONG')
     // The preference itself is still addressable by exactly the words on it.
     expect(screen.getByRole('checkbox', { name: 'Compress new songs by default' })).toBeVisible()
@@ -135,10 +135,10 @@ describe('SettingsDialog storage', () => {
     const user = await openSettings()
     await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
 
-    const measured = screen.getByText('~3.2 MB save')
+    const measured = screen.getByText('~3.6 MB save')
     expect(measured.tagName).toBe('STRONG')
     // One next to the preference, one on the row with no duration to reckon with.
-    expect(screen.getAllByText('Saves ~50%')).toHaveLength(2)
+    expect(screen.getAllByText('Saves ~25%')).toHaveLength(2)
   })
 
   it('compresses a file, and says what it now weighs', async () => {
@@ -150,7 +150,7 @@ describe('SettingsDialog storage', () => {
 
     expect(api.library.compress).toHaveBeenCalledWith('a')
     expect(await screen.findByRole('alert')).toHaveTextContent('Compressed "Alpha Mix"')
-    await waitFor(() => expect(settings()).toHaveTextContent('1.6 MB'))
+    await waitFor(() => expect(settings()).toHaveTextContent('3.0 MB'))
     // Nothing left to compress on that row.
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
   })
@@ -233,7 +233,7 @@ describe('SettingsDialog storage', () => {
     ).toBeVisible()
     // The reason takes the savings quote's slot: a figure for a file you cannot compress right
     // now is noise. Two are left — the preference's, and the row the player is not holding.
-    expect(screen.getAllByText('Saves ~50%')).toHaveLength(2)
+    expect(screen.getAllByText('Saves ~25%')).toHaveLength(2)
   })
 
   it('offers it again once the player has moved on', async () => {

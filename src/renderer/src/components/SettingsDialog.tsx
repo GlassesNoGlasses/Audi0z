@@ -218,7 +218,7 @@ export function SettingsDialog(): ReactElement {
           </span>
         </div>
         <p className="dialog-hint">
-          Compression re-encodes to Opus 128k on the way in. It saves space and loses a little
+          Compression re-encodes to Opus 96k on the way in. It saves space and loses a little
           quality.
         </p>
         <div className="dialog-actions">

@@ -220,7 +220,7 @@ describe('library.compress', () => {
     expect(compressed).toMatchObject({
       compressed: true,
       fileName: 'a.opus',
-      sizeBytes: 2_000_000
+      sizeBytes: 3_750_001
     })
     await expect(api.library.list()).resolves.toMatchObject([{ compressed: true }])
   })

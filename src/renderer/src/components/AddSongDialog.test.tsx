@@ -121,7 +121,7 @@ describe('AddSongDialog — tags', () => {
 
     await openAddDialog(user)
 
-    expect(screen.getByText('Saves ~50%').tagName).toBe('STRONG')
+    expect(screen.getByText('Saves ~25%').tagName).toBe('STRONG')
     // The preference itself is still addressable by exactly the words on it.
     expect(screen.getByRole('checkbox', { name: 'Compress to Opus' })).toBeInTheDocument()
   })

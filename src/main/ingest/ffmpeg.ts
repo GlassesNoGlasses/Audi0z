@@ -28,8 +28,13 @@ export function resolveFfmpegPath({
 }
 
 /**
- * Audio only (`-vn`, so cover art never becomes a video stream), metadata stripped, Opus 128k.
+ * Audio only (`-vn`, so cover art never becomes a video stream), metadata stripped, Opus 96k.
  * `-nostdin` matters because the child's stdin is ignored — ffmpeg must not wait on it.
+ *
+ * 96k, not 128k: the downloader fetches `bestaudio[ext=m4a]`, already ~128k AAC, so a 128k target
+ * asked Opus to match its own source. Ogg overhead and unconstrained VBR overshoot ate what little
+ * was left, and the re-encode could land *bigger* than the file it replaced. 96k is
+ * near-transparent for music and sits far enough under those sources to actually shrink them.
  *
  * `-f opus` is required, not belt-and-braces: the output is staged as `<name>.opus.part`, and
  * ffmpeg infers the container from the file extension, so `.part` would fail the run outright with
@@ -48,7 +53,7 @@ export function buildTranscodeArgs(src: string, dst: string): string[] {
     '-c:a',
     'libopus',
     '-b:a',
-    '128k',
+    '96k',
     '-f',
     'opus',
     dst

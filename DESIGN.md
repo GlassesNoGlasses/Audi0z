@@ -70,8 +70,9 @@ Played flags are per-queue and live **in memory only** — they are never persis
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash
   operation succeeded (abort on trash failure — never orphan the record).
-- **Compression is optional**: an `ffmpeg` transcode to Opus 128k, chosen per-add and defaulted
-  from settings.
+- **Compression is optional**: an `ffmpeg` transcode to Opus 96k, chosen per-add and defaulted
+  from settings. 96k rather than 128k because the downloader's own `bestaudio[ext=m4a]` is already
+  ~128k AAC: matching it left no saving worth the re-encode, and could grow the file instead.
 - **Targets are mac dmg, win nsis, linux AppImage**, and the macOS build is **ad-hoc signed, not
   unsigned**. Packaging rewrites the bundle and breaks the seal Electron ships with, which macOS
   refuses outright on arm64, so an `afterPack` hook (`build/adhocSign.js`) runs `codesign --sign -`
