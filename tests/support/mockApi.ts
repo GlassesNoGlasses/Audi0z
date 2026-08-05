@@ -355,7 +355,6 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
     download: {
       probe: vi.fn(async (url) => ({
         title: `Mock title for ${url}`,
-        durationSec: 123,
         sourceUrl: url
       })),
       start: vi.fn(async (req: DownloadRequest) =>

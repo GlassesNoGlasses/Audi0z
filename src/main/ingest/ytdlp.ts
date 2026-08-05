@@ -131,14 +131,10 @@ export async function probe({
   if (code !== 0) throw ytDlpError(`yt-dlp probe failed (exit ${code})`, stderrTail)
 
   const dump = parseDump(stdout)
-  const result: ProbeResult = {
+  return {
     title: typeof dump.title === 'string' ? dump.title : '',
     sourceUrl: url
   }
-  if (typeof dump.duration === 'number' && Number.isFinite(dump.duration)) {
-    result.durationSec = dump.duration
-  }
-  return result
 }
 
 export interface BuildDownloadArgsOptions {
