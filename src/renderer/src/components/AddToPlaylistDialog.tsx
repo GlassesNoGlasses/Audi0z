@@ -17,8 +17,8 @@ export interface AddToPlaylistDialogProps {
  * closed. It searches everything the library holds rather than the view underneath, because the
  * point of the dialog is to reach songs the view is not showing.
  *
- * A song the playlist already has is shown ticked and inert. `playlists.addSong` is idempotent, so
- * this is not about protecting the store — it is about a "+" that would look broken doing nothing.
+ * Only songs the playlist lacks are offered — a row disappears the moment its song lands, and a
+ * failed add leaves it in place.
  */
 export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): ReactElement | null {
   const { songs, playlists } = useAppState()
@@ -42,6 +42,9 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
   if (!playlist) return null
 
   const held = new Set(playlist.songIds)
+  // Deliberately outside the `matches` memo: `held` turns over on every `playlists/upserted`, and a
+  // memo keyed on the query alone would keep offering a song the playlist has just taken.
+  const offered = matches.filter((song) => !held.has(song.id))
 
   function add(songId: string): void {
     void window.api.playlists
@@ -74,37 +77,36 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
           onChange={(event) => setQuery(event.target.value)}
         />
 
-        {matches.length === 0 ? (
-          // Nothing was typed, so there is no search to blame: the library itself is empty.
+        {offered.length === 0 ? (
+          // Four ways to have nothing to offer, and the user is owed the right one: whether the
+          // search or the playlist emptied the list, and whether a search was run at all.
           <p className="dialog-hint">
-            {query.trim() === '' ? 'No songs in your library yet.' : 'No songs match your search.'}
+            {matches.length > 0
+              ? query.trim() === ''
+                ? 'Every song is already in this playlist.'
+                : 'Every match is already in this playlist.'
+              : query.trim() === ''
+                ? 'No songs in your library yet.'
+                : 'No songs match your search.'}
           </p>
         ) : (
           <ul className="add-list">
-            {matches.map((song) => {
-              const inPlaylist = held.has(song.id)
-              return (
-                <li key={song.id} className="add-row">
-                  <span className="add-row-main">
-                    <span className="add-title">{song.title}</span>
-                    <span className="add-sub">{formatDuration(song.durationSec)}</span>
-                  </span>
-                  <button
-                    type="button"
-                    className={`add-button${inPlaylist ? ' is-added' : ''}`}
-                    disabled={inPlaylist}
-                    aria-label={
-                      inPlaylist
-                        ? `${song.title} is in ${playlist.name}`
-                        : `Add ${song.title} to ${playlist.name}`
-                    }
-                    onClick={() => add(song.id)}
-                  >
-                    {inPlaylist ? '✓' : '+'}
-                  </button>
-                </li>
-              )
-            })}
+            {offered.map((song) => (
+              <li key={song.id} className="add-row">
+                <span className="add-row-main">
+                  <span className="add-title">{song.title}</span>
+                  <span className="add-sub">{formatDuration(song.durationSec)}</span>
+                </span>
+                <button
+                  type="button"
+                  className="add-button"
+                  aria-label={`Add ${song.title} to ${playlist.name}`}
+                  onClick={() => add(song.id)}
+                >
+                  +
+                </button>
+              </li>
+            ))}
           </ul>
         )}
       </div>

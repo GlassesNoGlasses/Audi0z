@@ -223,7 +223,7 @@ test('adds a song to a playlist from the add-to-playlist dialog', async () => {
   await dialog.getByRole('searchbox', { name: 'Search songs to add' }).fill('alpha')
   await dialog.getByRole('button', { name: 'Add Alpha Mix to Late night' }).click()
 
-  await expect(dialog.getByRole('button', { name: 'Alpha Mix is in Late night' })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Add Alpha Mix to Late night' })).toHaveCount(0)
   await expect
     .poll(async () => {
       const raw = await readFile(path.join(fixture.root, 'playlists.json'), 'utf8')

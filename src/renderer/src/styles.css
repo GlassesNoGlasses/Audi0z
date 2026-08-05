@@ -932,15 +932,8 @@ input[type='range'] {
   width: 28px;
 }
 
-.add-button:hover:not(:disabled) {
+.add-button:hover {
   color: var(--fg);
-}
-
-/* Already in the playlist: still legible, but plainly not a button any more. */
-.add-button.is-added {
-  border-color: var(--accent);
-  color: var(--accent);
-  opacity: 1;
 }
 
 .dialog-actions {

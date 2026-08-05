@@ -44,11 +44,12 @@ async function openDialog(): Promise<ReturnType<typeof userEvent.setup>> {
 }
 
 describe('AddToPlaylistDialog', () => {
-  it('offers the whole library, whichever playlist is being viewed', async () => {
+  it('offers the library the playlist lacks, whichever playlist is being viewed', async () => {
     seedApi({ songs, playlists: [mixes] })
     await openDialog()
 
-    expect(offered()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune'])
+    // Everything the library holds except Bravo Beat, which Mixes already has.
+    expect(offered()).toEqual(['Alpha Mix', 'Charlie Tune'])
     // The playing time is the only thing beside the title, and it is the one the song knows.
     expect(within(dialog()).getByText('2:53')).toBeInTheDocument()
   })
@@ -83,7 +84,31 @@ describe('AddToPlaylistDialog', () => {
     expect(within(dialog()).queryByText('No songs match your search.')).toBeNull()
   })
 
-  it('adds a song, flips its row and puts it in the playlist', async () => {
+  /** An empty list with a full library is a different fact, and gets a different sentence. */
+  it('says so when every song is already in the playlist', async () => {
+    seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'b', 'c'])] })
+    await openDialog()
+
+    expect(
+      within(dialog()).getByText('Every song is already in this playlist.')
+    ).toBeInTheDocument()
+    expect(within(dialog()).queryByText('No songs in your library yet.')).toBeNull()
+  })
+
+  /** Same again one level down: the search found songs, the playlist just has all of them. */
+  it('says so when every match is already in the playlist', async () => {
+    seedApi({ songs, playlists: [mixes] })
+    const user = await openDialog()
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search songs to add' }), 'bravo')
+
+    expect(
+      await within(dialog()).findByText('Every match is already in this playlist.')
+    ).toBeInTheDocument()
+    expect(within(dialog()).queryByText('No songs match your search.')).toBeNull()
+  })
+
+  it('adds a song, takes its row away and puts it in the playlist', async () => {
     const api = seedApi({ songs, playlists: [mixes] })
     const user = await openDialog()
 
@@ -93,9 +118,8 @@ describe('AddToPlaylistDialog', () => {
     await user.click(within(dialog()).getByRole('button', { name: 'Add Alpha Mix to Mixes' }))
 
     expect(api.playlists.addSong).toHaveBeenCalledWith('p1', 'a')
-    await waitFor(() =>
-      expect(within(dialog()).getByRole('button', { name: 'Alpha Mix is in Mixes' })).toBeDisabled()
-    )
+    await waitFor(() => expect(within(dialog()).queryByText('Alpha Mix')).toBeNull())
+    expect(offered()).toEqual(['Charlie Tune'])
     // The playlist really took it: the sidebar and the list behind the dialog both say so.
     expect(within(sidebar()).getByText('Alpha Mix')).toBeInTheDocument()
     expect(songTitles()).toEqual(['Bravo Beat', 'Alpha Mix'])
@@ -106,8 +130,7 @@ describe('AddToPlaylistDialog', () => {
     seedApi({ songs, playlists: [mixes] })
     await openDialog()
 
-    expect(within(dialog()).getByRole('button', { name: 'Bravo Beat is in Mixes' })).toBeDisabled()
-    expect(within(dialog()).queryByRole('button', { name: 'Add Bravo Beat to Mixes' })).toBeNull()
+    expect(within(dialog()).queryByText('Bravo Beat')).toBeNull()
   })
 
   it('says so when the playlist will not take the song', async () => {
