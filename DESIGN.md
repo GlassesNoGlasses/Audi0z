@@ -94,7 +94,13 @@ Played flags are per-queue and live **in memory only** — they are never persis
   unsigned**. Packaging rewrites the bundle and breaks the seal Electron ships with, which macOS
   refuses outright on arm64, so an `afterPack` hook (`build/adhocSign.js`) runs `codesign --sign -`
   over the packed `.app`. That buys no Gatekeeper trust: the first launch still needs right-click
-  Open.
+  Open. An `afterAllArtifactBuild` hook (`build/copyArtifactsToDesktop.js`) then copies the finished
+  installer to `~/Desktop`, where the user asked to find it — `dist/` keeps the original, and a
+  `--dir` build produces no artifacts so the hook is a no-op. **No test code reaches the package**:
+  `files` names only `out/**` and `package.json`, so the bundle carries the five build outputs plus
+  the production dependencies and nothing else — this repo's tests, mocks and Playwright suites have
+  no path in (the only `test.js` files inside `app.asar` are two dependencies' own, shipped that way
+  in their npm tarballs).
 - Played flags are **not persisted**; shuffle/repeat **are** persisted per playlist (the Library
   view's own shuffle/repeat live in `settings.json`).
 - **Tag rename and delete are not transactional.** The registry (`tags.json`) is written first, then
@@ -120,7 +126,7 @@ tests/
   support/     mock Api, WAV generator, tmp library helpers (no binary fixtures)
   e2e/         Playwright tests driving the built Electron binary
 scripts/       fetch-ytdlp.mjs (pinned, checksum-verified binary download)
-build/         packaging assets: entitlements, the ad-hoc sign hook, the icon + its AVIF source
+build/         packaging assets: entitlements, the two builder hooks, the icon + its AVIF source
 ```
 
 Cross-directory imports are plain relative paths (`../shared/types`) — there are no path aliases
