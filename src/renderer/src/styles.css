@@ -95,6 +95,11 @@ input[type='range'] {
 
 /* ---------- sidebar ---------- */
 
+/*
+ * The panel clips and the playlist list inside it is the scroll region — the same shape
+ * `.library`/`.song-list` has. That is what lets the footer stay pinned to the bottom edge however
+ * long the list grows.
+ */
 .sidebar {
   grid-area: sidebar;
   background: var(--panel);
@@ -102,7 +107,7 @@ input[type='range'] {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  overflow-y: auto;
+  overflow: hidden;
   padding: 14px 12px;
 }
 
@@ -118,19 +123,36 @@ input[type='range'] {
 .sidebar-nav {
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 6px;
+  /* Without this a flex item refuses to shrink below its content, and the list would never scroll. */
+  min-height: 0;
+}
+
+/* The column is a fixed width: the input's intrinsic width would otherwise overhang the panel. */
+.sidebar-search {
+  font-size: 13px;
+  min-width: 0;
 }
 
 .sidebar-entry {
   background: none;
   border: none;
   border-radius: var(--radius);
-  flex: 1;
   overflow: hidden;
   padding: 4px 8px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/*
+ * Fills the row, so the whole width beside the chevron selects the playlist. Scoped to the row on
+ * purpose: the nav is a sized column now, and a growing entry there would stretch Library down over
+ * the free space above the list.
+ */
+.playlist-row .sidebar-entry {
+  flex: 1;
 }
 
 .sidebar-entry[aria-current='true'] {
@@ -143,6 +165,13 @@ input[type='range'] {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+/* The panel's one scroll region. */
+.playlist-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .playlist-row {
@@ -174,6 +203,16 @@ input[type='range'] {
 .playlist-empty {
   font-style: italic;
   opacity: 0.7;
+}
+
+/* The songs' version is indented under its playlist; this one lines up with the entries instead. */
+.playlist-list > .playlist-empty {
+  padding: 4px 8px;
+}
+
+.sidebar-footer {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
 }
 
 .sidebar-action {

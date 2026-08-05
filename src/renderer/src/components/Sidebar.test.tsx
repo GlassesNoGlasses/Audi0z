@@ -83,6 +83,55 @@ describe('Sidebar', () => {
     expect(within(sidebar()).getByText('playlist is empty')).toBeInTheDocument()
   })
 
+  /**
+   * The sidebar's filter is its own. The app's search box says what the user is browsing, so
+   * narrowing the playlist list must leave the songs underneath exactly where they were.
+   */
+  it('filters the playlist list by name, case-insensitively', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes, playlist('p2', 'Late night', [])] })
+    await renderApp()
+
+    await user.type(within(sidebar()).getByRole('searchbox', { name: 'Search playlists' }), 'mix')
+
+    expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).toBeInTheDocument()
+    expect(within(sidebar()).queryByRole('button', { name: 'Late night' })).not.toBeInTheDocument()
+    expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune'])
+
+    await user.clear(within(sidebar()).getByRole('searchbox', { name: 'Search playlists' }))
+
+    expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).toBeInTheDocument()
+    expect(within(sidebar()).getByRole('button', { name: 'Late night' })).toBeInTheDocument()
+  })
+
+  /** A list that just empties reads as though the playlists went away, not as a filter that bit. */
+  it('says so when no playlist matches', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    await user.type(
+      within(sidebar()).getByRole('searchbox', { name: 'Search playlists' }),
+      'nothing'
+    )
+
+    expect(within(sidebar()).getByText('no playlists match')).toBeInTheDocument()
+    expect(within(sidebar()).queryByRole('button', { name: 'Mixes' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * Pinned to the panel's edge rather than trailing the list: the playlists scroll past it, so no
+   * number of playlists can push the one way of making another below the fold.
+   */
+  it('keeps the new playlist button outside the scrolling list', async () => {
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    const create = within(sidebar()).getByRole('button', { name: 'New playlist' })
+
+    expect(create.closest('.sidebar-nav')).toBeNull()
+  })
+
   it('creates a playlist', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs })

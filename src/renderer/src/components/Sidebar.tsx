@@ -10,6 +10,9 @@ import { useAppDispatch, useAppState } from '../state/AppContext'
  * untouched. Browsing is not a transport control: the queue follows only when the user plays a
  * song from the view they moved to (`SongList`). Expanding an entry to peek at its songs is
  * deliberately not even a view change.
+ *
+ * The playlist filter is local state, like `AddToPlaylistDialog`'s: the store's `query` is the song
+ * list's, and narrowing the sidebar is not a request to narrow what is being browsed.
  */
 export function Sidebar(): ReactElement {
   const { songs, playlists, view, expandedPlaylists } = useAppState()
@@ -18,6 +21,13 @@ export function Sidebar(): ReactElement {
   const [newName, setNewName] = useState('')
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [filter, setFilter] = useState('')
+
+  // `lib/search` exports only the songs filter, which searches tags as well — a playlist has none,
+  // so this is the plain case-insensitive substring match instead.
+  const shown = playlists.filter((playlist) =>
+    playlist.name.toLowerCase().includes(filter.trim().toLowerCase())
+  )
 
   const titleOf = (songId: string): string =>
     songs.find((song) => song.id === songId)?.title ?? 'Unknown song'
@@ -69,8 +79,21 @@ export function Sidebar(): ReactElement {
           Library
         </button>
 
+        <input
+          className="sidebar-search"
+          type="search"
+          aria-label="Search playlists"
+          placeholder="Search playlists"
+          value={filter}
+          onChange={(event) => setFilter(event.target.value)}
+        />
+
         <ul className="playlist-list">
-          {playlists.map((playlist) => {
+          {/* A list that just empties reads as though the playlists went, not as a filter biting. */}
+          {shown.length === 0 && playlists.length > 0 ? (
+            <li className="playlist-empty">no playlists match</li>
+          ) : null}
+          {shown.map((playlist) => {
             const expanded = expandedPlaylists.has(playlist.id)
             return (
               <li key={playlist.id}>
@@ -151,7 +174,11 @@ export function Sidebar(): ReactElement {
             )
           })}
         </ul>
+      </nav>
 
+      {/* Outside the nav, so the list scrolls past it and no number of playlists can push the one
+          way of making another below the fold. */}
+      <div className="sidebar-footer">
         {creating ? (
           <form className="inline-form" onSubmit={create}>
             <input
@@ -176,7 +203,7 @@ export function Sidebar(): ReactElement {
             New playlist
           </button>
         )}
-      </nav>
+      </div>
     </aside>
   )
 }

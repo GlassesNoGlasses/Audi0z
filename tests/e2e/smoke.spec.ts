@@ -163,6 +163,26 @@ test('creates a playlist that lands in playlists.json', async () => {
 })
 
 /**
+ * Also only provable here: jsdom has no box model, so the unit test can see that the button sits
+ * outside the scrolling list but not that it stays on the panel's bottom edge. Anything above the
+ * list that grows into the free space pushes the footer off — which a stray `flex: 1` did.
+ */
+test('keeps the new playlist button on the bottom edge of the sidebar', async () => {
+  const sidebar = await page.locator('.sidebar').boundingBox()
+  const list = await page.locator('.playlist-list').boundingBox()
+  const create = await page.getByRole('button', { name: 'New playlist' }).boundingBox()
+  // `exact`, or the top bar's "Play Library" is a second match.
+  const library = await page.getByRole('button', { name: 'Library', exact: true }).boundingBox()
+  if (!sidebar || !list || !create || !library) throw new Error('the sidebar rendered no boxes')
+
+  // Within the panel's own padding of the bottom, and below the list that scrolls under it.
+  expect(sidebar.y + sidebar.height - (create.y + create.height)).toBeLessThan(30)
+  expect(create.y).toBeGreaterThanOrEqual(list.y + list.height)
+  // A row rather than a panel: an entry that grows would swallow the space above the list.
+  expect(library.height).toBeLessThan(40)
+})
+
+/**
  * The one part of the app that cannot be proved anywhere but here: the renderer measures playing
  * times off real decoded audio, and jsdom has no decoder to do it with.
  */
