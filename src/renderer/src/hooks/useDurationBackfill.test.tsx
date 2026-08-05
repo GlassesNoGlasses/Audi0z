@@ -75,7 +75,8 @@ describe('useDurationBackfill', () => {
   it('writes many measured songs in one batch, not one write each', async () => {
     const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
     const api = seedApi({ songs: three })
-    backfill(three)
+    const dispatch = vi.fn()
+    renderHook(() => useDurationBackfill(three, dispatch))
 
     await waitFor(() => expect(probes).toHaveLength(2))
     await reportDuration(probes[0], 173)
@@ -89,6 +90,9 @@ describe('useDurationBackfill', () => {
       { id: 'b', durationSec: 41 },
       { id: 'c', durationSec: 12 }
     ])
+    // The write is only half the claim: one dispatch behind it, so the list re-renders once for
+    // three songs rather than once each.
+    expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
   /**

@@ -282,6 +282,38 @@ describe('SongRow menu', () => {
     }
   })
 
+  /**
+   * The other half of the flip condition, which the test above cannot reach: down overflows here
+   * too, but a popup taller than the whole list has no room above it either. Flipping would only
+   * move the clipping to the top, so it stays down — an implementation joining the two halves with
+   * `||` instead of `&&` flips and fails this.
+   */
+  it('stays down when it is too tall to fit above the list either', async () => {
+    const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      if (this.classList.contains('song-menu-popup')) {
+        return DOMRect.fromRect({ y: 560, height: 700 })
+      }
+      if (this.classList.contains('song-menu')) {
+        return DOMRect.fromRect({ y: 540, width: 28, height: 20 })
+      }
+      if (this.classList.contains('song-list')) return DOMRect.fromRect({ y: 0, height: 600 })
+      return DOMRect.fromRect({})
+    })
+    try {
+      const user = userEvent.setup()
+      seedApi({ songs })
+      await renderApp()
+
+      const menu = await openMenu(user, 'Alpha Mix')
+
+      expect(menu).not.toHaveClass('song-menu-popup--up')
+    } finally {
+      rects.mockRestore()
+    }
+  })
+
   /** The default all-zero jsdom rects are the "there is room below" case: no modifier, no flip. */
   it('stays put when there is room below it', async () => {
     const user = userEvent.setup()

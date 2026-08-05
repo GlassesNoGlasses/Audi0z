@@ -59,12 +59,18 @@ describe('Api contract', () => {
     }
   })
 
-  it('carries the tag registry and the two new library operations', () => {
+  /**
+   * Named one by one on purpose. The structural-equality test above only says the two sides agree,
+   * so dropping a method from BOTH still passes it — these are the members whose disappearance has
+   * to fail a test that says their name.
+   */
+  it('carries the tag registry and the three newest library operations', () => {
     const shape = shapeOf(preloadApi)
 
     expect(shape.tags).toEqual(['create', 'list', 'remove', 'rename'])
     expect(shape.library).toContain('compress')
     expect(shape.library).toContain('showFolder')
+    expect(shape.library).toContain('updateDurations')
   })
 
   it('implements every member as a function on both sides', () => {
