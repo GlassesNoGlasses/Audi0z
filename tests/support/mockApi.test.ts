@@ -158,6 +158,17 @@ describe('song size and duration', () => {
     ])
   })
 
+  /**
+   * `sizeBytes` is null exactly when `exists` is false — the invariant both DTO producers in the
+   * main process uphold. A seed that says the file is gone but forgets the null would otherwise
+   * hand the UI a weight for a file that is not there.
+   */
+  it('gives a seeded missing file a null size rather than the default weight', () => {
+    const api = createMockApi({ songs: [song('a', { exists: false })] })
+
+    expect(mockApiControls(api).state.songs[0].sizeBytes).toBeNull()
+  })
+
   it('records a probed durationSec through library.update', async () => {
     const api = createMockApi({ songs: [song('a')] })
 

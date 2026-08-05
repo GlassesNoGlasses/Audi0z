@@ -87,14 +87,24 @@ function cloneSong(song: SongDto): SongDto {
 }
 
 /**
- * Seed -> state: the one place a missing `sizeBytes` becomes the default. An explicit `null` is
- * kept — that is how a seed says "this file is gone", so it must not be defaulted away.
+ * Seed -> state: the one place a missing `sizeBytes` becomes the default.
+ *
+ * `exists: false` answers first, because the DTO invariant both main-process producers uphold is
+ * that `sizeBytes` is null exactly when `exists` is false: a seed that says the file is gone gets
+ * the null whether or not it remembered to say so, since a mock that weighed a missing file would
+ * let a test pass against a shape the app never produces. For a song that is there, an explicit
+ * size — `0` included — is kept, and only an absent one becomes the default.
  */
 function adoptSong(song: MockApiSeedSong): SongDto {
   return {
     ...song,
     tags: [...song.tags],
-    sizeBytes: song.sizeBytes === undefined ? DEFAULT_MOCK_SIZE_BYTES : song.sizeBytes
+    sizeBytes:
+      song.exists === false
+        ? null
+        : song.sizeBytes === undefined
+          ? DEFAULT_MOCK_SIZE_BYTES
+          : song.sizeBytes
   }
 }
 

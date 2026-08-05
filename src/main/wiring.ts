@@ -27,10 +27,15 @@ export async function fileExists(absPath: string): Promise<boolean> {
  * being non-null, so "I could not tell" has to be a value rather than a throw.
  *
  * A real 0-byte file answers `0`, which is deliberately distinct from `null`.
+ *
+ * `stat` succeeds on a directory and reports the inode's own size, so "is this a file" has to be
+ * asked explicitly — otherwise a `fileName` naming a directory would give the DTO `exists: true`
+ * and a weight no audio file ever had.
  */
 export async function fileSize(absPath: string): Promise<number | null> {
   try {
-    return (await stat(absPath)).size
+    const info = await stat(absPath)
+    return info.isFile() ? info.size : null
   } catch {
     return null
   }

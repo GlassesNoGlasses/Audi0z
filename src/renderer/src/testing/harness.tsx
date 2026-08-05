@@ -87,7 +87,7 @@ export function nowPlaying(): string {
 }
 
 export function song(id: string, title: string, extra: Partial<SongDto> = {}): SongDto {
-  return {
+  const dto: SongDto = {
     id,
     fileName: `${id}.wav`,
     title,
@@ -99,6 +99,9 @@ export function song(id: string, title: string, extra: Partial<SongDto> = {}): S
     sizeBytes: DEFAULT_MOCK_SIZE_BYTES,
     ...extra
   }
+  // The DTO invariant, applied after the override: `sizeBytes` is null exactly when `exists` is
+  // false, so `{ exists: false }` on its own gets the null rather than the default weight.
+  return dto.exists ? dto : { ...dto, sizeBytes: null }
 }
 
 export function playlist(
