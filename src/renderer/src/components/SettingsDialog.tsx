@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import type { SongDto } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage, isTrashFailure } from '../lib/errors'
+import { errorMessage, trashFailureMessage } from '../lib/errors'
 import { formatBytes, formatCompressionSaving } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -96,12 +96,7 @@ export function SettingsDialog(): ReactElement {
         await refreshLibrary(dispatch)
       })
       .catch((error: unknown) => {
-        dispatch({
-          type: 'toast/pushed',
-          message: isTrashFailure(error)
-            ? `${errorMessage(error)} — the song is still in your library.`
-            : errorMessage(error)
-        })
+        dispatch({ type: 'toast/pushed', message: trashFailureMessage(error) })
       })
   }
 

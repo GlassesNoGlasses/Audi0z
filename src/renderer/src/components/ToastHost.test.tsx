@@ -35,22 +35,32 @@ describe('ToastHost', () => {
   })
 
   /**
-   * The push channel used to render `error.message` raw while every renderer call site rendered
-   * `errorMessage(error)`. Two normalisations meant two different strings for one failure, which
-   * is both uglier and unmatchable by the duplicate collapse.
+   * One fs failure fires both channels (withErrorReport re-throws after reporting). Their spellings
+   * must agree exactly, or the reducer's duplicate collapse sees two different toasts. The two
+   * channels' normalisations are shown to agree on this exact errno in `errors.test.ts`; what is
+   * pinned here is that the agreed-on string reaches the corner once, errno prefix intact.
    */
-  it('normalises a main-process message the way a rejected invoke is normalised', async () => {
+  it('collapses the push and invoke tellings of one failure into a single toast', async () => {
     const api = seedApi()
     const controls = mockApiControls(api)
     await renderApp()
 
     act(() => {
-      controls.emitError({ source: 'ytdlp', message: 'YtDlpError: nothing to download  ' })
+      controls.emitError({
+        source: 'trash',
+        message: "ENOENT: no such file or directory, unlink '/x'"
+      })
+    })
+    act(() => {
+      controls.emitError({
+        source: 'trash',
+        message: "ENOENT: no such file or directory, unlink '/x'"
+      })
     })
 
-    const toast = screen.getByRole('alert')
-    expect(toast).toHaveTextContent('nothing to download')
-    expect(toast.textContent).not.toContain('YtDlpError')
+    const alerts = await screen.findAllByRole('alert')
+    expect(alerts).toHaveLength(1)
+    expect(alerts[0]).toHaveTextContent("ENOENT: no such file or directory, unlink '/x'")
   })
 
   it('has something to say even when the main process reports an empty message', async () => {

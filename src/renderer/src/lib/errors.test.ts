@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { errorMessage, isBusy, isCancelled, isTrashFailure } from './errors'
+import { errorMessage, isBusy, isCancelled, isTrashFailure, trashFailureMessage } from './errors'
 
 /**
  * `ipcMain.handle` rejections reach the renderer as a plain `Error` whose custom `name`/`code` are
@@ -21,10 +21,25 @@ describe('errorMessage', () => {
     expect(errorMessage(busy)).toBe('a download is already running')
   })
 
-  it('strips the serialised error name, leaving the sentence meant for the user', () => {
+  it('strips the serialised error name only behind the invoke wrapper', () => {
     expect(errorMessage(trash)).toBe('Failed to move item to trash')
-    expect(errorMessage(new Error('YtDlpError: yt-dlp download failed (exit 1)'))).toBe(
-      'yt-dlp download failed (exit 1)'
+    expect(
+      errorMessage(
+        new Error(
+          "Error invoking remote method 'library:remove': Error: ENOENT: no such file or directory, unlink '/x'"
+        )
+      )
+    ).toBe("ENOENT: no such file or directory, unlink '/x'")
+  })
+
+  /**
+   * The push channel forwards error.message raw — a leading `ENOENT: ` there IS the message, not a
+   * serialisation artifact, and eating it made the same failure toast twice in two spellings. Read
+   * with the case above: one errno, one spelling, whichever channel carried it.
+   */
+  it('leaves a push-channel message alone, errno prefix included', () => {
+    expect(errorMessage("ENOENT: no such file or directory, unlink '/x'")).toBe(
+      "ENOENT: no such file or directory, unlink '/x'"
     )
   })
 
@@ -55,5 +70,17 @@ describe('error classification', () => {
   it('recognises a failed trash operation', () => {
     expect(isTrashFailure(trash)).toBe(true)
     expect(isTrashFailure(busy)).toBe(false)
+  })
+})
+
+describe('trashFailureMessage', () => {
+  it('adds the reassurance only when the trash itself refused', () => {
+    const refusal = new Error(
+      "Error invoking remote method 'library:remove': Error: Failed to move item a.wav to trash"
+    )
+    expect(trashFailureMessage(refusal)).toBe(
+      'Failed to move item a.wav to trash — the song is still in your library.'
+    )
+    expect(trashFailureMessage(new Error('plain failure'))).toBe('plain failure')
   })
 })

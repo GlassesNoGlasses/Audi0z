@@ -14,7 +14,7 @@ import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
 import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { errorMessage, isTrashFailure } from './lib/errors'
+import { errorMessage, trashFailureMessage } from './lib/errors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
 import type { ConfirmIntent } from './state/appReducer'
@@ -173,12 +173,7 @@ function AppShell(): ReactElement {
           await refreshLibrary(dispatch)
         })
         .catch((error: unknown) => {
-          dispatch({
-            type: 'toast/pushed',
-            message: isTrashFailure(error)
-              ? `${errorMessage(error)} — the song is still in your library.`
-              : errorMessage(error)
-          })
+          dispatch({ type: 'toast/pushed', message: trashFailureMessage(error) })
         })
       return
     }
