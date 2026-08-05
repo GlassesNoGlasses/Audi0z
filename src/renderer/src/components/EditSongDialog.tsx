@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactElement } from 'react'
+import { useEffect, useState, type FormEvent, type ReactElement } from 'react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
 import { errorMessage } from '../lib/errors'
 import { useAppDispatch, useAppState } from '../state/AppContext'
@@ -25,6 +25,16 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
 
   // Before the early return below: a hook may not sit behind a conditional.
   useEscapeKey(close)
+
+  // Deleted from under the dialog. Both delete paths — the row menu's confirmation and the Settings
+  // file list — dismiss their own dialog and then await `library.remove`, so Edit can be opened on a
+  // doomed song in the window before `library/songsRemoved` lands. (A refresh that finds the file
+  // gone is not one of these: it dispatches `library/songMissing`, which keeps the song with
+  // `exists: false`.) There is nothing left to edit, and the early return alone would leave the
+  // dialog slot occupied: an empty screen with the global shortcuts still gated on it.
+  useEffect(() => {
+    if (!song) dispatch({ type: 'dialog/closed' })
+  }, [song, dispatch])
 
   if (!song) return null
 

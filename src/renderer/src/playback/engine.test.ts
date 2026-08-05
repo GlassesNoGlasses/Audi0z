@@ -595,6 +595,51 @@ describe('playbackReducer — library/songsRemoved', () => {
   })
 })
 
+describe('playbackReducer — playlists/removed', () => {
+  /**
+   * A deleted playlist must not stay the queue: everything downstream reads `queueId` as a live id
+   * — the toggles write shuffle and repeat back to it — so a dead one is worse than no queue at all.
+   */
+  it('empties the queue when the playlist that owns it is deleted', () => {
+    const state = makeState({
+      queueId: PLAYLIST_QUEUE_ID,
+      order: ['a', 'b'],
+      currentId: 'a',
+      isPlaying: true,
+      history: ['a'],
+      playedByQueue: { [PLAYLIST_QUEUE_ID]: { a: true } }
+    })
+
+    const next = reduce(state, { type: 'playlists/removed', playlistId: PLAYLIST_QUEUE_ID })
+
+    expect(next.queueId).toBeNull()
+    expect(next.order).toEqual([])
+    expect(next.currentId).toBeNull()
+    expect(next.isPlaying).toBe(false)
+    expect(next.history).toEqual([])
+    expect(next.playedByQueue).toEqual({})
+  })
+
+  /** The flags are keyed by queue id, so an id nobody can select again is dead weight. */
+  it('leaves the queue alone when some other playlist is deleted, but drops its played flags', () => {
+    const state = makeState({
+      queueId: PLAYLIST_QUEUE_ID,
+      order: ['a'],
+      currentId: 'a',
+      isPlaying: true,
+      playedByQueue: { [PLAYLIST_QUEUE_ID]: { a: true }, other: { z: true } }
+    })
+
+    const next = reduce(state, { type: 'playlists/removed', playlistId: 'other' })
+
+    expect(next.queueId).toBe(PLAYLIST_QUEUE_ID)
+    expect(next.order).toEqual(['a'])
+    expect(next.currentId).toBe('a')
+    expect(next.isPlaying).toBe(true)
+    expect(next.playedByQueue).toEqual({ [PLAYLIST_QUEUE_ID]: { a: true } })
+  })
+})
+
 describe('playbackReducer — history', () => {
   it('caps history at 100 entries, dropping the oldest', () => {
     const order = Array.from({ length: 120 }, (_, index) => `s${index}`)
@@ -666,7 +711,8 @@ const EVERY_ACTION: readonly PlaybackAction[] = [
   { type: 'transport/togglePlay' },
   { type: 'transport/setShuffle', value: true },
   { type: 'transport/setRepeat', value: true },
-  { type: 'library/songsRemoved', songIds: ['b'] }
+  { type: 'library/songsRemoved', songIds: ['b'] },
+  { type: 'playlists/removed', playlistId: PLAYLIST_QUEUE_ID }
 ]
 
 const INVARIANT_BASES: readonly [string, PlaybackState][] = [
@@ -696,6 +742,18 @@ const INVARIANT_BASES: readonly [string, PlaybackState][] = [
   [
     'repeating',
     makeState({ order: ['a'], currentId: 'a', repeat: true, playedByQueue: played('a') })
+  ],
+  // A playlist queue, so the actions keyed by queue id are exercised against the queue they name.
+  [
+    'playlist queue',
+    makeState({
+      queueId: PLAYLIST_QUEUE_ID,
+      order: ['a', 'b', 'c'],
+      currentId: 'b',
+      isPlaying: true,
+      playedByQueue: { [PLAYLIST_QUEUE_ID]: { a: true, b: true } },
+      history: ['a', 'b']
+    })
   ]
 ]
 

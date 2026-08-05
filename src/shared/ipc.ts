@@ -9,8 +9,8 @@ export const IPC = {
     list: 'library:list',
     add: 'library:add',
     update: 'library:update',
+    updateDurations: 'library:updateDurations',
     remove: 'library:remove',
-    revealInFolder: 'library:revealInFolder',
     compress: 'library:compress',
     showFolder: 'library:showFolder'
   },

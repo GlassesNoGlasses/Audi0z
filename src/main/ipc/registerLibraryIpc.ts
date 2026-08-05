@@ -210,6 +210,23 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return toDto(await deps.libraryStore.update(songId, parsed))
   })
 
+  /** The backfill's flush: every entry validated up front, then one store pass, one persist. */
+  ipc.handle(IPC.library.updateDurations, async (_event, entries: unknown): Promise<SongDto[]> => {
+    if (!Array.isArray(entries)) throw new InvalidPayloadError('entries must be an array')
+    const parsed = entries.map((entry) => {
+      if (typeof entry !== 'object' || entry === null) {
+        throw new InvalidPayloadError('each entry must be an object')
+      }
+      const candidate = entry as Record<string, unknown>
+      return {
+        id: assertNonEmptyString(candidate['id'], 'id'),
+        durationSec: assertDuration(candidate['durationSec'], 'durationSec')
+      }
+    })
+    const updated = await deps.libraryStore.updateDurations(parsed)
+    return Promise.all(updated.map((song) => toDto(song)))
+  })
+
   /**
    * Delete is trash-first: the library row and the playlist references only go once the file has
    * actually reached the OS trash. If trashing fails (user cancelled, permission denied) the error
@@ -226,11 +243,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     if (await deps.fileExists(absPath)) await deps.trashItem(absPath)
     await deps.libraryStore.remove(song.id)
     await deps.playlistStore.cascadeRemoveSong(song.id)
-  })
-
-  ipc.handle(IPC.library.revealInFolder, async (_event, id: unknown): Promise<void> => {
-    const song = await requireSong(id)
-    deps.revealInFolder(audioPathOf(song))
   })
 
   /**

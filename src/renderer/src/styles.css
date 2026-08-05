@@ -385,6 +385,12 @@ input[type='range'] {
   z-index: 5;
 }
 
+/* At the bottom of the list the popup would clip into the scroll edge, so it hangs upward. */
+.song-menu-popup--up {
+  bottom: 100%;
+  top: auto;
+}
+
 .song-menu-popup button {
   background: none;
   border: none;
@@ -938,6 +944,32 @@ input[type='range'] {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/*
+ * Vestibular-safe rendering: the spin and the slide stop, but "busy" must survive. The spinner's
+ * two-tone ring reads as an activity mark even static; the indeterminate bar swaps its slide for
+ * a full-width opacity pulse — a bar frozen at 30% would read as a stall.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+
+  .progress-indeterminate {
+    animation: progress-pulse 2s ease-in-out infinite;
+    width: 100%;
+  }
+}
+
+@keyframes progress-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
   }
 }
 

@@ -1,7 +1,15 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { renderApp, seedApi, song, songTitles, stubMediaElement } from '../testing/harness'
+import { mockApiControls } from '../../../../tests/support/mockApi'
+import {
+  audioElement,
+  renderApp,
+  seedApi,
+  song,
+  songTitles,
+  stubMediaElement
+} from '../testing/harness'
 
 stubMediaElement()
 
@@ -80,5 +88,29 @@ describe('EditSongDialog', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('library.json is read-only')
     expect(screen.getByRole('dialog', { name: 'Edit song' })).toBeInTheDocument()
+  })
+
+  /**
+   * Nothing left to edit: a dialog about a song that is gone has to get out of the way. The screen
+   * goes blank on its own — the early return sees to that — so what is really being asserted is the
+   * dialog slot being given up, and `m` reaching the player is the only way to see that from here.
+   */
+  it('closes itself when the song it is about disappears', async () => {
+    const api = seedApi({ songs })
+    const controls = mockApiControls(api)
+    await openEdit('Alpha Mix')
+    expect(screen.getByRole('dialog', { name: 'Edit song' })).toBeInTheDocument()
+
+    controls.state.songs = []
+    await act(async () => {
+      controls.emitLibraryChanged()
+    })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit song' })).toBeNull())
+    // Nothing is focused once the dialog goes, so the shortcut arrives on the body.
+    await act(async () => {
+      fireEvent.keyDown(document.body, { key: 'm' })
+    })
+    expect(audioElement().volume).toBe(0)
   })
 })

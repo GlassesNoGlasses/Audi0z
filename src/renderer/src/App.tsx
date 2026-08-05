@@ -14,7 +14,7 @@ import { useApiEvents, refreshLibrary } from './hooks/useApiEvents'
 import { useAudioElement } from './hooks/useAudioElement'
 import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
-import { errorMessage, isTrashFailure } from './lib/errors'
+import { errorMessage, trashFailureMessage } from './lib/errors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
 import type { ConfirmIntent } from './state/appReducer'
@@ -173,12 +173,7 @@ function AppShell(): ReactElement {
           await refreshLibrary(dispatch)
         })
         .catch((error: unknown) => {
-          dispatch({
-            type: 'toast/pushed',
-            message: isTrashFailure(error)
-              ? `${errorMessage(error)} — the song is still in your library.`
-              : errorMessage(error)
-          })
+          dispatch({ type: 'toast/pushed', message: trashFailureMessage(error) })
         })
       return
     }
@@ -186,8 +181,8 @@ function AppShell(): ReactElement {
       .remove(intent.playlistId)
       .then(() => {
         dispatch({ type: 'playlists/removed', playlistId: intent.playlistId })
-        // The view has nowhere left to be. The QUEUE is not touched: it may well be the library's,
-        // playing happily, and if it was this playlist's then the order effect above empties it.
+        // The view has nowhere left to be. The queue looks after itself: `playlists/removed` goes
+        // through the playback engine too, which stops it only if this playlist was the one queued.
         if (state.view.kind === 'playlist' && state.view.id === intent.playlistId) {
           dispatch({ type: 'view/selected', view: { kind: 'library' } })
         }

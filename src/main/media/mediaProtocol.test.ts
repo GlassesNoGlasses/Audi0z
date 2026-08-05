@@ -194,6 +194,48 @@ describe('createMediaHandler', () => {
     expect((await failing(new Request('media://audio/song-1'))).status).toBe(404)
   })
 
+  /**
+   * A request that races an in-flight compression must not stream the file being replaced: it
+   * waits for the job and serves whatever the record says afterwards. The untouched `lookups` is
+   * the load-bearing half — the wait has to come before the record is read, or the handler would
+   * stat the pre-swap `fileName` and hand the renderer a file that is about to vanish.
+   */
+  it('holds a request for a compressing song until the swap has settled', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const lookups: string[] = []
+    const compressing = createMediaHandler({
+      getSong: async (id) => {
+        lookups.push(id)
+        return songs.get(id)
+      },
+      audioDir: lib.audio,
+      awaitCompression: () => gate
+    })
+
+    const pending = compressing(new Request('media://audio/song-1'))
+    let served = false
+    void pending.then(() => (served = true))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(lookups).toEqual([])
+    expect(served).toBe(false)
+
+    release()
+    const response = await pending
+
+    expect(lookups).toEqual(['song-1'])
+    expect(response.status).toBe(200)
+    await drain(response)
+  })
+
+  /** The dep is optional: with nothing tracking compressions the handler waits on nothing. */
+  it('serves straight through when no compression tracker is wired in', async () => {
+    const response = await handler()(new Request('media://audio/song-1'))
+
+    expect(response.status).toBe(200)
+    await drain(response)
+  })
+
   it('destroys the read stream when the request is aborted', async () => {
     let opened: Readable | undefined
     const aborting = createMediaHandler({

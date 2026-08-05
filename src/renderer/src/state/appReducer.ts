@@ -8,7 +8,8 @@ import type { PlaybackAction, PlaybackState, Rng } from '../playback/types'
  *
  * Playback actions are forwarded to the (frozen, pure) engine untouched — this reducer only adds
  * the things the engine has no business knowing about: the songs themselves, dialogs and toasts.
- * `library/songsRemoved` is the one action both halves care about.
+ * `library/songsRemoved` and `playlists/removed` are the two actions both halves care about: a
+ * deletion has to reach the engine as well, or playback would go on pointing at what is gone.
  */
 
 export type View = { kind: 'library' } | { kind: 'playlist'; id: string }
@@ -53,11 +54,13 @@ export type AppAction =
   | PlaybackAction
   | { type: 'library/loaded'; songs: SongDto[] }
   | { type: 'library/songUpdated'; song: SongDto }
+  /** Several songs in one dispatch, so a batched write costs one re-render rather than one each. */
+  | { type: 'library/songsUpdated'; songs: SongDto[] }
   | { type: 'library/songMissing'; songId: string }
   | { type: 'tags/loaded'; tags: Tag[] }
   | { type: 'playlists/loaded'; playlists: Playlist[] }
   | { type: 'playlists/upserted'; playlist: Playlist }
-  | { type: 'playlists/removed'; playlistId: string }
+  // `playlists/removed` arrives as a `PlaybackAction`: the queue may be the playlist being deleted.
   | { type: 'playlist/expandToggled'; playlistId: string }
   | { type: 'settings/updated'; settings: Settings }
   | { type: 'view/selected'; view: View }
@@ -109,7 +112,8 @@ const PLAYBACK_ACTION_TYPES: Record<PlaybackAction['type'], true> = {
   'transport/togglePlay': true,
   'transport/setShuffle': true,
   'transport/setRepeat': true,
-  'library/songsRemoved': true
+  'library/songsRemoved': true,
+  'playlists/removed': true
 }
 
 function isPlaybackAction(action: AppAction): action is PlaybackAction {
@@ -138,6 +142,14 @@ export function createAppReducer(
           playback: nextPlayback
         }
       }
+      if (action.type === 'playlists/removed') {
+        return {
+          ...state,
+          playlists: state.playlists.filter((p) => p.id !== action.playlistId),
+          expandedPlaylists: toggleOff(state.expandedPlaylists, action.playlistId),
+          playback: nextPlayback
+        }
+      }
       // Identity preserved when nothing moved, so React can skip the re-render.
       return nextPlayback === state.playback ? state : { ...state, playback: nextPlayback }
     }
@@ -150,6 +162,10 @@ export function createAppReducer(
           ...state,
           songs: state.songs.map((song) => (song.id === action.song.id ? action.song : song))
         }
+      case 'library/songsUpdated': {
+        const byId = new Map(action.songs.map((song) => [song.id, song]))
+        return { ...state, songs: state.songs.map((song) => byId.get(song.id) ?? song) }
+      }
       case 'library/songMissing':
         return {
           ...state,
@@ -172,12 +188,6 @@ export function createAppReducer(
             : [...state.playlists, action.playlist]
         }
       }
-      case 'playlists/removed':
-        return {
-          ...state,
-          playlists: state.playlists.filter((p) => p.id !== action.playlistId),
-          expandedPlaylists: toggleOff(state.expandedPlaylists, action.playlistId)
-        }
       case 'playlist/expandToggled':
         return { ...state, expandedPlaylists: toggle(state.expandedPlaylists, action.playlistId) }
       case 'settings/updated':

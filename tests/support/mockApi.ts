@@ -87,14 +87,24 @@ function cloneSong(song: SongDto): SongDto {
 }
 
 /**
- * Seed -> state: the one place a missing `sizeBytes` becomes the default. An explicit `null` is
- * kept — that is how a seed says "this file is gone", so it must not be defaulted away.
+ * Seed -> state: the one place a missing `sizeBytes` becomes the default.
+ *
+ * `exists: false` answers first, because the DTO invariant both main-process producers uphold is
+ * that `sizeBytes` is null exactly when `exists` is false: a seed that says the file is gone gets
+ * the null whether or not it remembered to say so, since a mock that weighed a missing file would
+ * let a test pass against a shape the app never produces. For a song that is there, an explicit
+ * size — `0` included — is kept, and only an absent one becomes the default.
  */
 function adoptSong(song: MockApiSeedSong): SongDto {
   return {
     ...song,
     tags: [...song.tags],
-    sizeBytes: song.sizeBytes === undefined ? DEFAULT_MOCK_SIZE_BYTES : song.sizeBytes
+    sizeBytes:
+      song.exists === false
+        ? null
+        : song.sizeBytes === undefined
+          ? DEFAULT_MOCK_SIZE_BYTES
+          : song.sizeBytes
   }
 }
 
@@ -226,6 +236,19 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         libraryChanged.emit()
         return cloneSong(song)
       }),
+      updateDurations: vi.fn(async (entries: Array<{ id: string; durationSec: number }>) => {
+        const updated: SongDto[] = []
+        for (const { id: songId, durationSec } of entries) {
+          // Unlike `update`, an id that is not here is passed over: the real handler does the same,
+          // because a song can be deleted between the probe that measured it and the write.
+          const song = state.songs.find((entry) => entry.id === songId)
+          if (!song) continue
+          song.durationSec = durationSec
+          updated.push(cloneSong(song))
+        }
+        if (updated.length > 0) libraryChanged.emit()
+        return updated
+      }),
       remove: vi.fn(async (songId) => {
         findSong(songId)
         state.songs = state.songs.filter((song) => song.id !== songId)
@@ -233,9 +256,6 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
           playlist.songIds = playlist.songIds.filter((sid) => sid !== songId)
         }
         libraryChanged.emit()
-      }),
-      revealInFolder: vi.fn(async (songId) => {
-        findSong(songId)
       }),
       compress: vi.fn(async (songId) => {
         const song = findSong(songId)

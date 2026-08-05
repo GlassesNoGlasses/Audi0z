@@ -197,9 +197,43 @@ describe('SettingsDialog storage', () => {
 
     const held = within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })
     expect(held).toBeDisabled()
-    expect(held.getAttribute('title')).toMatch(/player/i)
+    expect(held).toHaveAccessibleDescription(/player/i)
     // Every other row is untouched: only the one file is under the player.
     expect(within(settings()).getByRole('button', { name: 'Compress Bravo Beat' })).toBeEnabled()
+  })
+
+  /**
+   * The reason used to live in a `title` attribute on a disabled button: never announced by a
+   * screen reader, unreachable by keyboard, and unhovered by most browsers on a disabled control.
+   * A guard nobody can read is a button that looks broken, so the reason is on the page.
+   */
+  it('says out loud why the playing song cannot be compressed', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    const held = within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })
+    expect(held).toBeDisabled()
+    // A `title` computes an accessible description too, so pin its absence: the description has to
+    // come from the text on the page, which is the only version of it anyone can actually read.
+    expect(held).not.toHaveAttribute('title')
+    expect(held).toHaveAccessibleDescription(
+      'Loaded in the player — compressing would replace the file it is streaming'
+    )
+    expect(
+      within(settings()).getByText(
+        'Loaded in the player — compressing would replace the file it is streaming'
+      )
+    ).toBeVisible()
+    // The reason takes the savings quote's slot: a figure for a file you cannot compress right
+    // now is noise. Two are left — the preference's, and the row the player is not holding.
+    expect(screen.getAllByText('Saves ~50%')).toHaveLength(2)
   })
 
   it('offers it again once the player has moved on', async () => {
@@ -240,6 +274,22 @@ describe('SettingsDialog storage', () => {
 
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
     expect(fileTitles()).toEqual(['Alpha Mix'])
+  })
+
+  /**
+   * ffmpeg needs a file to read. Offering the button on a row whose file is gone can only spend a
+   * click on a `source file not found` toast, so the row does not offer it.
+   */
+  it('does not offer to compress a file that is not there', async () => {
+    seedApi({ songs: [song('b', 'Bravo Beat', { exists: false, sizeBytes: null })] })
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    expect(within(settings()).queryByRole('button', { name: 'Compress Bravo Beat' })).toBeNull()
+    // Only the offer goes: the row still says which file it is, what it weighs, and can be deleted.
+    expect(fileTitles()).toEqual(['Bravo Beat'])
+    expect(settings().querySelector('.file-size')?.textContent).toBe('—')
+    expect(within(settings()).getByRole('button', { name: 'Delete Bravo Beat' })).toBeEnabled()
   })
 
   it('moves a file to the trash once, and only once, it is confirmed', async () => {
@@ -303,6 +353,33 @@ describe('SettingsDialog storage', () => {
     // Nothing behind it in the history any more, so Prev restarts what is playing rather than
     // cueing a song that is gone and killing the transport.
     expect(nowPlaying()).toBe('Bravo Beat')
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+  })
+
+  /**
+   * The other half of that invariant: the scrub is dispatched inside the delete's `.then()` on
+   * purpose. A delete the OS refused moved nothing to the trash, so the song is still playable and
+   * the transport has to be left exactly as it was — scrubbing it here would stop the music over a
+   * deletion that never happened.
+   */
+  it('leaves the transport untouched when the OS refuses the delete', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
+    vi.mocked(api.library.remove).mockRejectedValue(new Error('Failed to move item a.wav to trash'))
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    await user.click(screen.getByRole('button', { name: 'Settings' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Delete Alpha Mix' }))
+    await user.click(within(settings()).getByRole('button', { name: 'Delete' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('still in your library')
+    expect(fileTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
+    // Still cued, still playing: the refusal changed nothing on disk and nothing in the transport.
+    expect(nowPlaying()).toBe('Alpha Mix')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
 })

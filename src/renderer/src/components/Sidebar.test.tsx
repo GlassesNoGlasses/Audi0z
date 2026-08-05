@@ -135,6 +135,37 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
 
+  /**
+   * The complement of the test above: here the deleted playlist IS the queue. Leaving `queueId`
+   * pointing at it would leave the transport driving a playlist that no longer exists — the toggles
+   * persist to whichever store owns the queue, so shuffle would be written to a dead id and fail.
+   */
+  it('stops the queue and keeps the toggles quiet when the playing playlist is deleted', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    // Viewing the playlist is not enough — playing something in it is what makes it the queue.
+    await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Charlie Tune' }))
+    expect(nowPlaying()).toBe('Charlie Tune')
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Delete playlist Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() => expect(nowPlaying()).toBe('Nothing playing'))
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Shuffle' }))
+
+    expect(api.playlists.setPlaybackOptions).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alert')).toBeNull()
+
+    // Empty, not broken: the library is still one click away from being the queue again.
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
   it('renames a playlist', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs, playlists: [mixes] })

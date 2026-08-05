@@ -67,11 +67,20 @@ describe('fileSize', () => {
   })
 
   it('answers null rather than rejecting for an unreadable path', async () => {
-    // A directory is not a file, and a path under a file is not a path at all (ENOTDIR).
+    // A path under a file is not a path at all (ENOTDIR).
     await writeFile(path.join(dir, 'a-file'), 'x')
 
     await expect(fileSize(path.join(dir, 'a-file', 'nested'))).resolves.toBeNull()
     await expect(fileSize('')).resolves.toBeNull()
+  })
+
+  /**
+   * `stat` succeeds on a directory and reports the inode's own size, which is not the size of any
+   * audio file — so without an `isFile()` check a `fileName` naming a directory would give the DTO
+   * `exists: true` and a nonsense weight.
+   */
+  it('answers null for a directory, which has a stat size but is not a file', async () => {
+    await expect(fileSize(dir)).resolves.toBeNull()
   })
 })
 

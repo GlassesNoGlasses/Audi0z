@@ -312,6 +312,55 @@ describe(IPC.library.update, () => {
   })
 })
 
+describe(IPC.library.updateDurations, () => {
+  it('persists a batch and answers only the songs that still exist', async () => {
+    const harness = setup()
+    const a = await harness.libraryStore.add(draftSong({ title: 'A', fileName: 'a.wav' }))
+
+    const dtos = await harness.invoke<SongDto[]>(IPC.library.updateDurations, [
+      { id: a.id, durationSec: 173 },
+      { id: 'ghost', durationSec: 9 }
+    ])
+
+    expect(dtos.map((d) => [d.id, d.durationSec])).toEqual([[a.id, 173]])
+    expect((await harness.libraryStore.getSong(a.id))?.durationSec).toBe(173)
+  })
+
+  it('takes an empty batch as the nothing-to-write it is', async () => {
+    const harness = setup()
+
+    await expect(harness.invoke(IPC.library.updateDurations, [])).resolves.toEqual([])
+  })
+
+  it('refuses a batch whose entries are malformed', async () => {
+    const harness = setup()
+
+    await expect(harness.invoke(IPC.library.updateDurations, 'nope')).rejects.toThrow()
+    await expect(harness.invoke(IPC.library.updateDurations, [null])).rejects.toThrow()
+    await expect(
+      harness.invoke(IPC.library.updateDurations, [{ id: '', durationSec: 3 }])
+    ).rejects.toThrow()
+    await expect(
+      harness.invoke(IPC.library.updateDurations, [{ id: 'a', durationSec: 0 }])
+    ).rejects.toThrow()
+  })
+
+  /** One bad entry is a bad payload: nothing in the batch is written, not even the good half. */
+  it('writes none of a batch when one entry is malformed', async () => {
+    const harness = setup()
+    const a = await harness.libraryStore.add(draftSong())
+
+    await expect(
+      harness.invoke(IPC.library.updateDurations, [
+        { id: a.id, durationSec: 173 },
+        { id: 'b', durationSec: 'long' }
+      ])
+    ).rejects.toThrow()
+
+    expect((await harness.libraryStore.getSong(a.id))?.durationSec).toBeUndefined()
+  })
+})
+
 describe(IPC.library.remove, () => {
   it('trashes the file before touching the stores, then cascades', async () => {
     const harness = setup()
@@ -392,26 +441,6 @@ describe(IPC.library.remove, () => {
 
     await expect(harness.invoke(IPC.library.remove, id)).rejects.toThrow()
     expect(harness.trashItem).not.toHaveBeenCalled()
-  })
-})
-
-describe(IPC.library.revealInFolder, () => {
-  it('reveals the absolute path of the song', async () => {
-    const harness = setup()
-    const added = await harness.libraryStore.add(draftSong())
-
-    await harness.invoke(IPC.library.revealInFolder, added.id)
-
-    expect(harness.revealInFolder).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
-  })
-
-  it('throws NotFound for an unknown id', async () => {
-    const harness = setup()
-
-    await expect(harness.invoke(IPC.library.revealInFolder, 'missing')).rejects.toMatchObject({
-      name: 'NotFound'
-    })
-    expect(harness.revealInFolder).not.toHaveBeenCalled()
   })
 })
 

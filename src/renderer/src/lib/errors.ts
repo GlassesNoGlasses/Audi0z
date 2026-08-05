@@ -12,7 +12,8 @@ const INVOKE_PREFIX = /^Error invoking remote method '[^']*':\s*/
 /**
  * The error's class name, which electron pastes in front of the message it serialises
  * (`YtDlpError: …`, `BUSY: …`). It is an implementation detail of the main process, and dropping
- * it leaves the sentence the user is meant to read.
+ * it leaves the sentence the user is meant to read. Only ever applied behind `INVOKE_PREFIX`: the
+ * shape is indistinguishable from an errno, so off the wrapper this would eat real words.
  */
 const NAME_PREFIX = /^[A-Z][A-Za-z0-9_]*:[ \t]+/
 
@@ -20,7 +21,12 @@ const NAME_PREFIX = /^[A-Z][A-Za-z0-9_]*:[ \t]+/
 export function errorMessage(error: unknown): string {
   const raw =
     error instanceof Error ? error.message : typeof error === 'string' ? error : String(error ?? '')
-  const unwrapped = raw.replace(INVOKE_PREFIX, '').replace(NAME_PREFIX, '').trim()
+  // The class name is a serialisation artifact of the invoke wrapper; without the wrapper there
+  // was no serialisation, and a leading `ENOENT: ` is the message itself. The error channel pushes
+  // `error.message` raw, so eating that prefix there spelled one failure two ways.
+  const unwrapped = INVOKE_PREFIX.test(raw)
+    ? raw.replace(INVOKE_PREFIX, '').replace(NAME_PREFIX, '').trim()
+    : raw.trim()
   return unwrapped === '' ? 'Something went wrong' : unwrapped
 }
 
@@ -52,4 +58,11 @@ export function isCancelled(error: unknown): boolean {
  */
 export function isTrashFailure(error: unknown): boolean {
   return /trash/i.test(errorMessage(error))
+}
+
+/** The delete-refused toast, told identically wherever a delete can fail. */
+export function trashFailureMessage(error: unknown): string {
+  return isTrashFailure(error)
+    ? `${errorMessage(error)} — the song is still in your library.`
+    : errorMessage(error)
 }

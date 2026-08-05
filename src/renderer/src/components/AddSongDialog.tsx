@@ -65,8 +65,6 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
    */
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
-  /** What the probe said this URL runs to, when it said — the only playing time known before import. */
-  const [probedDurationSec, setProbedDurationSec] = useState<number | undefined>(undefined)
 
   // Subscribed for the dialog's whole life, not just while a download runs: the first progress
   // line can arrive before `start` has even resolved its promise.
@@ -115,7 +113,6 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
       .probe(url.trim())
       .then((result) => {
         setTitle(result.title)
-        setProbedDurationSec(result.durationSec)
       })
       .catch(fail)
       .finally(() => {
@@ -279,8 +276,8 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
             <span className="compress-note">
               —{' '}
               <strong className="compress-estimate">
-                {/* Nothing has weighed the source yet, so this is the generic quote until it has. */}
-                {formatCompressionSaving(null, mode === 'url' ? probedDurationSec : undefined)}
+                {/* A URL has no size before it is downloaded, so the quote is always the generic one. */}
+                {formatCompressionSaving(null, undefined)}
               </strong>
             </span>
           </div>

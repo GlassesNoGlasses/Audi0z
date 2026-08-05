@@ -5,6 +5,7 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { IPC_EVENTS, MEDIA_SCHEME } from '../shared/ipc'
 import type { AppError } from '../shared/types'
 import { compressExisting } from './ingest/compressExisting'
+import { createCompressionJobs } from './ingest/compressionJobs'
 import { createDownloader } from './ingest/downloader'
 import { resolveFfmpegPath, transcode } from './ingest/ffmpeg'
 import { importFile, type ImportDeps, type ImportRequest } from './ingest/importer'
@@ -118,9 +119,17 @@ function startup(): void {
   const sendToWindow = createWindowSender(() => mainWindow)
   const reportError = (error: AppError): void => sendToWindow(IPC_EVENTS.error, error)
 
+  // Shared by the compress action and the media protocol: the one tells it a song is moving, the
+  // other asks before serving that song's bytes.
+  const compressionJobs = createCompressionJobs()
+
   protocol.handle(
     MEDIA_SCHEME,
-    createMediaHandler({ getSong: (id) => libraryStore.getSong(id), audioDir: audio })
+    createMediaHandler({
+      getSong: (id) => libraryStore.getSong(id),
+      audioDir: audio,
+      awaitCompression: (id) => compressionJobs.waitFor(id)
+    })
   )
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -136,13 +145,17 @@ function startup(): void {
   const importSong = withErrorReport('import', reportError, (request: ImportRequest) =>
     importFile(request, importDeps)
   )
-  // Compressing an existing song is the same ffmpeg run as an import, against the same store.
+  // Compressing an existing song is the same ffmpeg run as an import, against the same store —
+  // tracked, so a media request for that song waits for the swap instead of streaming a file that
+  // is about to be replaced.
   const compressSong = withErrorReport('ffmpeg', reportError, (id: string) =>
-    compressExisting(id, {
-      audioDir: audio,
-      libraryStore,
-      transcode: ({ src, dst }) => transcode({ src, dst, ffmpegPath })
-    })
+    compressionJobs.run(id, () =>
+      compressExisting(id, {
+        audioDir: audio,
+        libraryStore,
+        transcode: ({ src, dst }) => transcode({ src, dst, ffmpegPath })
+      })
+    )
   )
 
   registerLibraryIpc(ipcMain, {

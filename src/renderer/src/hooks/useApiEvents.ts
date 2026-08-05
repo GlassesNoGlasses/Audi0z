@@ -45,10 +45,10 @@ export function useApiEvents(dispatch: Dispatch<AppAction>): void {
     })
     // Through `errorMessage` like every other call site: one failure reported on both paths has to
     // arrive as the same string, or the reducer's duplicate collapse cannot see that it is one.
-    // (Nothing was serialised on this path, so only the trim and the empty-message fallback
-    // normally bite. A main-side message that opened with a `ClassName: ` of its own would lose
-    // it — none of the ones this app produces do; yt-dlp's `ERROR:` lines arrive below a summary
-    // line, not at the front.)
+    // (Nothing was serialised on this path, so only the trim and the empty-message fallback bite:
+    // `errorMessage` strips a leading `ClassName: ` only behind the invoke wrapper, which is what
+    // keeps an errno — `ENOENT: no such file …`, whose prefix is the message, not a class name —
+    // spelled the same here as it is on the rejected `invoke`.)
     const unsubscribeError = window.api.events.onError((error) => {
       dispatch({ type: 'toast/pushed', message: errorMessage(error.message) })
     })

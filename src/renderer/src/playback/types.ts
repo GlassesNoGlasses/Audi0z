@@ -57,6 +57,8 @@ export type PlaybackAction =
   | { type: 'transport/setShuffle'; value: boolean }
   | { type: 'transport/setRepeat'; value: boolean }
   | { type: 'library/songsRemoved'; songIds: readonly string[] }
+  /** A playlist died; if it owned the queue, the queue dies with it. */
+  | { type: 'playlists/removed'; playlistId: string }
 
 export interface NextSelection {
   songId: string | null

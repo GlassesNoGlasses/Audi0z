@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactElement } from 'react'
 import type { SongDto } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage, isTrashFailure } from '../lib/errors'
+import { errorMessage, trashFailureMessage } from '../lib/errors'
 import { formatBytes, formatCompressionSaving } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -96,12 +96,7 @@ export function SettingsDialog(): ReactElement {
         await refreshLibrary(dispatch)
       })
       .catch((error: unknown) => {
-        dispatch({
-          type: 'toast/pushed',
-          message: isTrashFailure(error)
-            ? `${errorMessage(error)} — the song is still in your library.`
-            : errorMessage(error)
-        })
+        dispatch({ type: 'toast/pushed', message: trashFailureMessage(error) })
       })
   }
 
@@ -137,21 +132,39 @@ export function SettingsDialog(): ReactElement {
                 <li key={song.id} className="file-row">
                   <span className="file-size">{formatBytes(song.sizeBytes)}</span>
                   <span className="file-title">{song.title}</span>
-                  {song.compressed ? null : (
+                  {/*
+                    Nothing to offer on a file that is already compressed, and nothing to offer on
+                    one that is gone: ffmpeg needs a file to read, so that click could only ever
+                    end in `source file not found`.
+                  */}
+                  {song.compressed || !song.exists ? null : (
                     <>
                       <button
                         type="button"
                         className="btn-grey"
                         aria-label={`Compress ${song.title}`}
                         disabled={compressing.has(song.id) || song.id === playback.currentId}
-                        title={song.id === playback.currentId ? HELD_BY_PLAYER : undefined}
+                        aria-describedby={
+                          song.id === playback.currentId ? `compress-hint-${song.id}` : undefined
+                        }
                         onClick={() => compress(song)}
                       >
                         Compress
                       </button>
-                      <strong className="compress-estimate">
-                        {formatCompressionSaving(song.sizeBytes, song.durationSec)}
-                      </strong>
+                      {/*
+                        The reason is on the page rather than in a `title`, which a disabled button
+                        never announces and mostly never shows. It takes the estimate's slot: a
+                        saving quoted for a file you cannot compress right now was noise anyway.
+                      */}
+                      {song.id === playback.currentId ? (
+                        <span className="compress-note" id={`compress-hint-${song.id}`}>
+                          {HELD_BY_PLAYER}
+                        </span>
+                      ) : (
+                        <strong className="compress-estimate">
+                          {formatCompressionSaving(song.sizeBytes, song.durationSec)}
+                        </strong>
+                      )}
                     </>
                   )}
                   <button
