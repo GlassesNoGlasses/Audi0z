@@ -3,8 +3,10 @@ import type { SongDto } from '../../../shared/types'
 import type { AppAction } from '../state/appReducer'
 
 /**
- * How many files are read at once. Reading metadata is cheap but it is still disk, and the song
- * playing has first claim on it — two keeps the backfill moving without ever being felt.
+ * How many files are read at once. Each probe is a `media://` request like any other, and the main
+ * process serves them off a pool of four threads the playing song is also fetching its own bytes
+ * through — so the backfill only runs while nothing is playing (`idle`), and even then two at a
+ * time. The song has first claim, and this is what enforces it.
  */
 const MAX_CONCURRENT = 2
 
@@ -25,8 +27,15 @@ const FLUSH_SIZE = 8
  *
  * It is deliberately silent. Nobody asked for this work, so a file that will not answer is asked
  * once and then left alone — no toast, no retry, no second look this session.
+ *
+ * `idle` is the caller saying nothing is playing. While something is, the backfill takes no new
+ * reads: whatever is queued waits, marked, for the music to stop.
  */
-export function useDurationBackfill(songs: SongDto[], dispatch: Dispatch<AppAction>): void {
+export function useDurationBackfill(
+  songs: SongDto[],
+  dispatch: Dispatch<AppAction>,
+  idle: boolean
+): void {
   /** Ids already taken a run at, so a growing library never re-measures what it has measured. */
   const attempted = useRef<Set<string>>(new Set())
   /** Songs enqueued and not yet picked up by a reader. */
@@ -35,6 +44,8 @@ export function useDurationBackfill(songs: SongDto[], dispatch: Dispatch<AppActi
   const pending = useRef<Array<{ id: string; durationSec: number }>>([])
   const readers = useRef(0)
   const mounted = useRef(true)
+  /** The readers below outlive the render that spawned them, so they read `idle` from here. */
+  const idleRef = useRef(idle)
   /** One per read in flight: an unmount must not leave media elements loading behind it. */
   const aborts = useRef<Set<() => void>>(new Set())
 
@@ -62,6 +73,12 @@ export function useDurationBackfill(songs: SongDto[], dispatch: Dispatch<AppActi
       running.clear()
     }
   }, [])
+
+  // Declared above the effect below so it lands first on an `idle` change: the readers that effect
+  // spawns must see the new answer, not the one from the render before.
+  useEffect(() => {
+    idleRef.current = idle
+  }, [idle])
 
   useEffect(() => {
     for (const song of songs) {
@@ -127,7 +144,10 @@ export function useDurationBackfill(songs: SongDto[], dispatch: Dispatch<AppActi
     }
 
     async function drain(): Promise<void> {
-      while (mounted.current) {
+      // Re-read on every turn: playback starting mid-queue stops the next read, never the one in
+      // flight — cutting that one short would cost the song its measurement for the session.
+      // What is left in `waiting` stays there, still marked, for the effect run that resumes.
+      while (mounted.current && idleRef.current) {
         const song = waiting.current.shift()
         if (song === undefined) return
         const seconds = await read(song)
@@ -151,5 +171,7 @@ export function useDurationBackfill(songs: SongDto[], dispatch: Dispatch<AppActi
         if (readers.current === 0) void flush()
       })
     }
-  }, [songs, dispatch])
+    // `idle` is in the deps for this: going quiet re-runs the effect, which spawns readers over
+    // whatever the pause left in the queue.
+  }, [songs, dispatch, idle])
 }

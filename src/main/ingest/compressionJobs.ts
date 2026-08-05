@@ -10,8 +10,11 @@
 export interface CompressionJobs {
   /** Run `job` as the tracked compression of `id`; the entry clears itself on settle. */
   run<T>(id: string, job: () => Promise<T>): Promise<T>
-  /** Resolves when `id` has no compression in flight (immediately when it never did). */
-  waitFor(id: string): Promise<void>
+  /**
+   * Undefined when `id` has no compression in flight — the caller skips the await entirely, so an
+   * idle library pays nothing.
+   */
+  waitFor(id: string): Promise<void> | undefined
 }
 
 export function createCompressionJobs(): CompressionJobs {
@@ -36,7 +39,7 @@ export function createCompressionJobs(): CompressionJobs {
       return promise
     },
     waitFor(id) {
-      return jobs.get(id) ?? Promise.resolve()
+      return jobs.get(id)
     }
   }
 }

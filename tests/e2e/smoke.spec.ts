@@ -109,11 +109,28 @@ test('opens the window and lists the library from disk', async () => {
 })
 
 test('plays a song over the media:// protocol', async () => {
-  await page.getByRole('button', { name: 'Alpha Mix', exact: true }).click()
+  const alpha = page.getByRole('button', { name: 'Alpha Mix', exact: true })
+  await expect(alpha).toBeVisible()
 
-  // readyState >= HAVE_CURRENT_DATA means real bytes arrived through the custom protocol.
-  await expect.poll(async () => (await audioState(page)).readyState).toBeGreaterThanOrEqual(2)
-  expect((await audioState(page)).paused).toBe(false)
+  // The clock starts on the click, not on launch: what is being budgeted below is the song
+  // starting, not the window opening.
+  const before = Date.now()
+  await alpha.click()
+
+  // A clock past zero is the whole path: bytes fetched over the custom protocol, decoded, playing.
+  await expect
+    .poll(async () => (await audioState(page)).time, { intervals: [50] })
+    .toBeGreaterThan(0)
+  // Pins the v2.1 regression class: a song in a quiet library must start well under a second. The
+  // duration backfill probes through this same handler, and while it did not yield to playback its
+  // two streams sat in front of this one on the main process's four-thread pool.
+  expect(Date.now() - before).toBeLessThan(1200)
+
+  // readyState >= HAVE_CURRENT_DATA is decoded bytes off the custom protocol, and unpaused is the
+  // transport actually running rather than one nudge of `currentTime`.
+  const state = await audioState(page)
+  expect(state.readyState).toBeGreaterThanOrEqual(2)
+  expect(state.paused).toBe(false)
 })
 
 test('seeks into the middle of a song', async () => {

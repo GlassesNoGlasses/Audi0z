@@ -42,8 +42,9 @@ function AppShell(): ReactElement {
 
   useApiEvents(dispatch)
   // Songs are listed long before anything has decoded their headers; this measures them behind the
-  // list and persists what it finds, so the times only ever have to be read once.
-  useDurationBackfill(songs, dispatch)
+  // list and persists what it finds, so the times only ever have to be read once. It only reads
+  // while nothing is playing — the probes go through the same `media://` handler the player does.
+  useDurationBackfill(songs, dispatch, !playback.isPlaying)
 
   // Start-up: load everything, then make the Library the queue.
   useEffect(() => {

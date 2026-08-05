@@ -73,8 +73,11 @@ export interface MediaHandlerDeps {
   /** Usually `libraryStore.getSong` — called on every Range request, so it must be cheap. */
   getSong(id: string): Promise<Song | undefined>
   audioDir: string
-  /** Usually `compressionJobs.waitFor`. Absent means nothing is tracking compressions. */
-  awaitCompression?: (id: string) => Promise<void>
+  /**
+   * Usually `compressionJobs.waitFor`. Absent means nothing is tracking compressions; an undefined
+   * return means this song has none in flight.
+   */
+  awaitCompression?: (id: string) => Promise<void> | undefined
   /** Injected by tests; defaults to the real filesystem. */
   fs?: MediaFs
 }
@@ -110,8 +113,9 @@ export function createMediaHandler(
     if (id === null) return notFound()
 
     // A compression in flight is about to swap this very file; wait it out and read the record
-    // fresh, so what gets stat'd and served is the file the swap left behind.
-    await deps.awaitCompression?.(id)
+    // fresh. When nothing is in flight this is not even a microtask.
+    const compressing = deps.awaitCompression?.(id)
+    if (compressing) await compressing
 
     let song: Song | undefined
     try {
