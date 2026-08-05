@@ -65,6 +65,11 @@ export interface LibraryIpcDeps {
    * `song` is the row exactly as it already stood.
    */
   compressSong(id: string): Promise<{ song: Song; shrank: boolean }>
+  /**
+   * Usually `compressionJobs.waitFor` — the same seam the media protocol takes. Absent means
+   * nothing is tracking compressions; an undefined return means this song has none in flight.
+   */
+  awaitCompression?(id: string): Promise<void> | undefined
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
   /**
@@ -193,6 +198,17 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
    * `library.json` is hand-editable, and the two halves have to agree whatever is in there.
    */
   async function toDto(song: Song): Promise<SongDto> {
+    // The same courtesy the media protocol pays. A dto built while this song's file is mid-swap
+    // would measure the path the compressor is about to remove and report a freshly compressed
+    // song as missing — and the renderer keeps that verdict for the whole session, since nothing
+    // re-derives `exists` on its own. Wait the swap out and read the record fresh; when nothing is
+    // in flight this is not even a microtask.
+    const settled = deps.awaitCompression?.(song.id)
+    if (settled) {
+      await settled
+      const fresh = await deps.libraryStore.getSong(song.id)
+      if (fresh) song = fresh
+    }
     const resolved = resolveAudioPath(deps.audioDir, song.fileName)
     // One measurement answers both questions: a size that came back *is* the proof of existence,
     // so there is no second filesystem call and no way for the two fields to disagree. A 0-byte

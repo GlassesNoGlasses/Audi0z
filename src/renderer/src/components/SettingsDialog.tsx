@@ -85,7 +85,14 @@ export function SettingsDialog(): ReactElement {
         })
       })
       .catch(fail)
-      .finally(() => markCompressing(song.id, false))
+      .finally(() => {
+        markCompressing(song.id, false)
+        // Disk truth once the dust settles, on both outcomes. `exists` is derived on the main
+        // process's side of an IPC call and nowhere else, so a dto that raced the file swap and
+        // came back "File missing" would sit on the row until the next restart — this is what
+        // heals it, and a failed run is exactly when a row is most likely to need it.
+        void refreshLibrary(dispatch)
+      })
   }
 
   /**

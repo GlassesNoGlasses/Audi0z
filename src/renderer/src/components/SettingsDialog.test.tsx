@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { mockApiControls } from '../../../../tests/support/mockApi'
 import type { CompressResult } from '../../../shared/types'
 import { nowPlaying, renderApp, seedApi, song, stubMediaElement } from '../testing/harness'
 
@@ -200,6 +201,7 @@ describe('SettingsDialog storage', () => {
   /** ffmpeg is expensive and the row is one click wide: a second run must not be startable. */
   it('takes no second click while a file is being compressed', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
+    const compressed = song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB })
     let finish = (_result: CompressResult): void => {}
     vi.mocked(api.library.compress).mockReturnValue(
       new Promise<CompressResult>((resolve) => {
@@ -214,10 +216,10 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeDisabled()
 
     await act(async () => {
-      finish({
-        song: song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB }),
-        shrank: true
-      })
+      // The settle is followed by a re-read of the library, so the store has to have been through
+      // the compression too — this stubbed `compress` resolves without touching it.
+      mockApiControls(api).state.songs = [compressed]
+      finish({ song: compressed, shrank: true })
     })
 
     expect(api.library.compress).toHaveBeenCalledTimes(1)
@@ -310,6 +312,44 @@ describe('SettingsDialog storage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('already compressed')
     // The row is still offering it, so the failure can be retried.
     expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeEnabled()
+  })
+
+  /**
+   * `exists` is derived on the main process's side of an IPC call and nowhere else — nothing in the
+   * app ever re-derives it. A dto that raced the compressor's file swap comes back `exists: false`,
+   * and that verdict would sit on the row as "File missing" until the next restart. Re-reading the
+   * library once the dust settles is what heals it.
+   */
+  it('re-reads the library after a compression settles', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
+    // Answered the way the main process answers it: nothing is pushed back on `libraryChanged`
+    // (main never emits it), so the dialog's own re-read is the only thing that can heal a row.
+    vi.mocked(api.library.compress).mockResolvedValue({
+      song: song('a', 'Alpha Mix', { compressed: true, sizeBytes: 3 * MB }),
+      shrank: true
+    })
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+    // The boot load listed the library once already; only what the click causes is under test.
+    vi.mocked(api.library.list).mockClear()
+
+    await user.click(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' }))
+
+    await waitFor(() => expect(api.library.list).toHaveBeenCalled())
+  })
+
+  /** A failure is exactly when a row may be stale, so the re-read hangs off `finally`, not `then`. */
+  it('re-reads the library even when the compression fails', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
+    vi.mocked(api.library.compress).mockRejectedValue(new Error('ffmpeg exited with code 1'))
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+    vi.mocked(api.library.list).mockClear()
+
+    await user.click(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('ffmpeg exited with code 1')
+    await waitFor(() => expect(api.library.list).toHaveBeenCalled())
   })
 
   it('offers nothing to compress on a file that already is', async () => {
