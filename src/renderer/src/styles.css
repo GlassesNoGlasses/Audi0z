@@ -22,6 +22,14 @@ body,
   margin: 0;
 }
 
+/*
+ * The shell is the window and nothing more: any child that outgrows its grid area scrolls inside
+ * that area, never by stretching the app off the bottom of the window.
+ */
+body {
+  overflow: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--fg);
@@ -336,8 +344,13 @@ input[type='range'] {
   max-width: 380px;
 }
 
+/*
+ * It stands in for `.song-list`, so it holds the same ground: emptying a view — deleting the last
+ * song in it — must not collapse the pane up under the top bar.
+ */
 .empty-state {
   color: var(--muted);
+  flex: 1;
   padding: 32px 16px;
 }
 
@@ -595,15 +608,23 @@ input[type='range'] {
 
 /* ---------- dialogs ---------- */
 
+/*
+ * Scrollable, and padded so a dialog at its full height still shows its edges. Centring flex is a
+ * trap on its own: content taller than the backdrop overflows equally in both directions, and the
+ * top — the title, and every dialog's first control — goes off-screen where no scroll can reach it.
+ */
 .dialog-backdrop {
   align-items: center;
   background: rgb(0 0 0 / 55%);
   display: flex;
   inset: 0;
   justify-content: center;
+  overflow-y: auto;
+  padding: 24px;
   position: fixed;
 }
 
+/* Bounded in both directions: a long list or a long message scrolls the dialog, not the window. */
 .dialog {
   background: var(--panel);
   border: 1px solid var(--line);
@@ -611,7 +632,9 @@ input[type='range'] {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: 85vh;
   max-width: 460px;
+  overflow-y: auto;
   padding: 18px;
   width: min(460px, 92vw);
 }
@@ -619,6 +642,12 @@ input[type='range'] {
 .dialog h2 {
   font-size: 15px;
   margin: 0;
+}
+
+/* User-supplied titles get interpolated into these, so an unbroken one has to break somewhere. */
+.dialog-message {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .dialog form {
@@ -883,7 +912,17 @@ input[type='range'] {
   display: inline-flex;
   gap: 4px;
   font-size: 12px;
+  /* A tag can be named anything, and the chip is a flex item: bound it to the row it wraps in. */
+  max-width: 100%;
+  min-width: 0;
   padding: 3px 6px 3px 10px;
+}
+
+/* The name gives way before the two buttons do — a chip you cannot click ✕ on is a trap. */
+.tag-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tag-chip button {
@@ -916,8 +955,15 @@ input[type='range'] {
   padding: 8px 10px;
 }
 
+/*
+ * The strip names the thing it is about to delete, so it carries whatever the user called it. A
+ * flex item's floor is its content, and an unbroken title is one long word: without `min-width: 0`
+ * it pushes the strip — and the dialog around it — past `max-width`.
+ */
 .confirm-strip span {
   flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .segmented {
