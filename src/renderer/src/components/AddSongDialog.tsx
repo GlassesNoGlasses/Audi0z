@@ -212,8 +212,11 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                   : `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
               <p className="dialog-hint">
-                {/* Mirrors the picker filter in main/index.ts — change them together. */}
-                Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus, AIFF, WMA.
+                {/* The playable subset of the picker filter in main/index.ts — change them
+                    together. The filter is a net and stays wider on purpose; this is a claim, and
+                    the two types it drops (AIFF, WMA) have no entry in the media protocol's
+                    mimeTypes because Chromium cannot decode them. */}
+                Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus.
               </p>
             </div>
           ) : (

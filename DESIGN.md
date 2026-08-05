@@ -74,8 +74,11 @@ Played flags are per-queue and live **in memory only** — they are never persis
   a relaunch is back to Manual and no stored order is ever rewritten. It is applied in exactly one
   place (`songsInView`/`sortSongs`), which is what keeps the list, the top bar's play button and
   the queue re-sync agreeing: reordering the view reorders the queue behind the song that is
-  playing, without interrupting it. Songs the duration backfill has not reached yet have no
-  playing time to sort by, so they sink to the end in both directions.
+  playing, without interrupting it. The mode itself is global rather than per-view, so the reorder
+  reaches the **playing** queue even when a different view is on screen — sorting from the Library
+  while a playlist plays reorders that playlist's queue too, and returning to it shows the same
+  order. Songs the duration backfill has not reached yet have no playing time to sort by, so they
+  sink to the end in both directions.
 - **One download at a time**; the URL flow is two-step: `probe` → user confirms title/tags →
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash

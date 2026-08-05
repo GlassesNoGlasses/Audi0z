@@ -162,6 +162,9 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
             onPointerDown={beginScrub}
             onPointerUp={endScrub}
             onPointerCancel={endScrub}
+            // Insurance: a release that never retargets the input fires neither of the two above,
+            // and the scrub silence would outlive the drag — element paused, store still playing.
+            onLostPointerCapture={endScrub}
           />
           <span className="player-time">{formatTime(duration)}</span>
         </div>

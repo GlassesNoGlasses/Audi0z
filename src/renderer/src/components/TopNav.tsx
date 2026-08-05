@@ -40,6 +40,14 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   useEffect(() => {
     if (!sortOpen) return
 
+    // The keyboard's way in — and load-bearing beyond that: the trigger is a SIBLING of the menu,
+    // so an arrow pressed with focus still on it reads as outside the menu to the global shortcuts
+    // and seeks the song behind it. Focusing an item puts the press inside `[role="menu"]`, which
+    // is where that guard looks. `preventScroll`, as the row menu's is: the bar never scrolls.
+    sortRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]')?.focus({
+      preventScroll: true
+    })
+
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       setSortOpen(false)

@@ -175,8 +175,12 @@ test('keeps the new playlist button on the bottom edge of the sidebar', async ()
   const library = await page.getByRole('button', { name: 'Library', exact: true }).boundingBox()
   if (!sidebar || !list || !create || !library) throw new Error('the sidebar rendered no boxes')
 
-  // Within the panel's own padding of the bottom, and below the list that scrolls under it.
-  expect(sidebar.y + sidebar.height - (create.y + create.height)).toBeLessThan(30)
+  // Within the panel's own padding of the bottom, and below the list that scrolls under it. The
+  // lower bound is the half that catches a footer pushed off: a negative gap is the button hanging
+  // below the panel, which "close to the bottom edge" alone would happily pass.
+  const gapBelowCreate = sidebar.y + sidebar.height - (create.y + create.height)
+  expect(gapBelowCreate).toBeLessThan(30)
+  expect(gapBelowCreate).toBeGreaterThanOrEqual(0)
   expect(create.y).toBeGreaterThanOrEqual(list.y + list.height)
   // A row rather than a panel: an entry that grows would swallow the space above the list.
   expect(library.height).toBeLessThan(40)

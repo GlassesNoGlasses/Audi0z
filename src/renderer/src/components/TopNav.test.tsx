@@ -3,10 +3,11 @@ import userEvent from '@testing-library/user-event'
 import { useEffect, useState, type ReactElement, type ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Playlist, Settings, SongDto } from '../../../shared/types'
-import type { Rng } from '../playback/types'
+import { LIBRARY_QUEUE_ID, type Rng } from '../playback/types'
 import { AppProvider, useAppDispatch, useAppState } from '../state/AppContext'
 import { FALLBACK_SETTINGS, type Dialog, type View } from '../state/appReducer'
 import {
+  audioElement,
   nowPlaying,
   playlist,
   renderApp,
@@ -34,6 +35,8 @@ interface Seed {
   playlists?: Playlist[]
   view?: View
   settings?: Partial<Settings>
+  /** Reproduces App's start-up: the library queue loaded, with nothing chosen to start on. */
+  bootQueue?: boolean
 }
 
 function Probe(): ReactElement {
@@ -55,10 +58,22 @@ function Seeder({ seed, children }: { seed: Seed; children: ReactNode }): ReactE
   const dispatch = useAppDispatch()
 
   useEffect(() => {
-    dispatch({ type: 'settings/updated', settings: { ...FALLBACK_SETTINGS, ...seed.settings } })
+    const settings = { ...FALLBACK_SETTINGS, ...seed.settings }
+    dispatch({ type: 'settings/updated', settings })
     dispatch({ type: 'library/loaded', songs: seed.songs ?? [] })
     dispatch({ type: 'playlists/loaded', playlists: seed.playlists ?? [] })
     dispatch({ type: 'view/selected', view: seed.view ?? { kind: 'library' } })
+    // Exactly what App dispatches once the library is in, `startSongId` and all: it omits one, so
+    // the order is populated while `currentId` stays null.
+    if (seed.bootQueue) {
+      dispatch({
+        type: 'queue/selected',
+        queueId: LIBRARY_QUEUE_ID,
+        order: (seed.songs ?? []).map((seeded) => seeded.id),
+        shuffle: settings.libraryShuffle,
+        repeat: settings.libraryRepeat
+      })
+    }
     setReady(true)
   }, [dispatch, seed])
 
@@ -123,6 +138,25 @@ describe('TopNav play button', () => {
 
     expect(rng).toHaveBeenCalledWith(3)
     expect(probe('playing')).toBe('b')
+  })
+
+  /**
+   * App's start-up cues the library queue with no `startSongId`: a populated order over a null
+   * `currentId`. Only the `currentId !== null` half of `viewIsCued` keeps the button from reading
+   * that as "this view is already loaded" and dispatching a bare toggle — which cold-starts the
+   * engine at `order[0]` and never asks shuffle where the listening should begin.
+   */
+  it('shuffles out of the boot queue rather than cold-starting at the top', async () => {
+    const user = userEvent.setup()
+    const rng = vi.fn<Rng>(() => 2)
+    await renderTopNav({ songs, settings: { libraryShuffle: true }, bootQueue: true }, rng)
+    expect(probe('queue')).toBe('a b c')
+    expect(probe('playing')).toBe('nothing')
+
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+
+    expect(probe('playing')).toBe('c')
+    expect(rng).toHaveBeenCalledWith(3)
   })
 
   it("queues the viewed playlist in the playlist's own order", async () => {
@@ -350,6 +384,28 @@ describe('TopNav in the app', () => {
     expect(nowPlaying()).toBe('Charlie Tune')
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  /**
+   * The global arrow shortcut stands down for a menu by looking for `[role="menu"]` around the
+   * event target — and the trigger is a sibling of the menu, not inside it. So the whole guard
+   * rests on the open menu taking focus: without that, → behind the open menu seeks the song ten
+   * seconds. Only provable over the app, which is where the shortcuts and the audio meet.
+   */
+  it('leaves the playing song where it is when an arrow lands on the open sort menu', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const audio = audioElement()
+    audio.currentTime = 15
+
+    await user.click(screen.getByRole('button', { name: 'Sort songs' }))
+    await user.keyboard('{ArrowRight}')
+
+    expect(audio.currentTime).toBe(15)
+    expect(screen.getByRole('menu', { name: 'Sort songs' })).toBeInTheDocument()
   })
 
   it('opens the add dialog from the download icon', async () => {

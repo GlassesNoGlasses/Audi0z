@@ -349,21 +349,22 @@ describe('AddSongDialog — url source', () => {
 
 describe('AddSongDialog — what it accepts', () => {
   /**
-   * The list mirrors the picker filter in main/index.ts, and it has to survive a pick: the other
-   * files-mode hint turns into the chosen path, so the list cannot live inside it.
+   * The list is the playable subset of the picker filter in main/index.ts — the filter stays wider
+   * on purpose — and it has to survive a pick: the other files-mode hint turns into the chosen
+   * path, so the list cannot live inside it.
    */
-  it('lists the audio types the file picker accepts', async () => {
+  it('lists the audio types the app can actually play', async () => {
     const user = userEvent.setup()
     const api = seedApi()
     vi.mocked(api.files.pickAudioFiles).mockResolvedValue(['/music/Great Track.mp3'])
     await renderApp()
 
     await openAddDialog(user)
-    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus, AIFF, WMA/)).toBeInTheDocument()
+    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Choose files…' }))
     await waitFor(() => expect(screen.getByText('/music/Great Track.mp3')).toBeInTheDocument())
-    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus, AIFF, WMA/)).toBeInTheDocument()
+    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
   })
 
   /** yt-dlp decides what a URL may be, and a playlist link is the one that surprises people. */
