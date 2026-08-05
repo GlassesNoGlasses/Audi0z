@@ -14,6 +14,8 @@ export const MIME_TYPES: Readonly<Record<string, string>> = {
   '.opus': 'audio/ogg',
   '.mp3': 'audio/mpeg',
   '.m4a': 'audio/mp4',
+  // Raw ADTS, which Chromium decodes — but only if it is not handed the octet-stream fallback.
+  '.aac': 'audio/aac',
   '.flac': 'audio/flac',
   '.ogg': 'audio/ogg',
   '.webm': 'audio/webm'

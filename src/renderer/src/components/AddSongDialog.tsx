@@ -211,6 +211,10 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                   ? 'No file chosen yet — or drop one onto the window.'
                   : `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
+              <p className="dialog-hint">
+                {/* Mirrors the picker filter in main/index.ts — change them together. */}
+                Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus, AIFF, WMA.
+              </p>
             </div>
           ) : (
             <div className="field">
@@ -221,6 +225,11 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
               <button type="button" onClick={fetchDetails} disabled={busy || url.trim() === ''}>
                 Fetch details
               </button>
+              <p className="dialog-hint">
+                Downloads use yt-dlp: YouTube, SoundCloud, Bandcamp and most audio and video sites
+                work. Audio arrives as M4A or WebM. A playlist link fetches only the linked item —
+                and &quot;Update yt-dlp&quot; in Settings refreshes which sites are supported.
+              </p>
               {/*
                 The bundled yt-dlp is self-extracting: its first run after launch spends half a
                 minute unpacking itself, and a dialog that says nothing for thirty seconds is a
