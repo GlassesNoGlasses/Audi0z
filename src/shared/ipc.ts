@@ -11,7 +11,6 @@ export const IPC = {
     update: 'library:update',
     updateDurations: 'library:updateDurations',
     remove: 'library:remove',
-    revealInFolder: 'library:revealInFolder',
     compress: 'library:compress',
     showFolder: 'library:showFolder'
   },

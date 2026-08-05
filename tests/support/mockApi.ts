@@ -247,9 +247,6 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         }
         libraryChanged.emit()
       }),
-      revealInFolder: vi.fn(async (songId) => {
-        findSong(songId)
-      }),
       compress: vi.fn(async (songId) => {
         const song = findSong(songId)
         song.compressed = true

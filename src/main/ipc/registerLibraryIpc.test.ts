@@ -444,26 +444,6 @@ describe(IPC.library.remove, () => {
   })
 })
 
-describe(IPC.library.revealInFolder, () => {
-  it('reveals the absolute path of the song', async () => {
-    const harness = setup()
-    const added = await harness.libraryStore.add(draftSong())
-
-    await harness.invoke(IPC.library.revealInFolder, added.id)
-
-    expect(harness.revealInFolder).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
-  })
-
-  it('throws NotFound for an unknown id', async () => {
-    const harness = setup()
-
-    await expect(harness.invoke(IPC.library.revealInFolder, 'missing')).rejects.toMatchObject({
-      name: 'NotFound'
-    })
-    expect(harness.revealInFolder).not.toHaveBeenCalled()
-  })
-})
-
 describe(IPC.library.compress, () => {
   it('delegates to the injected compressor and returns a fresh dto', async () => {
     const harness = setup()

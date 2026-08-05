@@ -245,11 +245,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     await deps.playlistStore.cascadeRemoveSong(song.id)
   })
 
-  ipc.handle(IPC.library.revealInFolder, async (_event, id: unknown): Promise<void> => {
-    const song = await requireSong(id)
-    deps.revealInFolder(audioPathOf(song))
-  })
-
   /**
    * The compressor records the swap itself (`replaceFile`), so this handler only re-derives the
    * DTO — and it re-measures the file, which is the point: the new size is what the UI shows.

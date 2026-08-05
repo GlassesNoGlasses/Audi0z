@@ -28,7 +28,6 @@ export interface Api {
     /** One write for a whole batch of measured durations; ids that vanished mid-flight are skipped. */
     updateDurations(entries: Array<{ id: string; durationSec: number }>): Promise<SongDto[]>
     remove(id: string): Promise<void>
-    revealInFolder(id: string): Promise<void>
     /** Transcodes an already-imported song to Opus in place. Rejects if it is already compressed. */
     compress(id: string): Promise<SongDto>
     /** Opens the library's `audio/` directory itself, rather than a single song inside it. */
