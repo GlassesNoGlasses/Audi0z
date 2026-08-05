@@ -7,6 +7,7 @@ describe('contentTypeFor', () => {
     ['song.opus', 'audio/ogg'],
     ['song.mp3', 'audio/mpeg'],
     ['song.m4a', 'audio/mp4'],
+    ['song.aac', 'audio/aac'],
     ['song.flac', 'audio/flac'],
     ['song.ogg', 'audio/ogg'],
     ['song.webm', 'audio/webm']

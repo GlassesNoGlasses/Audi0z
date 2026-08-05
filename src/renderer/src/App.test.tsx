@@ -5,10 +5,12 @@ import { mockApiControls } from '../../../tests/support/mockApi'
 import {
   audioElement,
   nowPlaying,
+  playSpy,
   renderApp,
   seedApi,
   song,
   songTitles,
+  sortView,
   stubMediaElement
 } from './testing/harness'
 
@@ -152,6 +154,39 @@ describe('App shell', () => {
   })
 })
 
+describe('App sorting', () => {
+  const byDate = [
+    song('a', 'Alpha Mix', { addedAt: '2024-01-01T00:00:00.000Z' }),
+    song('b', 'Bravo Beat', { addedAt: '2024-02-01T00:00:00.000Z' }),
+    song('c', 'Charlie Tune', { addedAt: '2024-03-01T00:00:00.000Z' })
+  ]
+
+  /**
+   * The whole point of sorting in `songsInView`: the queue re-sync applies the same order, so what
+   * plays next is what the list now shows. Sorting is not a queue switch, though — it reorders
+   * around the song already playing rather than restarting it.
+   */
+  it('reorders the playing queue behind the song that is playing', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: byDate })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    // Twice: the first press is ascending, which this library is already in.
+    await sortView(user, /^Date added/, 2)
+
+    expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    // Alpha Mix is the last of the new order, so next wraps to the top of it — under the old
+    // queue it would have been Bravo Beat.
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Charlie Tune')
+  })
+})
+
 describe('App keyboard shortcuts', () => {
   const songs = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')]
 
@@ -169,6 +204,28 @@ describe('App keyboard shortcuts', () => {
     press(' ')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
     expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  /**
+   * The click leaves focus on the row's own button — the exact state the replay bug lived in, and
+   * the one the tests firing on the body cannot reach. A play-token bump is what re-runs
+   * `useAudioElement`'s load effect, so an unmoved `play()` count is the proof that space paused
+   * the song rather than starting it again from the top.
+   */
+  it('space after clicking a song pauses it rather than replaying it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const plays = playSpy().mock.calls.length
+
+    await user.keyboard(' ')
+
+    expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
+    expect(nowPlaying()).toBe('Alpha Mix')
+    expect(playSpy()).toHaveBeenCalledTimes(plays)
   })
 
   it('leaves a cold queue alone — space resumes, it does not choose a song', async () => {
@@ -209,6 +266,41 @@ describe('App keyboard shortcuts', () => {
 
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
     expect(audioElement().volume).toBe(1)
+  })
+
+  /**
+   * The click leaves focus on the row's own button, which is where the arrows are actually pressed.
+   * jsdom never reports a duration, so only the lower clamp is in play here — and it is the one
+   * that matters: three presses past the start must not leave the element at a negative time.
+   */
+  it('arrow keys skip ten seconds either way, clamped at the start', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const audio = audioElement()
+    audio.currentTime = 15
+
+    await user.keyboard('{ArrowRight}')
+    expect(audio.currentTime).toBe(25)
+
+    await user.keyboard('{ArrowLeft}{ArrowLeft}{ArrowLeft}')
+    expect(audio.currentTime).toBe(0)
+
+    // Element-local: the store never hears about a seek, so the transport still reads as playing.
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
+  })
+
+  it('leaves the arrows alone with nothing cued', async () => {
+    seedApi({ songs })
+    await renderApp()
+    const audio = audioElement()
+    audio.currentTime = 5
+
+    press('ArrowRight')
+
+    expect(audio.currentTime).toBe(5)
   })
 
   it('mutes and unmutes with m, restoring the volume it was at', async () => {

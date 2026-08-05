@@ -8,6 +8,9 @@ const VOLUME_DEBOUNCE_MS = 250
 
 export interface PlayerBarProps {
   audioRef: RefObject<HTMLAudioElement>
+  /** Brackets a drag of the seek slider in silence — see `useAudioElement`. */
+  beginScrub(): void
+  endScrub(): void
 }
 
 function formatTime(seconds: number): string {
@@ -22,7 +25,7 @@ function formatTime(seconds: number): string {
  * Position is read straight off the `<audio>` element rather than from the store: it changes four
  * times a second and nothing else in the app cares about it.
  */
-export function PlayerBar({ audioRef }: PlayerBarProps): ReactElement {
+export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): ReactElement {
   const { songs, playback, settings } = useAppState()
   const dispatch = useAppDispatch()
   const [position, setPosition] = useState(0)
@@ -153,7 +156,15 @@ export function PlayerBar({ audioRef }: PlayerBarProps): ReactElement {
             step={0.1}
             value={Math.min(position, duration)}
             disabled={current === null || duration === 0}
+            // The seek itself stays on `change` — the element has to move with the thumb — while
+            // the pointer brackets it in silence, so a drag does not garble every value it crosses.
             onChange={(event) => seek(Number(event.target.value))}
+            onPointerDown={beginScrub}
+            onPointerUp={endScrub}
+            onPointerCancel={endScrub}
+            // Insurance: a release that never retargets the input fires neither of the two above,
+            // and the scrub silence would outlive the drag — element paused, store still playing.
+            onLostPointerCapture={endScrub}
           />
           <span className="player-time">{formatTime(duration)}</span>
         </div>

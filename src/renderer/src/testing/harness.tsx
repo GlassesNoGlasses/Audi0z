@@ -1,4 +1,5 @@
 import { act, render, screen, type RenderResult } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, vi, type Mock } from 'vitest'
 import {
   createMockApi,
@@ -26,12 +27,28 @@ export function seedApi(seed: MockApiSeed = {}): Api {
 
 /**
  * jsdom implements no media pipeline: `play()`/`pause()` are `notImplemented` stubs that print to
- * the console. Call at the top level of any test file whose UI reaches the `<audio>` element.
+ * the console, and `paused` is a constant `true` nothing ever flips. The stubs below stand in for
+ * the pipeline and keep `paused` in step with them, which is what lets a test see the element go
+ * quiet. Call at the top level of any test file whose UI reaches the `<audio>` element.
  */
 export function stubMediaElement(): void {
   beforeEach(() => {
-    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async () => undefined)
-    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined)
+    const paused = new WeakMap<HTMLMediaElement, boolean>()
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(async function (
+      this: HTMLMediaElement
+    ) {
+      paused.set(this, false)
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(function (
+      this: HTMLMediaElement
+    ) {
+      paused.set(this, true)
+    })
+    vi.spyOn(HTMLMediaElement.prototype, 'paused', 'get').mockImplementation(function (
+      this: HTMLMediaElement
+    ) {
+      return paused.get(this) ?? true
+    })
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -74,6 +91,21 @@ export function appRoot(): HTMLElement {
 
 export function sidebar(): HTMLElement {
   return screen.getByRole('complementary')
+}
+
+/**
+ * Chooses a mode from the top bar's sort menu, which closes behind every choice — so `presses`
+ * is how many times to open it and click the same item, and a descending sort is two.
+ */
+export async function sortView(
+  user: ReturnType<typeof userEvent.setup>,
+  item: string | RegExp,
+  presses = 1
+): Promise<void> {
+  for (let press = 0; press < presses; press += 1) {
+    await user.click(screen.getByRole('button', { name: 'Sort songs' }))
+    await user.click(screen.getByRole('menuitemradio', { name: item }))
+  }
 }
 
 /** Titles currently listed in the main song list, in display order. */

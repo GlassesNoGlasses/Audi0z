@@ -37,7 +37,7 @@ function setup() {
   const listeners = new Set<(p: DownloadProgress) => void>()
   const downloader = {
     start: vi.fn(async () => SONG),
-    probe: vi.fn(async (url: string) => ({ title: 'Probed', durationSec: 12, sourceUrl: url })),
+    probe: vi.fn(async (url: string) => ({ title: 'Probed', sourceUrl: url })),
     cancel: vi.fn(),
     onProgress: vi.fn((listener: (p: DownloadProgress) => void) => {
       listeners.add(listener)
@@ -90,7 +90,6 @@ describe('registerIngestIpc', () => {
 
     await expect(invoke(IPC.download.probe, 'https://example.test/v/1')).resolves.toEqual({
       title: 'Probed',
-      durationSec: 12,
       sourceUrl: 'https://example.test/v/1'
     })
 

@@ -3,7 +3,15 @@ import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
 import { IPC } from '../../shared/ipc'
-import type { AddSongRequest, Playlist, Settings, Song, SongDto, Tag } from '../../shared/types'
+import type {
+  AddSongRequest,
+  CompressResult,
+  Playlist,
+  Settings,
+  Song,
+  SongDto,
+  Tag
+} from '../../shared/types'
 import { createLibraryStore } from '../store/libraryStore'
 import { createPlaylistStore } from '../store/playlistStore'
 import { createSettingsStore } from '../store/settingsStore'
@@ -63,7 +71,10 @@ function setup(): Harness {
   const trashItem = vi.fn(async (_absPath: string) => {})
   const fileExists = vi.fn(async (_absPath: string) => true)
   const fileSize = vi.fn(async (_absPath: string): Promise<number | null> => 4096)
-  const compressSong = vi.fn(async (id: string) => libraryStore.replaceFile(id, `${id}.opus`, true))
+  const compressSong = vi.fn(async (id: string) => ({
+    song: await libraryStore.replaceFile(id, `${id}.opus`, true),
+    shrank: true
+  }))
   const revealInFolder = vi.fn((_absPath: string) => {})
 
   registerLibraryIpc(ipc, {
@@ -449,15 +460,36 @@ describe(IPC.library.compress, () => {
     const harness = setup()
     const added = await harness.libraryStore.add(draftSong())
 
-    const dto = await harness.invoke<SongDto>(IPC.library.compress, added.id)
+    const result = await harness.invoke<CompressResult>(IPC.library.compress, added.id)
 
     expect(harness.compressSong).toHaveBeenCalledExactlyOnceWith(added.id)
-    expect(dto).toMatchObject({
+    expect(result.shrank).toBe(true)
+    expect(result.song).toMatchObject({
       id: added.id,
       compressed: true,
       fileName: `${added.id}.opus`,
       exists: true,
       sizeBytes: 4096
+    })
+  })
+
+  /**
+   * A re-encode that came out no smaller is a success with nothing recorded, not a failure: the
+   * dto is the song exactly as it already stood, and `shrank` is what tells the UI apart.
+   */
+  it('carries through a compression that kept the original', async () => {
+    const harness = setup()
+    const added = await harness.libraryStore.add(draftSong())
+    harness.compressSong.mockResolvedValue({ song: added, shrank: false })
+
+    const result = await harness.invoke<CompressResult>(IPC.library.compress, added.id)
+
+    expect(result.shrank).toBe(false)
+    expect(result.song).toMatchObject({
+      id: added.id,
+      compressed: false,
+      fileName: 'song.wav',
+      exists: true
     })
   })
 

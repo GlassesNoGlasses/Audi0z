@@ -44,10 +44,16 @@ async function reportFailure(audio: HTMLAudioElement): Promise<void> {
   })
 }
 
-function backfill(songs: SongDto[]): ReturnType<typeof renderHook<void, { list: SongDto[] }>> {
+interface Props {
+  list: SongDto[]
+  idle: boolean
+}
+
+/** Idle by default: most of these tests are about the probing, not about who yields to whom. */
+function backfill(songs: SongDto[], idle = true): ReturnType<typeof renderHook<void, Props>> {
   const dispatch = vi.fn()
-  return renderHook(({ list }: { list: SongDto[] }) => useDurationBackfill(list, dispatch), {
-    initialProps: { list: songs }
+  return renderHook(({ list, idle: quiet }: Props) => useDurationBackfill(list, dispatch, quiet), {
+    initialProps: { list: songs, idle }
   })
 }
 
@@ -55,7 +61,7 @@ describe('useDurationBackfill', () => {
   it('measures a song that has no playing time yet and writes the whole seconds back', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     const dispatch = vi.fn()
-    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch))
+    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch, true))
 
     await waitFor(() => expect(probes).toHaveLength(1))
     expect(probes[0].getAttribute('preload')).toBe('metadata')
@@ -76,7 +82,7 @@ describe('useDurationBackfill', () => {
     const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
     const api = seedApi({ songs: three })
     const dispatch = vi.fn()
-    renderHook(() => useDurationBackfill(three, dispatch))
+    renderHook(() => useDurationBackfill(three, dispatch, true))
 
     await waitFor(() => expect(probes).toHaveLength(2))
     await reportDuration(probes[0], 173)
@@ -176,7 +182,7 @@ describe('useDurationBackfill', () => {
   it('re-asks a song StrictMode cut the probe short on, and writes it once', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     const dispatch = vi.fn()
-    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch), {
+    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch, true), {
       wrapper: StrictMode
     })
 
@@ -198,7 +204,7 @@ describe('useDurationBackfill', () => {
     ])
 
     // A re-render is a fair chance to have started one; nothing does.
-    rerender({ list: [song('a', 'Alpha Mix', { durationSec: 100 })] })
+    rerender({ list: [song('a', 'Alpha Mix', { durationSec: 100 })], idle: true })
     await act(async () => {})
 
     expect(probes).toHaveLength(0)
@@ -214,7 +220,7 @@ describe('useDurationBackfill', () => {
     await reportFailure(probes[0])
 
     // Same song, fresh array: the render that follows must not start the probe over.
-    rerender({ list: [song('a', 'Alpha Mix')] })
+    rerender({ list: [song('a', 'Alpha Mix')], idle: true })
     await act(async () => {})
 
     expect(probes).toHaveLength(1)
@@ -249,11 +255,69 @@ describe('useDurationBackfill', () => {
     await waitFor(() => expect(probes).toHaveLength(3))
   })
 
+  /**
+   * The whole point of the `idle` flag: two probes streaming over `media://` are two more requests
+   * on the same four-thread pool the playing song is fetching its own bytes through, and the song
+   * has first claim. Nothing starts while something is playing; the queue survives the pause.
+   */
+  it('starts no probe while something is playing and picks the queue up when it stops', async () => {
+    const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
+    const songs = [song('a', 'Alpha Mix')]
+    const { rerender } = backfill(songs, false)
+
+    // A fair chance to have started one: the songs are queued and marked, just not read.
+    await act(async () => {})
+    expect(probes).toHaveLength(0)
+
+    rerender({ list: songs, idle: true })
+
+    await waitFor(() => expect(probes).toHaveLength(1))
+    await reportDuration(probes[0], 173)
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.library.updateDurations).mock.calls[0][0]).toEqual([
+      { id: 'a', durationSec: 173 }
+    ])
+  })
+
+  /**
+   * Playback starting mid-backfill stops the *next* read, not the one already in flight — cutting
+   * that one short would cost the song its measurement for the session. What is still queued stays
+   * queued and stays marked, so the resume reads it exactly once.
+   */
+  it('lets the read in flight finish but starts no new one once playback begins', async () => {
+    const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
+    const api = seedApi({ songs: three })
+    const { rerender } = backfill(three)
+
+    await waitFor(() => expect(probes).toHaveLength(2))
+    rerender({ list: three, idle: false })
+
+    // The reader that owned this one hands its measurement in and then stops, leaving Charlie
+    // queued rather than opening a third file behind the song that just started.
+    await reportDuration(probes[0], 173)
+    await act(async () => {})
+    expect(probes).toHaveLength(2)
+
+    rerender({ list: three, idle: true })
+
+    await waitFor(() => expect(probes).toHaveLength(3))
+    await reportDuration(probes[1], 41)
+    await reportDuration(probes[2], 12)
+
+    await waitFor(() => expect(vi.mocked(api.library.updateDurations)).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(api.library.updateDurations).mock.calls[0][0]).toEqual([
+      { id: 'a', durationSec: 173 },
+      { id: 'b', durationSec: 41 },
+      { id: 'c', durationSec: 12 }
+    ])
+  })
+
   it('says nothing when the library refuses the measurement', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     vi.mocked(api.library.updateDurations).mockRejectedValue(new Error('library.json is read-only'))
     const dispatch = vi.fn()
-    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch))
+    renderHook(() => useDurationBackfill([song('a', 'Alpha Mix')], dispatch, true))
 
     await waitFor(() => expect(probes).toHaveLength(1))
     await reportDuration(probes[0], 120)

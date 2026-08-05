@@ -35,6 +35,13 @@ export interface SongDto extends Song {
   sizeBytes: number | null
 }
 
+/** What `library.compress` did: the song as it now stands, and whether the re-encode was kept. */
+export interface CompressResult {
+  song: SongDto
+  /** False when the Opus output came out no smaller — the original file was kept untouched. */
+  shrank: boolean
+}
+
 /** A tag in the registry — the named, coloured thing the UI filters by. */
 export interface Tag {
   id: string
@@ -94,9 +101,13 @@ export interface DownloadRequest {
   compress: boolean
 }
 
+/**
+ * What a URL probe learned before the user confirms the download. The title is all of it: duration
+ * is measured later by the renderer off the `<audio>` element (see `Song.durationSec`), so carrying
+ * yt-dlp's number here only gave two sources for one field.
+ */
 export interface ProbeResult {
   title: string
-  durationSec?: number
   sourceUrl: string
 }
 

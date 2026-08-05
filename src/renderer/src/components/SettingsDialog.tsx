@@ -66,13 +66,23 @@ export function SettingsDialog(): ReactElement {
     })
   }
 
+  /**
+   * Resolving is not the same as having compressed. A re-encode that came out no smaller is thrown
+   * away and the original kept — a real outcome with nothing to show for it, so the toast is the
+   * only place the user can learn the file did not change and the row is still offering Compress.
+   */
   function compress(song: SongDto): void {
     markCompressing(song.id, true)
     void window.api.library
       .compress(song.id)
-      .then((updated) => {
+      .then(({ song: updated, shrank }) => {
         dispatch({ type: 'library/songUpdated', song: updated })
-        dispatch({ type: 'toast/pushed', message: `Compressed "${updated.title}"` })
+        dispatch({
+          type: 'toast/pushed',
+          message: shrank
+            ? `Compressed "${updated.title}"`
+            : `"${updated.title}" is already smaller than an Opus re-encode — kept the original`
+        })
       })
       .catch(fail)
       .finally(() => markCompressing(song.id, false))
@@ -218,15 +228,23 @@ export function SettingsDialog(): ReactElement {
           </span>
         </div>
         <p className="dialog-hint">
-          Compression re-encodes to Opus 128k on the way in. It saves space and loses a little
+          Compression re-encodes to Opus 96k on the way in. It saves space and loses a little
           quality.
         </p>
-        <div className="dialog-actions">
+        {/*
+          Updating yt-dlp is a thing this dialog does, not a way out of it: every preference here
+          persists the moment it is used, so the footer has nothing to submit and nothing to take
+          back — only Ok.
+        */}
+        <div className="settings-update">
           <button type="button" disabled={updating} onClick={updateYtDlp}>
             Update yt-dlp
           </button>
+          <span className="compress-note">Refreshes which sites downloads support.</span>
+        </div>
+        <div className="dialog-actions">
           <button type="button" onClick={close}>
-            Close
+            Ok
           </button>
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { act, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import type { SongDto } from '../../../shared/types'
+import type { CompressResult } from '../../../shared/types'
 import { nowPlaying, renderApp, seedApi, song, stubMediaElement } from '../testing/harness'
 
 stubMediaElement()
@@ -63,11 +63,31 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 
+  /**
+   * Every control in here persists the moment it is used, so the footer has nothing to submit and
+   * nothing to take back — dismissal is its whole job. The one button in it pins that, and pins
+   * that Update yt-dlp now lives in the body instead.
+   */
+  it('closes from the ok button', async () => {
+    seedApi()
+    const user = await openSettings()
+
+    const footer = settings().querySelector('.dialog-actions')
+    expect([...(footer?.querySelectorAll('button') ?? [])].map((el) => el.textContent)).toEqual([
+      'Ok'
+    ])
+    expect(within(settings()).getByRole('button', { name: 'Update yt-dlp' })).toBeVisible()
+
+    await user.click(within(settings()).getByRole('button', { name: 'Ok' }))
+
+    expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
+  })
+
   it('says what compressing saves, in bold, next to the preference', async () => {
     seedApi()
     await openSettings()
 
-    const estimate = screen.getByText('Saves ~50%')
+    const estimate = screen.getByText('Saves ~25%')
     expect(estimate.tagName).toBe('STRONG')
     // The preference itself is still addressable by exactly the words on it.
     expect(screen.getByRole('checkbox', { name: 'Compress new songs by default' })).toBeVisible()
@@ -135,10 +155,10 @@ describe('SettingsDialog storage', () => {
     const user = await openSettings()
     await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
 
-    const measured = screen.getByText('~3.2 MB save')
+    const measured = screen.getByText('~3.6 MB save')
     expect(measured.tagName).toBe('STRONG')
     // One next to the preference, one on the row with no duration to reckon with.
-    expect(screen.getAllByText('Saves ~50%')).toHaveLength(2)
+    expect(screen.getAllByText('Saves ~25%')).toHaveLength(2)
   })
 
   it('compresses a file, and says what it now weighs', async () => {
@@ -150,17 +170,39 @@ describe('SettingsDialog storage', () => {
 
     expect(api.library.compress).toHaveBeenCalledWith('a')
     expect(await screen.findByRole('alert')).toHaveTextContent('Compressed "Alpha Mix"')
-    await waitFor(() => expect(settings()).toHaveTextContent('1.6 MB'))
+    await waitFor(() => expect(settings()).toHaveTextContent('3.0 MB'))
     // Nothing left to compress on that row.
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
+  })
+
+  /**
+   * A re-encode that came out no smaller resolves exactly like one that worked, so `shrank` is the
+   * only thing telling them apart — and the user has to be told the file was left as it was, or a
+   * "Compressed" toast over an unchanged size reads as the app losing track of itself.
+   */
+  it('says it kept the original when the re-encode would not have been smaller', async () => {
+    const unchanged = song('a', 'Alpha Mix', { sizeBytes: 4 * MB })
+    const api = seedApi({ songs: [unchanged] })
+    vi.mocked(api.library.compress).mockResolvedValue({ song: unchanged, shrank: false })
+    const user = await openSettings()
+    await user.click(within(settings()).getByRole('button', { name: 'Audio files' }))
+
+    await user.click(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '"Alpha Mix" is already smaller than an Opus re-encode — kept the original'
+    )
+    // Nothing changed on disk or in the row, so the offer is still there to take again.
+    expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeEnabled()
+    expect(settings()).toHaveTextContent('4.0 MB')
   })
 
   /** ffmpeg is expensive and the row is one click wide: a second run must not be startable. */
   it('takes no second click while a file is being compressed', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
-    let finish = (_compressed: SongDto): void => {}
+    let finish = (_result: CompressResult): void => {}
     vi.mocked(api.library.compress).mockReturnValue(
-      new Promise<SongDto>((resolve) => {
+      new Promise<CompressResult>((resolve) => {
         finish = resolve
       })
     )
@@ -172,7 +214,10 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeDisabled()
 
     await act(async () => {
-      finish(song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB }))
+      finish({
+        song: song('a', 'Alpha Mix', { compressed: true, sizeBytes: 1 * MB }),
+        shrank: true
+      })
     })
 
     expect(api.library.compress).toHaveBeenCalledTimes(1)
@@ -233,7 +278,7 @@ describe('SettingsDialog storage', () => {
     ).toBeVisible()
     // The reason takes the savings quote's slot: a figure for a file you cannot compress right
     // now is noise. Two are left — the preference's, and the row the player is not holding.
-    expect(screen.getAllByText('Saves ~50%')).toHaveLength(2)
+    expect(screen.getAllByText('Saves ~25%')).toHaveLength(2)
   })
 
   it('offers it again once the player has moved on', async () => {

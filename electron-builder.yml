@@ -12,6 +12,10 @@ asarUnpack:
   - '**/node_modules/ffmpeg-static/**'
 # Applies the macOS ad-hoc signature; a no-op on every other platform. See mac.identity below.
 afterPack: build/adhocSign.js
+# Copies the finished installer to ~/Desktop after every artifact build. Runs after the dmg is
+# fully written and checksummed, so it cannot invalidate the ad-hoc signature the way a
+# post-signing mutation would.
+afterAllArtifactBuild: build/copyArtifactsToDesktop.js
 # This app ships no auto-updater, so there is no update metadata worth generating — but the key has
 # to say so explicitly. Left unset, electron-builder still builds `latest-mac.yml` after the dmg: it
 # sniffs the environment for a publish token (GITHUB_TOKEN is enough) and resolves a github publish

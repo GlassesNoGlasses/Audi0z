@@ -26,6 +26,9 @@ export type ConfirmIntent =
 /** Where an add is coming from: files already chosen (picker or drop), or a URL to fetch. */
 export type AddSource = { kind: 'files'; paths: string[] } | { kind: 'url' }
 
+/** How the view is ordered. Null is the stored order — the library's insertion order, a playlist's own. */
+export type SortMode = { field: 'addedAt' | 'durationSec'; direction: 'asc' | 'desc' } | null
+
 export type Dialog =
   | { kind: 'add'; source: AddSource }
   | { kind: 'edit'; songId: string }
@@ -42,6 +45,11 @@ export interface AppState {
   settings: Settings
   view: View
   query: string
+  /**
+   * Global and session-only, like the query: it belongs to the window rather than to a view, and
+   * nothing persists it — the next launch is back to the stored order.
+   */
+  sort: SortMode
   expandedPlaylists: ReadonlySet<string>
   dialog: Dialog | null
   toasts: Toast[]
@@ -65,6 +73,7 @@ export type AppAction =
   | { type: 'settings/updated'; settings: Settings }
   | { type: 'view/selected'; view: View }
   | { type: 'query/changed'; query: string }
+  | { type: 'sort/changed'; sort: SortMode }
   | { type: 'dialog/opened'; dialog: Dialog }
   | { type: 'dialog/closed' }
   | { type: 'toast/pushed'; message: string }
@@ -91,6 +100,7 @@ export function initialAppState(): AppState {
     settings: { ...FALLBACK_SETTINGS },
     view: { kind: 'library' },
     query: '',
+    sort: null,
     expandedPlaylists: new Set(),
     dialog: null,
     toasts: [],
@@ -196,6 +206,8 @@ export function createAppReducer(
         return { ...state, view: action.view }
       case 'query/changed':
         return { ...state, query: action.query }
+      case 'sort/changed':
+        return { ...state, sort: action.sort }
       case 'dialog/opened':
         return { ...state, dialog: action.dialog }
       case 'dialog/closed':

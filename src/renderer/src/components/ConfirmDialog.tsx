@@ -21,7 +21,7 @@ export function ConfirmDialog({
   return (
     <div className="dialog-backdrop">
       <div className="dialog" role="dialog" aria-modal="true" aria-label="Confirm">
-        <p>{message}</p>
+        <p className="dialog-message">{message}</p>
         <div className="dialog-actions">
           <button type="button" onClick={onCancel}>
             Cancel

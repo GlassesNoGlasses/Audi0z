@@ -66,17 +66,44 @@ Played flags are per-queue and live **in memory only** — they are never persis
   changes only what is listed — playback carries on untouched. The queue follows when the user
   plays a song from another view: that song starts in the new queue. A queue switch with no song
   to start still stops playback (no surprise cross-fade between contexts).
+- **Sorting belongs to the view, and the queue follows it.** The top bar's sort menu orders
+  whatever is on screen — Library or playlist — by date added or playing time, ascending on the
+  first press of a mode and flipping on the next. Manual, the default, is the stored order: the
+  library's insertion order, a playlist's own. The sort is a **view-layer, session-only** thing —
+  one field on the renderer's state tree, written to neither `settings.json` nor the playlist, so
+  a relaunch is back to Manual and no stored order is ever rewritten. It is applied in exactly one
+  place (`songsInView`/`sortSongs`), which is what keeps the list, the top bar's play button and
+  the queue re-sync agreeing: reordering the view reorders the queue behind the song that is
+  playing, without interrupting it. The mode itself is global rather than per-view, so the reorder
+  reaches the **playing** queue even when a different view is on screen — sorting from the Library
+  while a playlist plays reorders that playlist's queue too, and returning to it shows the same
+  order. Songs the duration backfill has not reached yet have no playing time to sort by, so they
+  sink to the end in both directions.
 - **One download at a time**; the URL flow is two-step: `probe` → user confirms title/tags →
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash
   operation succeeded (abort on trash failure — never orphan the record).
-- **Compression is optional**: an `ffmpeg` transcode to Opus 128k, chosen per-add and defaulted
-  from settings.
+- **Compression is optional, and asking for it is not a promise of it**: an `ffmpeg` transcode to
+  Opus 96k, chosen per-add and defaulted from settings. 96k rather than 128k because the
+  downloader's own `bestaudio[ext=m4a]` is already ~128k AAC: matching it left no saving worth the
+  re-encode, and could grow the file instead. Since a lean lossy source can still re-encode bigger,
+  both compression paths stage the output beside the target and measure it against the source
+  before committing, and the tie goes to the original. On import, a re-encode that is not smaller
+  is deleted and the source copied in as it stands (`compressed: false`). For the Settings
+  dialog's per-song Compress, nothing at all is recorded — the row stays uncompressed, the file
+  never moves, and the handler answers `shrank: false` so the UI can say the original was kept
+  rather than claim a compression that did not happen.
 - **Targets are mac dmg, win nsis, linux AppImage**, and the macOS build is **ad-hoc signed, not
   unsigned**. Packaging rewrites the bundle and breaks the seal Electron ships with, which macOS
   refuses outright on arm64, so an `afterPack` hook (`build/adhocSign.js`) runs `codesign --sign -`
   over the packed `.app`. That buys no Gatekeeper trust: the first launch still needs right-click
-  Open.
+  Open. An `afterAllArtifactBuild` hook (`build/copyArtifactsToDesktop.js`) then copies the finished
+  installer to `~/Desktop`, where the user asked to find it — `dist/` keeps the original, and a
+  `--dir` build produces no artifacts so the hook is a no-op. **No test code reaches the package**:
+  `files` names only `out/**` and `package.json`, so the bundle carries the five build outputs plus
+  the production dependencies and nothing else — this repo's tests, mocks and Playwright suites have
+  no path in (the only `test.js` files inside `app.asar` are two dependencies' own, shipped that way
+  in their npm tarballs).
 - Played flags are **not persisted**; shuffle/repeat **are** persisted per playlist (the Library
   view's own shuffle/repeat live in `settings.json`).
 - **Tag rename and delete are not transactional.** The registry (`tags.json`) is written first, then
@@ -102,7 +129,7 @@ tests/
   support/     mock Api, WAV generator, tmp library helpers (no binary fixtures)
   e2e/         Playwright tests driving the built Electron binary
 scripts/       fetch-ytdlp.mjs (pinned, checksum-verified binary download)
-build/         packaging assets: entitlements, the ad-hoc sign hook, the icon + its AVIF source
+build/         packaging assets: entitlements, the two builder hooks, the icon + its AVIF source
 ```
 
 Cross-directory imports are plain relative paths (`../shared/types`) — there are no path aliases

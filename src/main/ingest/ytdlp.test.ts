@@ -73,24 +73,15 @@ describe('buildProbeArgs', () => {
 describe('probe', () => {
   const url = 'https://example.test/watch?v=1'
 
-  it('parses the title and duration out of the JSON dump', async () => {
+  // The renderer measures duration off the `<audio>` element, so the dump's is deliberately dropped.
+  it('parses the title out of the JSON dump, leaving the duration beside it', async () => {
     const run = fakeRun([JSON.stringify({ title: 'Some Remix', duration: 245, id: 'abc' })])
 
     await expect(probe({ url, run, binPath: '/bin/yt-dlp' })).resolves.toEqual({
       title: 'Some Remix',
-      durationSec: 245,
       sourceUrl: url
     })
     expect(vi.mocked(run).mock.calls[0][0].args).toEqual(buildProbeArgs(url))
-  })
-
-  it('omits the duration when yt-dlp reports none', async () => {
-    const run = fakeRun([JSON.stringify({ title: 'Live stream', duration: null })])
-
-    await expect(probe({ url, run, binPath: '/bin/yt-dlp' })).resolves.toEqual({
-      title: 'Live stream',
-      sourceUrl: url
-    })
   })
 
   it('rejects descriptively when stdout is not JSON', async () => {

@@ -11,6 +11,7 @@ import { useKeyboardShortcuts, type KeyboardShortcutsOptions } from './useKeyboa
 interface Harness {
   onTogglePlay: Mock
   onToggleMute: Mock
+  onSeekBy: Mock
   rerender(options: Partial<KeyboardShortcutsOptions>): void
   unmount(): void
 }
@@ -18,11 +19,13 @@ interface Harness {
 function setup(overrides: Partial<KeyboardShortcutsOptions> = {}): Harness {
   const onTogglePlay = vi.fn()
   const onToggleMute = vi.fn()
+  const onSeekBy = vi.fn()
   const props = (extra: Partial<KeyboardShortcutsOptions>): KeyboardShortcutsOptions => ({
     enabled: true,
     hasCurrentSong: true,
     onTogglePlay,
     onToggleMute,
+    onSeekBy,
     ...overrides,
     ...extra
   })
@@ -34,6 +37,7 @@ function setup(overrides: Partial<KeyboardShortcutsOptions> = {}): Harness {
   return {
     onTogglePlay,
     onToggleMute,
+    onSeekBy,
     rerender: (extra) => view.rerender(props(extra)),
     unmount: view.unmount
   }
@@ -63,6 +67,22 @@ function attach(tag: string): HTMLElement {
   const element = document.createElement(tag)
   document.body.append(element)
   return element
+}
+
+/** The same, marked the way a song row marks its title button to hand space to the transport. */
+function optedIn(tag: string): HTMLElement {
+  const element = attach(tag)
+  element.setAttribute('data-space-transport', '')
+  return element
+}
+
+/** An item of an open row menu, where the arrows walk the menu rather than the song. */
+function menuItem(): HTMLElement {
+  const menu = attach('div')
+  menu.setAttribute('role', 'menu')
+  const item = document.createElement('button')
+  menu.append(item)
+  return item
 }
 
 afterEach(() => {
@@ -129,12 +149,123 @@ describe('useKeyboardShortcuts — space', () => {
     expect(onTogglePlay).not.toHaveBeenCalled()
   })
 
+  it('claims space from a control marked data-space-transport and toggles the transport', () => {
+    const { onTogglePlay } = setup()
+
+    const event = press(' ', optedIn('button'))
+
+    expect(onTogglePlay).toHaveBeenCalledTimes(1)
+    // Load-bearing beyond the scroll: preventing the keydown is what cancels the button's own
+    // keyup click, and that click is what used to replay the song from the top.
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  /**
+   * The opt-in claims space only when there is something to toggle. With a cold queue the guard
+   * falls through un-prevented, so the row keeps its native activation and space starts it.
+   */
+  it('hands an opted-in control its space back when no song is cued', () => {
+    const { onTogglePlay } = setup({ hasCurrentSong: false })
+
+    const event = press(' ', optedIn('button'))
+
+    expect(onTogglePlay).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
   it('ignores a key held down', () => {
     const { onTogglePlay } = setup()
 
     press(' ', document.body, true)
 
     expect(onTogglePlay).not.toHaveBeenCalled()
+  })
+})
+
+describe('useKeyboardShortcuts — arrows', () => {
+  it.each([
+    ['ArrowRight', 10],
+    ['ArrowLeft', -10]
+  ])('skips ten seconds on %s', (key, delta) => {
+    const { onSeekBy } = setup()
+
+    const event = press(key)
+
+    expect(onSeekBy).toHaveBeenCalledWith(delta)
+    // Swallowed so the page does not scroll sideways under the skip.
+    expect(event.defaultPrevented).toBe(true)
+  })
+
+  it('does nothing with no song cued', () => {
+    const { onSeekBy } = setup({ hasCurrentSong: false })
+
+    const event = press('ArrowRight')
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+  /**
+   * The row menu's own arrow navigation is a React handler, so it runs before this document
+   * listener and marks the event; either mark — the menu around the target or the prevented
+   * default — is enough to keep the song behind the menu where it was.
+   */
+  it('leaves the arrows to an open menu', () => {
+    const { onSeekBy } = setup()
+
+    press('ArrowRight', menuItem())
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+  })
+
+  it('leaves an arrow somebody else already answered alone', () => {
+    const { onSeekBy } = setup()
+
+    const event = new KeyboardEvent('keydown', {
+      key: 'ArrowRight',
+      bubbles: true,
+      cancelable: true
+    })
+    event.preventDefault()
+    document.body.dispatchEvent(event)
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+  })
+
+  /** A range slider steps itself with the arrows; the seek and volume sliders both depend on it. */
+  it.each(['input', 'textarea', 'select'])('leaves an arrow pressed inside a %s alone', (tag) => {
+    const { onSeekBy } = setup()
+
+    press('ArrowRight', attach(tag))
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+  })
+
+  it('does nothing while disabled', () => {
+    const { onSeekBy } = setup({ enabled: false })
+
+    press('ArrowLeft')
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+  })
+
+  /** Held down it would fire dozens of skips a second; one press is one jump. */
+  it('ignores a key held down', () => {
+    const { onSeekBy } = setup()
+
+    press('ArrowRight', document.body, true)
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+  })
+
+  /** ⌘← is Back, ⌥← is a word left: a combination is never the transport's. */
+  it.each(['metaKey', 'ctrlKey', 'altKey'] as const)('leaves %s combinations alone', (modifier) => {
+    const { onSeekBy } = setup()
+
+    const event = pressWith('ArrowLeft', modifier)
+
+    expect(onSeekBy).not.toHaveBeenCalled()
+    expect(event.defaultPrevented).toBe(false)
   })
 })
 

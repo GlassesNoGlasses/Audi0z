@@ -52,19 +52,19 @@ describe('formatCompressionSaving', () => {
     const size = 5 * 1024 * 1024
     const seconds = 120
     expect(size - seconds * OPUS_BYTES_PER_SEC).toBeGreaterThan(0)
-    expect(formatCompressionSaving(size, seconds)).toBe('~3.2 MB save')
+    expect(formatCompressionSaving(size, seconds)).toBe('~3.6 MB save')
   })
 
   it('falls back to the generic figure when either half is unknown', () => {
-    expect(formatCompressionSaving(null, undefined)).toBe('Saves ~50%')
-    expect(formatCompressionSaving(null, 120)).toBe('Saves ~50%')
-    expect(formatCompressionSaving(5 * 1024 * 1024, undefined)).toBe('Saves ~50%')
+    expect(formatCompressionSaving(null, undefined)).toBe('Saves ~25%')
+    expect(formatCompressionSaving(null, 120)).toBe('Saves ~25%')
+    expect(formatCompressionSaving(5 * 1024 * 1024, undefined)).toBe('Saves ~25%')
   })
 
   /** A file already smaller than Opus would make it has nothing honest to promise. */
   it('falls back to the generic figure when the estimate is not a saving', () => {
-    expect(formatCompressionSaving(1_000_000, 120)).toBe('Saves ~50%')
-    expect(formatCompressionSaving(120 * OPUS_BYTES_PER_SEC, 120)).toBe('Saves ~50%')
+    expect(formatCompressionSaving(1_000_000, 120)).toBe('Saves ~25%')
+    expect(formatCompressionSaving(120 * OPUS_BYTES_PER_SEC, 120)).toBe('Saves ~25%')
   })
 })
 

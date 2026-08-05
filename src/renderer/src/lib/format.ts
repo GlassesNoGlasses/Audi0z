@@ -14,11 +14,15 @@ const NO_SIZE = '—'
 /** Shown wherever a playing time is unknown, shaped like the `m:ss` it stands in for. */
 const NO_DURATION = '–:––'
 
-/** Compressing is quoted as this much when there is nothing to compute a real estimate from. */
-export const GENERIC_SAVINGS_PERCENT = 50
+/**
+ * Compressing is quoted as this much when there is nothing to compute a real estimate from —
+ * roughly what 96k Opus takes off the ~128k downloads that make up most of a library. Quoting the
+ * old half-the-file figure promised a saving the encoder was never going to deliver.
+ */
+export const GENERIC_SAVINGS_PERCENT = 25
 
-/** What a second of the Opus 128 kbit/s the importer transcodes to costs on disk. */
-export const OPUS_BYTES_PER_SEC = 16_000
+/** What a second of the Opus 96 kbit/s the importer transcodes to costs on disk. */
+export const OPUS_BYTES_PER_SEC = 12_000
 
 /**
  * `4194304` -> `'4.0 MB'`, `512` -> `'512 B'`, `null` -> `'—'`.
@@ -47,10 +51,10 @@ export function formatDuration(seconds: number | undefined): string {
 }
 
 /**
- * What compressing this song would save: `'~3.2 MB save'` when the size and the playing time make
- * a real estimate, and the generic `'Saves ~50%'` whenever they do not.
+ * What compressing this song would save: `'~3.6 MB save'` when the size and the playing time make
+ * a real estimate, and the generic `'Saves ~25%'` whenever they do not.
  *
- * The estimate is what the file weighs now minus what Opus 128k would weigh for the same playing
+ * The estimate is what the file weighs now minus what Opus 96k would weigh for the same playing
  * time. A song already at or below that — an Opus file imported uncompressed, say — has no saving
  * to promise, so it falls back rather than quoting a negative one.
  */

@@ -1,6 +1,14 @@
 import type { IpcMain } from 'electron'
 import { IPC, MEDIA_SCHEME } from '../../shared/ipc'
-import type { AddSongRequest, Playlist, Settings, Song, SongDto, Tag } from '../../shared/types'
+import type {
+  AddSongRequest,
+  CompressResult,
+  Playlist,
+  Settings,
+  Song,
+  SongDto,
+  Tag
+} from '../../shared/types'
 import { resolveAudioPath } from '../media/mediaProtocol'
 import { NotFoundError } from '../store/errors'
 import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
@@ -52,8 +60,11 @@ export interface LibraryIpcDeps {
   /**
    * Transcodes an already-imported song to Opus and records the swap (`compressExisting`), wired
    * with the same `LibraryStore` instance for the same reason `importSong` is.
+   *
+   * `shrank: false` means the re-encode was no smaller and was discarded: nothing was recorded and
+   * `song` is the row exactly as it already stood.
    */
-  compressSong(id: string): Promise<Song>
+  compressSong(id: string): Promise<{ song: Song; shrank: boolean }>
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
   /**
@@ -248,10 +259,15 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
   /**
    * The compressor records the swap itself (`replaceFile`), so this handler only re-derives the
    * DTO — and it re-measures the file, which is the point: the new size is what the UI shows.
+   *
+   * `shrank` rides along untouched. A re-encode that was no smaller is not an error — there is
+   * simply nothing to report but a song that did not change — and only the renderer can say that
+   * out loud.
    */
-  ipc.handle(IPC.library.compress, async (_event, id: unknown): Promise<SongDto> => {
+  ipc.handle(IPC.library.compress, async (_event, id: unknown): Promise<CompressResult> => {
     const songId = assertNonEmptyString(id, 'id')
-    return toDto(await deps.compressSong(songId))
+    const { song, shrank } = await deps.compressSong(songId)
+    return { song: await toDto(song), shrank }
   })
 
   /** The folder itself, not a song inside it — so there is nothing to look up and nothing to trust. */

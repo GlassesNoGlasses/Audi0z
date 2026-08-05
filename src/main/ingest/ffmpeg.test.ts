@@ -7,30 +7,30 @@ import { buildTranscodeArgs, resolveFfmpegPath, transcode } from './ffmpeg'
 import type { RunLines } from './spawnLines'
 
 describe('buildTranscodeArgs', () => {
-  it('asks for a metadata-free, video-free 128k opus stream with src before dst', () => {
-    const args = buildTranscodeArgs('/in/source.wav', '/out/target.opus')
+  it('builds the fixed 96k opus argument list', () => {
+    const args = buildTranscodeArgs('/in/song.mp3', '/out/song.opus.part')
 
     expect(args).toEqual([
       '-hide_banner',
       '-nostdin',
       '-y',
       '-i',
-      '/in/source.wav',
+      '/in/song.mp3',
       '-vn',
       '-map_metadata',
       '-1',
       '-c:a',
       'libopus',
       '-b:a',
-      '128k',
+      '96k',
       '-f',
       'opus',
-      '/out/target.opus'
+      '/out/song.opus.part'
     ])
-    expect(args.indexOf('/in/source.wav')).toBeLessThan(args.indexOf('/out/target.opus'))
+    expect(args.indexOf('/in/song.mp3')).toBeLessThan(args.indexOf('/out/song.opus.part'))
     // `-f opus` is not decoration: the output is staged as `<name>.opus.part`, and without an
     // explicit format ffmpeg would try to infer the container from `.part` and give up.
-    expect(args.indexOf('-f')).toBeLessThan(args.indexOf('/out/target.opus'))
+    expect(args.indexOf('-f')).toBeLessThan(args.indexOf('/out/song.opus.part'))
   })
 })
 

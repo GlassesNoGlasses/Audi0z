@@ -109,11 +109,28 @@ test('opens the window and lists the library from disk', async () => {
 })
 
 test('plays a song over the media:// protocol', async () => {
-  await page.getByRole('button', { name: 'Alpha Mix', exact: true }).click()
+  const alpha = page.getByRole('button', { name: 'Alpha Mix', exact: true })
+  await expect(alpha).toBeVisible()
 
-  // readyState >= HAVE_CURRENT_DATA means real bytes arrived through the custom protocol.
-  await expect.poll(async () => (await audioState(page)).readyState).toBeGreaterThanOrEqual(2)
-  expect((await audioState(page)).paused).toBe(false)
+  // The clock starts on the click, not on launch: what is being budgeted below is the song
+  // starting, not the window opening.
+  const before = Date.now()
+  await alpha.click()
+
+  // A clock past zero is the whole path: bytes fetched over the custom protocol, decoded, playing.
+  await expect
+    .poll(async () => (await audioState(page)).time, { intervals: [50] })
+    .toBeGreaterThan(0)
+  // Pins the v2.1 regression class: a song in a quiet library must start well under a second. The
+  // duration backfill probes through this same handler, and while it did not yield to playback its
+  // two streams sat in front of this one on the main process's four-thread pool.
+  expect(Date.now() - before).toBeLessThan(1200)
+
+  // readyState >= HAVE_CURRENT_DATA is decoded bytes off the custom protocol, and unpaused is the
+  // transport actually running rather than one nudge of `currentTime`.
+  const state = await audioState(page)
+  expect(state.readyState).toBeGreaterThanOrEqual(2)
+  expect(state.paused).toBe(false)
 })
 
 test('seeks into the middle of a song', async () => {
@@ -143,6 +160,30 @@ test('creates a playlist that lands in playlists.json', async () => {
       return (JSON.parse(raw) as PlaylistsFile).playlists.map((playlist) => playlist.name)
     })
     .toEqual(['Late night'])
+})
+
+/**
+ * Also only provable here: jsdom has no box model, so the unit test can see that the button sits
+ * outside the scrolling list but not that it stays on the panel's bottom edge. Anything above the
+ * list that grows into the free space pushes the footer off — which a stray `flex: 1` did.
+ */
+test('keeps the new playlist button on the bottom edge of the sidebar', async () => {
+  const sidebar = await page.locator('.sidebar').boundingBox()
+  const list = await page.locator('.playlist-list').boundingBox()
+  const create = await page.getByRole('button', { name: 'New playlist' }).boundingBox()
+  // `exact`, or the top bar's "Play Library" is a second match.
+  const library = await page.getByRole('button', { name: 'Library', exact: true }).boundingBox()
+  if (!sidebar || !list || !create || !library) throw new Error('the sidebar rendered no boxes')
+
+  // Within the panel's own padding of the bottom, and below the list that scrolls under it. The
+  // lower bound is the half that catches a footer pushed off: a negative gap is the button hanging
+  // below the panel, which "close to the bottom edge" alone would happily pass.
+  const gapBelowCreate = sidebar.y + sidebar.height - (create.y + create.height)
+  expect(gapBelowCreate).toBeLessThan(30)
+  expect(gapBelowCreate).toBeGreaterThanOrEqual(0)
+  expect(create.y).toBeGreaterThanOrEqual(list.y + list.height)
+  // A row rather than a panel: an entry that grows would swallow the space above the list.
+  expect(library.height).toBeLessThan(40)
 })
 
 /**

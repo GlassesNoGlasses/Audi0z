@@ -244,4 +244,23 @@ describe('appReducer', () => {
     })
     expect(viewed.view).toEqual({ kind: 'playlist', id: 'p1' })
   })
+
+  /**
+   * The sort is global, like the query: it belongs to the window rather than to whichever view
+   * happened to be open when it was chosen, so moving between views carries it along.
+   */
+  it('records the sort mode and keeps it across a change of view', () => {
+    expect(initialAppState().sort).toBeNull()
+
+    const sorted = reducer(seeded(), {
+      type: 'sort/changed',
+      sort: { field: 'durationSec', direction: 'desc' }
+    })
+    expect(sorted.sort).toEqual({ field: 'durationSec', direction: 'desc' })
+
+    const viewed = reducer(sorted, { type: 'view/selected', view: { kind: 'playlist', id: 'p1' } })
+    expect(viewed.sort).toEqual({ field: 'durationSec', direction: 'desc' })
+
+    expect(reducer(viewed, { type: 'sort/changed', sort: null }).sort).toBeNull()
+  })
 })

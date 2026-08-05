@@ -121,7 +121,7 @@ describe('AddSongDialog — tags', () => {
 
     await openAddDialog(user)
 
-    expect(screen.getByText('Saves ~50%').tagName).toBe('STRONG')
+    expect(screen.getByText('Saves ~25%').tagName).toBe('STRONG')
     // The preference itself is still addressable by exactly the words on it.
     expect(screen.getByRole('checkbox', { name: 'Compress to Opus' })).toBeInTheDocument()
   })
@@ -344,5 +344,43 @@ describe('AddSongDialog — url source', () => {
     const toast = await screen.findByRole('alert')
     expect(toast).toHaveTextContent('Unsupported URL')
     expect(screen.getByRole('dialog', { name: 'Add song' })).toBeInTheDocument()
+  })
+})
+
+describe('AddSongDialog — what it accepts', () => {
+  /**
+   * The list is the playable subset of the picker filter in main/index.ts — the filter stays wider
+   * on purpose — and it has to survive a pick: the other files-mode hint turns into the chosen
+   * path, so the list cannot live inside it.
+   */
+  it('lists the audio types the app can actually play', async () => {
+    const user = userEvent.setup()
+    const api = seedApi()
+    vi.mocked(api.files.pickAudioFiles).mockResolvedValue(['/music/Great Track.mp3'])
+    await renderApp()
+
+    await openAddDialog(user)
+    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose files…' }))
+    await waitFor(() => expect(screen.getByText('/music/Great Track.mp3')).toBeInTheDocument())
+    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
+  })
+
+  /** yt-dlp decides what a URL may be, and a playlist link is the one that surprises people. */
+  it('says what urls can come from', async () => {
+    const user = userEvent.setup()
+    seedApi()
+    await renderApp()
+
+    await openAddDialog(user)
+    await user.click(screen.getByRole('button', { name: 'From URL' }))
+
+    const hint = screen.getByText(/Downloads use yt-dlp/)
+    expect(hint).toHaveTextContent('A playlist link fetches only the linked item')
+    // Standing hint, not the probing one: it is here before any fetch and says nothing about waiting.
+    expect(
+      screen.queryByText('Fetching details… (the first fetch after launch can take ~30s)')
+    ).toBeNull()
   })
 })

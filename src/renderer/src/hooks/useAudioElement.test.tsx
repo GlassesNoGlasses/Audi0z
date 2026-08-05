@@ -1,8 +1,12 @@
 import { fireEvent, render } from '@testing-library/react'
 import type { ReactElement } from 'react'
-import { describe, expect, it, vi } from 'vitest'
-import { playSpy, stubMediaElement } from '../testing/harness'
-import { useAudioElement, type UseAudioElementOptions } from './useAudioElement'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { playSpy, stubDuration, stubMediaElement } from '../testing/harness'
+import {
+  useAudioElement,
+  type AudioController,
+  type UseAudioElementOptions
+} from './useAudioElement'
 
 /**
  * The hook owns the single `<audio>` element. The regression it exists to prevent (R11): replaying
@@ -12,9 +16,19 @@ import { useAudioElement, type UseAudioElementOptions } from './useAudioElement'
 
 stubMediaElement()
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+/** How long the hook stays quiet after the last keyboard seek, in ms. */
+const RESUME_AFTER = 300
+
+/** The controller from the newest render. Its methods only read refs, so any instance would do. */
+let controller: AudioController
+
 function Harness(props: UseAudioElementOptions): ReactElement {
-  const ref = useAudioElement(props)
-  return <audio ref={ref} data-testid="audio" />
+  controller = useAudioElement(props)
+  return <audio ref={controller.ref} data-testid="audio" />
 }
 
 const base: UseAudioElementOptions = {
@@ -27,10 +41,12 @@ const base: UseAudioElementOptions = {
   onError: () => undefined
 }
 
-function renderHook(props: Partial<UseAudioElementOptions> = {}): {
+interface Rendered extends Omit<AudioController, 'ref'> {
   audio: HTMLAudioElement
   update: (next: Partial<UseAudioElementOptions>) => void
-} {
+}
+
+function renderHook(props: Partial<UseAudioElementOptions> = {}): Rendered {
   const initial = { ...base, ...props }
   const { getByTestId, rerender } = render(<Harness {...initial} />)
   let current = initial
@@ -39,7 +55,10 @@ function renderHook(props: Partial<UseAudioElementOptions> = {}): {
     update: (next) => {
       current = { ...current, ...next }
       rerender(<Harness {...current} />)
-    }
+    },
+    seekBy: (delta) => controller.seekBy(delta),
+    beginScrub: () => controller.beginScrub(),
+    endScrub: () => controller.endScrub()
   }
 }
 
@@ -109,5 +128,174 @@ describe('useAudioElement', () => {
     const { audio } = renderHook({ songId: null, src: null, isPlaying: false })
     expect(audio.getAttribute('src')).toBeNull()
     expect(playSpy()).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * Seeking is deliberately element-local: nothing here touches the store, so the ⏸ glyph never
+ * flickers while the user skips. The silence is what makes a run of presses bearable — decoding
+ * a tenth of a second at each landing point is the garble these tests exist to keep silent.
+ */
+describe('useAudioElement — seeking', () => {
+  it('seeks forward ten seconds, silent, then resumes on its own', () => {
+    vi.useFakeTimers()
+    const { audio, seekBy } = renderHook()
+    audio.currentTime = 30
+    const plays = playSpy().mock.calls.length
+
+    seekBy(10)
+
+    expect(audio.currentTime).toBe(40)
+    expect(audio.paused).toBe(true)
+    expect(playSpy().mock.calls.length).toBe(plays)
+
+    vi.advanceTimersByTime(RESUME_AFTER)
+
+    expect(audio.paused).toBe(false)
+    expect(playSpy().mock.calls.length).toBe(plays + 1)
+  })
+
+  /** A run of presses is one scrub: only the last one gets to decide when sound comes back. */
+  it('waits out the whole run of presses before resuming', () => {
+    vi.useFakeTimers()
+    const { audio, seekBy } = renderHook()
+    audio.currentTime = 0
+
+    seekBy(10)
+    vi.advanceTimersByTime(RESUME_AFTER - 100)
+    seekBy(10)
+    vi.advanceTimersByTime(RESUME_AFTER - 100)
+
+    expect(audio.currentTime).toBe(20)
+    expect(audio.paused).toBe(true)
+
+    vi.advanceTimersByTime(100)
+
+    expect(audio.paused).toBe(false)
+  })
+
+  it('never seeks past the start', () => {
+    const { audio, seekBy } = renderHook()
+    audio.currentTime = 4
+
+    seekBy(-10)
+
+    expect(audio.currentTime).toBe(0)
+  })
+
+  it('stops just short of the end so a skip never ends the song itself', () => {
+    const { audio, seekBy } = renderHook()
+    stubDuration(audio, 60)
+    audio.currentTime = 55
+
+    seekBy(10)
+
+    // Landing exactly on the duration fires `ended`, which would hand the queue the next song.
+    expect(audio.currentTime).toBe(59.75)
+  })
+
+  it('stays paused after a seek when it was already paused', () => {
+    vi.useFakeTimers()
+    const { audio, seekBy, update } = renderHook()
+    update({ isPlaying: false })
+    audio.currentTime = 10
+    const plays = playSpy().mock.calls.length
+
+    seekBy(10)
+    vi.advanceTimersByTime(RESUME_AFTER)
+
+    expect(audio.currentTime).toBe(20)
+    expect(audio.paused).toBe(true)
+    expect(playSpy().mock.calls.length).toBe(plays)
+  })
+
+  it('does nothing with no song cued', () => {
+    const { audio, seekBy } = renderHook({ songId: null, src: null, isPlaying: false })
+    audio.currentTime = 5
+
+    seekBy(10)
+
+    expect(audio.currentTime).toBe(5)
+  })
+})
+
+describe('useAudioElement — scrubbing', () => {
+  it('a pointer scrub is silent from press to release', () => {
+    const { audio, beginScrub, endScrub } = renderHook()
+
+    beginScrub()
+    expect(audio.paused).toBe(true)
+
+    // What the slider's own onChange does while the pointer is down.
+    audio.currentTime = 18
+    endScrub()
+
+    expect(audio.paused).toBe(false)
+    expect(audio.currentTime).toBe(18)
+  })
+
+  it('releasing a scrub on a paused song leaves it paused', () => {
+    const { audio, beginScrub, endScrub, update } = renderHook()
+    update({ isPlaying: false })
+
+    beginScrub()
+    endScrub()
+
+    expect(audio.paused).toBe(true)
+  })
+
+  /** The store outranks a scrub: whatever the pointer is doing, a pause under it is still a pause. */
+  it('lets the store pause a song out from under a held scrub', () => {
+    const { audio, beginScrub, endScrub, update } = renderHook()
+
+    beginScrub()
+    update({ isPlaying: false })
+    endScrub()
+
+    expect(audio.paused).toBe(true)
+  })
+
+  it('drops a pending resume when the song changes', () => {
+    vi.useFakeTimers()
+    const { seekBy, update } = renderHook()
+
+    seekBy(10)
+    update({ songId: 'b', src: 'media://audio/b', playToken: 2 })
+    const plays = playSpy().mock.calls.length
+
+    vi.advanceTimersByTime(RESUME_AFTER)
+
+    // What the new song does is the load effect's business; a scrub of the old one has no say.
+    expect(playSpy().mock.calls.length).toBe(plays)
+  })
+
+  it('a release takes over the resume a keyboard seek had pending', () => {
+    vi.useFakeTimers()
+    const { audio, seekBy, endScrub } = renderHook()
+
+    seekBy(10)
+    endScrub()
+    expect(audio.paused).toBe(false)
+    const plays = playSpy().mock.calls.length
+
+    vi.advanceTimersByTime(RESUME_AFTER)
+
+    expect(playSpy().mock.calls.length).toBe(plays)
+  })
+
+  /** A pointer landing inside the quiet window must not be unmuted mid-drag by the last press. */
+  it('a press takes over the resume a keyboard seek had pending', () => {
+    vi.useFakeTimers()
+    const { audio, seekBy, beginScrub, endScrub } = renderHook()
+
+    seekBy(10)
+    beginScrub()
+    vi.advanceTimersByTime(RESUME_AFTER)
+
+    expect(audio.paused).toBe(true)
+
+    endScrub()
+
+    expect(audio.paused).toBe(false)
   })
 })

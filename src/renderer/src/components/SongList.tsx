@@ -10,12 +10,12 @@ import { SongRow } from './SongRow'
 export function SongList(): ReactElement {
   const state = useAppState()
   const dispatch = useAppDispatch()
-  const { songs, playlists, tags, settings, query, view, playback } = state
+  const { songs, playlists, tags, settings, query, sort, view, playback } = state
 
   const containingPlaylist = useMemo(() => viewedPlaylist(view, playlists), [view, playlists])
   const inView = useMemo(
-    () => songsInView(songs, containingPlaylist, view),
-    [songs, containingPlaylist, view]
+    () => songsInView(songs, containingPlaylist, view, sort),
+    [songs, containingPlaylist, view, sort]
   )
   // The search filters what is SHOWN, never the queue: clicking a filtered row still plays inside
   // the full queue order.

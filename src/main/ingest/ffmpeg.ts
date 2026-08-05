@@ -28,12 +28,18 @@ export function resolveFfmpegPath({
 }
 
 /**
- * Audio only (`-vn`, so cover art never becomes a video stream), metadata stripped, Opus 128k.
+ * Audio only (`-vn`, so cover art never becomes a video stream), metadata stripped, Opus 96k.
  * `-nostdin` matters because the child's stdin is ignored — ffmpeg must not wait on it.
  *
- * `-f opus` is required, not belt-and-braces: the output is staged as `<name>.opus.part`, and
- * ffmpeg infers the container from the file extension, so `.part` would fail the run outright with
- * "Unable to find a suitable output format".
+ * 96k, not 128k: the downloader fetches `bestaudio[ext=m4a]`, already ~128k AAC, so a 128k target
+ * asked Opus to match its own source. Ogg overhead and unconstrained VBR overshoot ate what little
+ * was left, and the re-encode could land *bigger* than the file it replaced. 96k is
+ * near-transparent for music and sits far enough under those sources to actually shrink them.
+ *
+ * `-f opus` is required, not belt-and-braces: the output is staged as `<dst>.part`, and ffmpeg
+ * infers the container from the file extension, so `.part` would fail the run outright with
+ * "Unable to find a suitable output format". Both callers now hand in a `<id>.opus.staged` dst of
+ * their own — a name ffmpeg has even less chance of reading — so the flag carries the whole job.
  */
 export function buildTranscodeArgs(src: string, dst: string): string[] {
   return [
@@ -48,7 +54,7 @@ export function buildTranscodeArgs(src: string, dst: string): string[] {
     '-c:a',
     'libopus',
     '-b:a',
-    '128k',
+    '96k',
     '-f',
     'opus',
     dst

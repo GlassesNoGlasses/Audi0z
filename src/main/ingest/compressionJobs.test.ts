@@ -11,8 +11,8 @@ describe('createCompressionJobs', () => {
     )
   })
 
-  it('answers immediately for a song that was never compressing', async () => {
-    await expect(createCompressionJobs().waitFor('a')).resolves.toBeUndefined()
+  it('answers undefined when the song has no compression in flight', () => {
+    expect(createCompressionJobs().waitFor('a')).toBeUndefined()
   })
 
   /**
@@ -27,7 +27,9 @@ describe('createCompressionJobs', () => {
     const gate = new Promise<void>((resolve) => (release = resolve))
     const running = jobs.run('a', () => gate)
     let waited = false
-    const waiter = jobs.waitFor('a').then(() => (waited = true))
+    // Optional-chained because `waitFor` answers undefined for an idle song: the final assertion
+    // is what proves this one was in flight and the waiter really ran.
+    const waiter = jobs.waitFor('a')?.then(() => (waited = true))
     await Promise.resolve()
     expect(waited).toBe(false)
     release()
@@ -39,7 +41,7 @@ describe('createCompressionJobs', () => {
     const failing = new Promise<void>((_resolve, reject) => (fail = reject))
     const losing = jobs.run('b', () => failing)
     let waitedOutFailure = false
-    const failureWaiter = jobs.waitFor('b').then(() => (waitedOutFailure = true))
+    const failureWaiter = jobs.waitFor('b')?.then(() => (waitedOutFailure = true))
     await Promise.resolve()
     expect(waitedOutFailure).toBe(false)
     fail(new Error('ffmpeg died'))
@@ -52,6 +54,9 @@ describe('createCompressionJobs', () => {
   it('forgets the job once it settles', async () => {
     const jobs = createCompressionJobs()
     await jobs.run('a', async () => 'done')
-    await expect(jobs.waitFor('a')).resolves.toBeUndefined()
+    // Awaited separately because `run` hands back the job's own promise: the entry is dropped off
+    // the tracked one, a couple of microtasks behind it.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(jobs.waitFor('a')).toBeUndefined()
   })
 })

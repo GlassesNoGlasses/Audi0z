@@ -15,6 +15,7 @@ import { useAudioElement } from './hooks/useAudioElement'
 import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { errorMessage, trashFailureMessage } from './lib/errors'
+import { songsInView, sortSongs } from './lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
 import type { ConfirmIntent } from './state/appReducer'
@@ -38,12 +39,13 @@ export function App(): ReactElement {
 function AppShell(): ReactElement {
   const state = useAppState()
   const dispatch = useAppDispatch()
-  const { songs, playlists, settings, playback, dialog } = state
+  const { songs, playlists, settings, sort, playback, dialog } = state
 
   useApiEvents(dispatch)
   // Songs are listed long before anything has decoded their headers; this measures them behind the
-  // list and persists what it finds, so the times only ever have to be read once.
-  useDurationBackfill(songs, dispatch)
+  // list and persists what it finds, so the times only ever have to be read once. It only reads
+  // while nothing is playing — the probes go through the same `media://` handler the player does.
+  useDurationBackfill(songs, dispatch, !playback.isPlaying)
 
   // Start-up: load everything, then make the Library the queue.
   useEffect(() => {
@@ -78,13 +80,23 @@ function AppShell(): ReactElement {
   }, [dispatch])
 
   // The queue follows its source: adding to the library, or to the playlist being played, extends
-  // the queue in place rather than restarting it.
+  // the queue in place rather than restarting it — and it follows the sort the same way, so what
+  // plays next is what the list shows.
   const queueOrder = useMemo(() => {
     const queueId = playback.queueId
     if (queueId === null) return null
-    if (queueId === LIBRARY_QUEUE_ID) return songs.map((song) => song.id)
-    return playlists.find((playlist) => playlist.id === queueId)?.songIds ?? []
-  }, [playback.queueId, songs, playlists])
+    const source =
+      queueId === LIBRARY_QUEUE_ID
+        ? songs
+        : // Unsorted here on purpose: `sortSongs` below orders the queue once, whichever it is.
+          songsInView(
+            songs,
+            playlists.find((playlist) => playlist.id === queueId) ?? null,
+            { kind: 'playlist', id: queueId },
+            null
+          )
+    return sortSongs(source, sort).map((song) => song.id)
+  }, [playback.queueId, songs, playlists, sort])
 
   useEffect(() => {
     if (queueOrder === null || sameOrder(queueOrder, playback.order)) return
@@ -117,7 +129,12 @@ function AppShell(): ReactElement {
     [dispatch, songs, playback.order]
   )
 
-  const audioRef = useAudioElement({
+  const {
+    ref: audioRef,
+    seekBy,
+    beginScrub,
+    endScrub
+  } = useAudioElement({
     songId: current?.id ?? null,
     src: current?.url ?? null,
     playToken: playback.playToken,
@@ -151,7 +168,8 @@ function AppShell(): ReactElement {
     enabled: dialog === null,
     hasCurrentSong: playback.currentId !== null,
     onTogglePlay: togglePlay,
-    onToggleMute: toggleMute
+    onToggleMute: toggleMute,
+    onSeekBy: seekBy
   })
 
   function onDrop(event: DragEvent<HTMLDivElement>): void {
@@ -197,7 +215,7 @@ function AppShell(): ReactElement {
         <TopNav />
         <SongList />
       </section>
-      <PlayerBar audioRef={audioRef} />
+      <PlayerBar audioRef={audioRef} beginScrub={beginScrub} endScrub={endScrub} />
       <ToastHost />
 
       {dialog?.kind === 'add' ? <AddSongDialog source={dialog.source} /> : null}
