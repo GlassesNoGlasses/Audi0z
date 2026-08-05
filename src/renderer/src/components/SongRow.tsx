@@ -83,7 +83,9 @@ function SongRowView({
       // Flip only when down overflows AND up actually fits — a menu taller than both stays down.
       setFlipUp(anchor.bottom + height > bounds.bottom && anchor.top - height >= bounds.top)
     }
-    menuItemsIn(popupRef.current)[0]?.focus()
+    // `preventScroll`: the flip class has not been painted yet, so the popup is still sitting at
+    // the geometry the line above just decided is wrong. Scrolling the list to it is never right.
+    menuItemsIn(popupRef.current)[0]?.focus({ preventScroll: true })
   }, [menuOpen])
 
   /**
