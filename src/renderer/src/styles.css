@@ -991,11 +991,13 @@ input[type='range'] {
 }
 
 /* The same accent fill the transport toggles and the tag picker use, for the same reason: the global
-   hover already moves the border, so only a fill can say "on" at a glance. */
+   hover already moves the border, so only a fill can say "on" at a glance. The ink goes plain with
+   it, exactly as the tag picker's does — accent on an accent-tinted fill is too little contrast to
+   read a word by. */
 .segmented button[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--fg);
 }
 
 /* Chips of the tags that exist. Creating one is the Tags dialog's job alone. */
