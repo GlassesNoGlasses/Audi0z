@@ -1,4 +1,4 @@
-# my-music-library — design
+# Audi0z — design
 
 ## What it is
 
@@ -17,7 +17,8 @@ Three processes, one direction of trust: the renderer asks, the main process doe
 ### Main process — owns all disk I/O and child processes
 
 - **Library root**: `~/Music/my-music-library/` (overridable with `MML_LIBRARY_DIR`, which exists
-  so unit tests and e2e runs get an isolated directory).
+  so unit tests and e2e runs get an isolated directory) — kept under the pre-rename folder name
+  for data continuity.
   - `library.json` — `{ version: 1, songs: Song[] }`
   - `playlists.json` — `{ version: 1, playlists: Playlist[] }`
   - `settings.json` — `Settings`

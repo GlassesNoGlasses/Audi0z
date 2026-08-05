@@ -31,7 +31,7 @@ describe('App shell', () => {
   it('renders the app name', async () => {
     seedApi()
     await renderApp()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('my-music-library')
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Audi0z')
   })
 
   /**

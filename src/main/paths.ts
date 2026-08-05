@@ -9,6 +9,9 @@ import path from 'node:path'
  * plain node process.
  */
 
+// Deliberately still the pre-rename folder: the app became Audi0z in v3.1, but every existing
+// library lives under ~/Music/my-music-library and must keep working. Renaming this constant
+// would strand them all.
 export const LIBRARY_DIR_NAME = 'my-music-library'
 export const LIBRARY_DIR_ENV_VAR = 'MML_LIBRARY_DIR'
 

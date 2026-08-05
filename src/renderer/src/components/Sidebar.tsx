@@ -101,7 +101,7 @@ export function Sidebar(): ReactElement {
 
   return (
     <aside className="sidebar">
-      <h1>my-music-library</h1>
+      <h1>Audi0z</h1>
       <nav className="sidebar-nav">
         <button
           type="button"
