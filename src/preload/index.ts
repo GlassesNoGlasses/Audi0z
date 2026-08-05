@@ -47,6 +47,7 @@ export const api: Api = {
     create: (name) => ipcRenderer.invoke(IPC.playlists.create, name),
     remove: (id) => ipcRenderer.invoke(IPC.playlists.remove, id),
     rename: (id, name) => ipcRenderer.invoke(IPC.playlists.rename, id, name),
+    reorder: (orderedIds) => ipcRenderer.invoke(IPC.playlists.reorder, orderedIds),
     addSong: (playlistId, songId) => ipcRenderer.invoke(IPC.playlists.addSong, playlistId, songId),
     removeSong: (playlistId, songId) =>
       ipcRenderer.invoke(IPC.playlists.removeSong, playlistId, songId),

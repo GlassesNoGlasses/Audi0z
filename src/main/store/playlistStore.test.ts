@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
 import { playlistsJsonPath } from '../paths'
 import type { Playlist, PlaylistsFile, Song } from '../../shared/types'
-import { NotFoundError } from './errors'
+import { ConflictError, NotFoundError } from './errors'
 import { createLibraryStore } from './libraryStore'
 import { createPlaylistStore } from './playlistStore'
 
@@ -199,6 +199,35 @@ describe('setPlaybackOptions', () => {
     await expect(
       createPlaylistStore(lib.root).setPlaybackOptions('missing', { shuffle: true })
     ).rejects.toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe('reorder', () => {
+  it('applies and persists the new order', async () => {
+    const store = createPlaylistStore(lib.root)
+    const a = await store.create('Alpha')
+    const b = await store.create('Bravo')
+    const c = await store.create('Chill')
+
+    const next = await store.reorder([c.id, a.id, b.id])
+
+    expect(next.map((p) => p.name)).toEqual(['Chill', 'Alpha', 'Bravo'])
+    // A second store over the same dir reads the same order back off disk.
+    const reread = createPlaylistStore(lib.root)
+    expect((await reread.list()).map((p) => p.name)).toEqual(['Chill', 'Alpha', 'Bravo'])
+  })
+
+  it('rejects an order that does not name every playlist exactly once', async () => {
+    const store = createPlaylistStore(lib.root)
+    const a = await store.create('Alpha')
+    const b = await store.create('Bravo')
+
+    await expect(store.reorder([a.id])).rejects.toBeInstanceOf(ConflictError)
+    await expect(store.reorder([a.id, a.id])).rejects.toBeInstanceOf(ConflictError)
+    await expect(store.reorder([a.id, 'nope'])).rejects.toBeInstanceOf(NotFoundError)
+
+    // A failed reorder leaves the order alone.
+    expect((await store.list()).map((p) => p.id)).toEqual([a.id, b.id])
   })
 })
 

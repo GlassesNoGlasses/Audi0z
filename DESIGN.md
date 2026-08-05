@@ -79,6 +79,13 @@ Played flags are per-queue and live **in memory only** — they are never persis
   while a playlist plays reorders that playlist's queue too, and returning to it shows the same
   order. Songs the duration backfill has not reached yet have no playing time to sort by, so they
   sink to the end in both directions.
+- **The sidebar's order IS the stored order.** `playlists.json` holds an array and the sidebar
+  lists it as it stands, so dragging a playlist up or down the sidebar is a write: the whole new
+  order crosses `playlists:reorder` in one call, and the store refuses any order that does not name
+  every playlist exactly once rather than half-applying it. That is also why a drag is only offered
+  when the rows on screen _are_ the whole order — not while the sidebar's filter is narrowing it
+  (nothing would say where the hidden ones went) and not while a row is being renamed. `create`
+  still appends, so a new playlist is the last one until someone moves it.
 - **One download at a time**; the URL flow is two-step: `probe` → user confirms title/tags →
   `start`.
 - **Delete moves the file to the OS trash**, and the library record is only removed if the trash

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import {
@@ -16,6 +16,48 @@ stubMediaElement()
 
 const songs = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
 const mixes = playlist('p1', 'Mixes', ['c', 'a'], { shuffle: true })
+
+/** Three to drag between: two would make every reorder the same move. */
+const three = [
+  playlist('p1', 'Alpha', []),
+  playlist('p2', 'Bravo', []),
+  playlist('p3', 'Chill', [])
+]
+
+/**
+ * jsdom implements no drag pipeline, so the `DataTransfer` the handlers write to is hand-rolled —
+ * only the two methods and two properties the sidebar touches.
+ */
+function dataTransferStub(): DataTransfer {
+  const store: Record<string, string> = {}
+  return {
+    effectAllowed: '',
+    dropEffect: '',
+    setData: (type: string, value: string) => {
+      store[type] = value
+    },
+    getData: (type: string) => store[type] ?? ''
+  } as unknown as DataTransfer
+}
+
+/**
+ * jsdom has no `DragEvent` constructor either, so testing-library builds a plain `Event` — which
+ * drops `clientY`, the one coordinate the drop edge is decided from. Put it back by hand.
+ */
+function dragOverAt(target: HTMLElement, dataTransfer: DataTransfer, clientY: number): void {
+  const event = createEvent.dragOver(target, { dataTransfer })
+  Object.defineProperty(event, 'clientY', { value: clientY })
+  fireEvent(target, event)
+}
+
+const items = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('.playlist-item')]
+
+/** The playlist names in sidebar order — what a reorder is supposed to change. */
+const itemNames = (): string[] =>
+  items().map((li) => li.querySelector('.sidebar-entry')?.textContent ?? '')
+
+/** One entry per row, so an empty list can never satisfy a "nothing is draggable" assertion. */
+const draggableFlags = (): (string | null)[] => items().map((li) => li.getAttribute('draggable'))
 
 describe('Sidebar', () => {
   /**
@@ -213,6 +255,60 @@ describe('Sidebar', () => {
     // Empty, not broken: the library is still one click away from being the queue again.
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
     expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  /**
+   * jsdom has no layout either, so the row's rect is stubbed: the edge the drop lands on is decided
+   * against the row's own midpoint, and a stubbed rect is what makes that midpoint a real number.
+   */
+  it('reorders playlists by dragging one below another', async () => {
+    const api = seedApi({ songs, playlists: three })
+    await renderApp()
+    expect(itemNames()).toEqual(['Alpha', 'Bravo', 'Chill'])
+
+    const [alpha, , chill] = items()
+    chill.getBoundingClientRect = () =>
+      ({ top: 40, height: 20, bottom: 60, left: 0, right: 100, width: 100, x: 0, y: 40 }) as DOMRect
+
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    // Either side of the row's own midpoint: above it the seam is the row's top edge, below it the
+    // bottom one, and the same pointer position must not mean both.
+    dragOverAt(chill, dataTransfer, 45)
+    expect(chill.className).toContain('drop-before')
+    dragOverAt(chill, dataTransfer, 55)
+    expect(chill.className).toContain('drop-after')
+    fireEvent.drop(chill, { dataTransfer })
+
+    expect(api.playlists.reorder).toHaveBeenCalledWith(['p2', 'p3', 'p1'])
+    // The list is the store's answer, not the guess the drag made — nothing moves until it lands.
+    await waitFor(() => expect(itemNames()).toEqual(['Bravo', 'Chill', 'Alpha']))
+    expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
+  })
+
+  /** Reordering a filtered subset is ambiguous: nothing says where the hidden ones end up. */
+  it('does not drag while the filter narrows the list', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: three })
+    await renderApp()
+    expect(draggableFlags()).toEqual(['true', 'true', 'true'])
+
+    await user.type(within(sidebar()).getByRole('searchbox', { name: 'Search playlists' }), 'a')
+
+    expect(itemNames()).toEqual(['Alpha', 'Bravo'])
+    expect(draggableFlags()).toEqual(['false', 'false'])
+  })
+
+  /** The rename field lives inside the row: a draggable row would fight selecting its own text. */
+  it('does not drag while a playlist is being renamed', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: three })
+    await renderApp()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Rename Alpha' }))
+
+    // Every row, not just the one being renamed: the list is mid-edit, so none of it may move.
+    expect(draggableFlags()).toEqual(['false', 'false', 'false'])
   })
 
   it('renames a playlist', async () => {

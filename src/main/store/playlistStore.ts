@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Playlist, PlaylistsFile } from '../../shared/types'
 import { playlistsJsonPath } from '../paths'
-import { NotFoundError } from './errors'
+import { ConflictError, NotFoundError } from './errors'
 import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreatePlaylistStore } from './storeTypes'
 
@@ -100,6 +100,30 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
       if (index === -1) return
       current.splice(index, 1)
       await persist(current)
+    },
+
+    /**
+     * The stored order is the sidebar's order, so rearranging the sidebar is a write to this array.
+     *
+     * The whole order arrives at once and is validated before anything moves: a call that names
+     * fewer, more, or unknown playlists is refused outright rather than half-applied. The cached
+     * array is rearranged in place — `loadOnce` hands the same one out for the process lifetime,
+     * the same reason `remove` splices rather than reassigns.
+     */
+    async reorder(orderedIds) {
+      const current = await load()
+      if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
+        throw new ConflictError('Reorder must name every playlist exactly once.')
+      }
+      const byId = new Map(current.map((playlist) => [playlist.id, playlist]))
+      const next = orderedIds.map((id) => {
+        const found = byId.get(id)
+        if (found === undefined) throw new NotFoundError(`No playlist with id "${id}"`)
+        return found
+      })
+      current.splice(0, current.length, ...next)
+      await persist(current)
+      return current.map(clonePlaylist)
     },
 
     async addSong(playlistId, songId) {

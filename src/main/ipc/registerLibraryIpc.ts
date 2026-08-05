@@ -152,6 +152,16 @@ function parsePlaybackOptions(value: unknown): { shuffle?: boolean; repeat?: boo
   }
 }
 
+/**
+ * A whole playlist order in one payload. Only the shape is checked here — whether these are the
+ * right ids is the store's call, and it refuses anything that does not name every playlist once.
+ */
+function parsePlaylistOrder(value: unknown): string[] {
+  const ids = assertStringArray(value, 'orderedIds')
+  for (const id of ids) assertNonEmptyString(id, 'orderedIds entry')
+  return ids
+}
+
 function parseSettingsPatch(value: unknown): Partial<Settings> {
   const raw = assertRecord(value, 'patch')
   const patch: Partial<Settings> = {}
@@ -335,6 +345,10 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
 
   ipc.handle(IPC.playlists.rename, (_event, id: unknown, name: unknown): Promise<Playlist> =>
     deps.playlistStore.rename(assertNonEmptyString(id, 'id'), assertNonEmptyString(name, 'name'))
+  )
+
+  ipc.handle(IPC.playlists.reorder, (_event, orderedIds: unknown): Promise<Playlist[]> =>
+    deps.playlistStore.reorder(parsePlaylistOrder(orderedIds))
   )
 
   ipc.handle(

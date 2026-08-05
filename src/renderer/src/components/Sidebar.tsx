@@ -22,12 +22,19 @@ export function Sidebar(): ReactElement {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [filter, setFilter] = useState('')
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [dropMark, setDropMark] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
 
   // `lib/search` exports only the songs filter, which searches tags as well — a playlist has none,
   // so this is the plain case-insensitive substring match instead.
   const shown = playlists.filter((playlist) =>
     playlist.name.toLowerCase().includes(filter.trim().toLowerCase())
   )
+
+  // Dragging rearranges the stored order, so it is only offered when the rows on screen ARE that
+  // order: a filtered list says nothing about where the hidden playlists go, and a row that is
+  // being renamed has a text field in it that a drag would fight for the pointer.
+  const canDrag = filter.trim() === '' && renamingId === null
 
   const titleOf = (songId: string): string =>
     songs.find((song) => song.id === songId)?.title ?? 'Unknown song'
@@ -66,6 +73,22 @@ export function Sidebar(): ReactElement {
       .catch(fail)
   }
 
+  /**
+   * Lands the drag: the dragged id is pulled out of the order and put back beside the target, and
+   * the store's answer — not the arithmetic here — is what the list is redrawn from.
+   */
+  function commitReorder(targetId: string, edge: 'before' | 'after'): void {
+    if (dragId === null || dragId === targetId) return
+    const ids = playlists.map((playlist) => playlist.id).filter((id) => id !== dragId)
+    const at = ids.indexOf(targetId)
+    if (at === -1) return
+    ids.splice(edge === 'before' ? at : at + 1, 0, dragId)
+    void window.api.playlists
+      .reorder(ids)
+      .then((next) => dispatch({ type: 'playlists/loaded', playlists: next }))
+      .catch(fail)
+  }
+
   return (
     <aside className="sidebar">
       <h1>my-music-library</h1>
@@ -96,7 +119,43 @@ export function Sidebar(): ReactElement {
           {shown.map((playlist) => {
             const expanded = expandedPlaylists.has(playlist.id)
             return (
-              <li key={playlist.id}>
+              <li
+                key={playlist.id}
+                className={`playlist-item${dropMark?.id === playlist.id ? ` drop-${dropMark.edge}` : ''}`}
+                draggable={canDrag}
+                onDragStart={(event) => {
+                  if (!canDrag) return
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('text/plain', playlist.id)
+                  setDragId(playlist.id)
+                }}
+                // The `dragId === null` guards below are what keep a file dragged in from the OS
+                // falling through to the app root's add-dialog drop: a drag is ours only between
+                // our own dragStart and dragEnd, and anything else is left entirely alone.
+                onDragOver={(event) => {
+                  if (dragId === null) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  event.dataTransfer.dropEffect = 'move'
+                  const rect = event.currentTarget.getBoundingClientRect()
+                  const edge = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after'
+                  if (dropMark?.id !== playlist.id || dropMark.edge !== edge) {
+                    setDropMark({ id: playlist.id, edge })
+                  }
+                }}
+                onDrop={(event) => {
+                  if (dragId === null) return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (dropMark !== null) commitReorder(dropMark.id, dropMark.edge)
+                  setDragId(null)
+                  setDropMark(null)
+                }}
+                onDragEnd={() => {
+                  setDragId(null)
+                  setDropMark(null)
+                }}
+              >
                 <div className="playlist-row">
                   <button
                     type="button"

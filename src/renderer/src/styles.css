@@ -182,6 +182,19 @@ input[type='range'] {
   overflow-y: auto;
 }
 
+/*
+ * The drop seam: a 2px accent line on whichever edge the drag would land on. An inset shadow
+ * rather than a border, because a border would take up space and shove the whole list down by two
+ * pixels every time the pointer crosses a row.
+ */
+.playlist-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.playlist-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
 .playlist-row {
   align-items: center;
   border-radius: var(--radius);

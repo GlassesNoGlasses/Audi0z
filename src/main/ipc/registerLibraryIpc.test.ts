@@ -727,11 +727,36 @@ describe('playlist channels', () => {
     expect(await harness.invoke<Playlist[]>(IPC.playlists.list)).toEqual([])
   })
 
+  /** The sidebar's order is this array's order, so rearranging it is a write like any other. */
+  it('reorders the playlists and hands back the stored order', async () => {
+    const harness = setup()
+    const first = await harness.invoke<Playlist>(IPC.playlists.create, 'First')
+    const second = await harness.invoke<Playlist>(IPC.playlists.create, 'Second')
+    const third = await harness.invoke<Playlist>(IPC.playlists.create, 'Third')
+
+    const reordered = await harness.invoke<Playlist[]>(IPC.playlists.reorder, [
+      third.id,
+      first.id,
+      second.id
+    ])
+
+    expect(reordered.map((playlist) => playlist.name)).toEqual(['Third', 'First', 'Second'])
+    expect((await harness.playlistStore.list()).map((playlist) => playlist.name)).toEqual([
+      'Third',
+      'First',
+      'Second'
+    ])
+  })
+
   it.each([
     [IPC.playlists.create, ['']],
     [IPC.playlists.create, [42]],
     [IPC.playlists.rename, ['id', '']],
     [IPC.playlists.remove, [undefined]],
+    [IPC.playlists.reorder, [undefined]],
+    [IPC.playlists.reorder, ['p1']],
+    [IPC.playlists.reorder, [[1]]],
+    [IPC.playlists.reorder, [['']]],
     [IPC.playlists.addSong, ['id', 42]],
     [IPC.playlists.addSong, ['', 'song']],
     [IPC.playlists.removeSong, ['id', '']],

@@ -330,6 +330,16 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         playlist.name = name
         return clonePlaylist(playlist)
       }),
+      // Same contract as the store: the whole order at once, refused outright if it does not name
+      // every playlist exactly once.
+      reorder: vi.fn(async (orderedIds) => {
+        const named = new Set(orderedIds)
+        if (named.size !== orderedIds.length || named.size !== state.playlists.length) {
+          throw new Error('Reorder must name every playlist exactly once.')
+        }
+        state.playlists = orderedIds.map(findPlaylist)
+        return state.playlists.map(clonePlaylist)
+      }),
       addSong: vi.fn(async (playlistId, songId) => {
         const playlist = findPlaylist(playlistId)
         findSong(songId)

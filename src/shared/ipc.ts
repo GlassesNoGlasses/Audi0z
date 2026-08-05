@@ -25,6 +25,7 @@ export const IPC = {
     create: 'playlists:create',
     remove: 'playlists:remove',
     rename: 'playlists:rename',
+    reorder: 'playlists:reorder',
     addSong: 'playlists:addSong',
     removeSong: 'playlists:removeSong',
     setPlaybackOptions: 'playlists:setPlaybackOptions'

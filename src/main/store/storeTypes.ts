@@ -53,6 +53,8 @@ export interface PlaylistStore {
   create(name: string): Promise<Playlist>
   rename(id: string, name: string): Promise<Playlist>
   remove(id: string): Promise<void>
+  /** Replaces the playlist order. `orderedIds` must name every playlist exactly once. */
+  reorder(orderedIds: string[]): Promise<Playlist[]>
   addSong(playlistId: string, songId: string): Promise<Playlist>
   removeSong(playlistId: string, songId: string): Promise<Playlist>
   setPlaybackOptions(id: string, opts: { shuffle?: boolean; repeat?: boolean }): Promise<Playlist>
