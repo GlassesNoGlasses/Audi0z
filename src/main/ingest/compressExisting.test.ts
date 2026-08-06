@@ -8,6 +8,7 @@ import { NotFoundError } from '../store/errors'
 import { createLibraryStore } from '../store/libraryStore'
 import type { LibraryStore } from '../store/storeTypes'
 import { compressExisting } from './compressExisting'
+import { importFile } from './importer'
 
 let lib: TmpLibrary
 let libraryStore: LibraryStore
@@ -204,6 +205,44 @@ describe('compressExisting', () => {
 
     await expect(libraryStore.getSong(song.id)).resolves.toEqual(song)
     expect(await readdir(lib.audio)).toEqual(['original.wav'])
+  })
+
+  /**
+   * The path the user's "file not found after compressing a download" report lives on, which
+   * nothing covered: a download imports, and the Settings dialog compresses the song it just
+   * created — one store, one audio directory, no restart in between. `compress: false` and
+   * `deleteSource: true` are the downloader's own arguments.
+   */
+  it('compresses a song straight after its import, against the same store', async () => {
+    const source = path.join(lib.root, 'download.m4a')
+    await writeFile(source, 'a downloaded file, rather longer than what the re-encode writes')
+    const transcode = fakeTranscode()
+
+    const added = await importFile(
+      {
+        sourcePath: source,
+        title: 'Fresh Download',
+        tags: [],
+        compress: false,
+        deleteSource: true
+      },
+      { audioDir: lib.audio, libraryStore, transcode }
+    )
+
+    const { song, shrank } = await compressExisting(added.id, {
+      audioDir: lib.audio,
+      libraryStore,
+      transcode
+    })
+
+    expect(shrank).toBe(true)
+    expect(song.fileName).toBe(`${added.id}.opus`)
+    expect(song.compressed).toBe(true)
+    await expect(libraryStore.getSong(added.id)).resolves.toEqual(song)
+    // The swap really happened: the opus is the only file left, and the download's temp copy went
+    // with the import.
+    expect(await readdir(lib.audio)).toEqual([`${added.id}.opus`])
+    expect(existsSync(source)).toBe(false)
   })
 
   it('still succeeds when the old file refuses to go', async () => {

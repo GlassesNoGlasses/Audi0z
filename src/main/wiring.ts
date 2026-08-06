@@ -113,7 +113,7 @@ export interface StartupShell {
 }
 
 /** Shown when the app cannot get far enough to have a window to complain in. */
-const STARTUP_FAILURE_TITLE = 'my-music-library could not start'
+const STARTUP_FAILURE_TITLE = 'Audi0z could not start'
 
 /**
  * Runs the startup sequence, and turns anything it throws into something the user can read.

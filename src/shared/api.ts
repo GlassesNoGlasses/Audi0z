@@ -54,6 +54,11 @@ export interface Api {
     create(name: string): Promise<Playlist>
     remove(id: string): Promise<void>
     rename(id: string, name: string): Promise<Playlist>
+    /**
+     * Rearranges the sidebar, which is the stored order. The whole order goes at once and
+     * `orderedIds` must name every playlist exactly once; the answer is the list as it now stands.
+     */
+    reorder(orderedIds: string[]): Promise<Playlist[]>
     addSong(playlistId: string, songId: string): Promise<Playlist>
     removeSong(playlistId: string, songId: string): Promise<Playlist>
     setPlaybackOptions(id: string, opts: { shuffle?: boolean; repeat?: boolean }): Promise<Playlist>

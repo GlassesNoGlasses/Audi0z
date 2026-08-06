@@ -14,6 +14,9 @@ const NO_SIZE = '—'
 /** Shown wherever a playing time is unknown, shaped like the `m:ss` it stands in for. */
 const NO_DURATION = '–:––'
 
+/** Shown wherever an added-date is unknown — shaped like the MM/DD/YYYY it stands in for. */
+const NO_DATE = '––/––/––––'
+
 /**
  * Compressing is quoted as this much when there is nothing to compute a real estimate from —
  * roughly what 96k Opus takes off the ~128k downloads that make up most of a library. Quoting the
@@ -48,6 +51,20 @@ export function formatDuration(seconds: number | undefined): string {
   const whole = Math.floor(seconds)
   const minutes = Math.floor(whole / 60)
   return `${minutes}:${String(whole % 60).padStart(2, '0')}`
+}
+
+/**
+ * The day the song was added, in the user's own clock: MM/DD/YYYY.
+ *
+ * The stamp is stored as UTC, so a song added late in the evening west of Greenwich belongs to the
+ * day the user remembers adding it, not the day it was in London — hence the local getters.
+ */
+export function formatDate(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return NO_DATE
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${month}/${day}/${date.getFullYear()}`
 }
 
 /**

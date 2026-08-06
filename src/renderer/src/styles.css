@@ -168,6 +168,16 @@ input[type='range'] {
   color: var(--accent);
 }
 
+/*
+ * The queue's home: browsed or not, this is where the sound is coming from. An inset shadow rather
+ * than a border, so lighting an entry up cannot shove the list sideways — and it composes with the
+ * rule above when the user happens to be browsing the playing list.
+ */
+.sidebar-entry.is-playing-source {
+  box-shadow: inset 2px 0 0 var(--accent);
+  color: var(--accent);
+}
+
 .playlist-list,
 .playlist-songs {
   list-style: none;
@@ -180,6 +190,19 @@ input[type='range'] {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+/*
+ * The drop seam: a 2px accent line on whichever edge the drag would land on. An inset shadow
+ * rather than a border, because a border would take up space and shove the whole list down by two
+ * pixels every time the pointer crosses a row.
+ */
+.playlist-item.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.playlist-item.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .playlist-row {
@@ -397,9 +420,10 @@ input[type='range'] {
   border-color: var(--accent);
 }
 
-/* Tabular and fixed-width so the two columns of figures line up down the whole list. */
+/* Tabular and fixed-width so the columns of figures line up down the whole list. */
 .song-duration,
-.song-size {
+.song-size,
+.song-added {
   color: var(--muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
@@ -411,6 +435,12 @@ input[type='range'] {
 
 .song-size {
   min-width: 62px;
+  text-align: right;
+}
+
+/* Wide enough for the widest MM/DD/YYYY, so the size beside it never shifts row to row. */
+.song-added {
+  min-width: 74px;
   text-align: right;
 }
 
@@ -442,7 +472,8 @@ input[type='range'] {
 }
 
 /* The registry's colour arrives inline; this is what a tag it has never heard of falls back to. */
-.song-tag {
+.song-tag,
+.menu-tag-chip {
   background: var(--panel-2);
   border-radius: 999px;
   color: var(--muted);
@@ -517,7 +548,15 @@ input[type='range'] {
 }
 
 .song-menu-popup button.menu-check-item {
+  align-items: center;
+  display: flex;
+  gap: 6px;
   padding-left: 6px;
+}
+
+/* A long tag name ellipsizes inside its pill rather than widening the whole popup. */
+.menu-tag-chip {
+  max-width: 160px;
 }
 
 .menu-note {
@@ -893,15 +932,8 @@ input[type='range'] {
   width: 28px;
 }
 
-.add-button:hover:not(:disabled) {
+.add-button:hover {
   color: var(--fg);
-}
-
-/* Already in the playlist: still legible, but plainly not a button any more. */
-.add-button.is-added {
-  border-color: var(--accent);
-  color: var(--accent);
-  opacity: 1;
 }
 
 .dialog-actions {

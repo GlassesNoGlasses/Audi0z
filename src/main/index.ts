@@ -98,7 +98,7 @@ function createWindow(): BrowserWindow {
  * than lost as an unhandled rejection.
  */
 function startup(): void {
-  electronApp.setAppUserModelId('com.duolume.mymusiclibrary')
+  electronApp.setAppUserModelId('com.duolume.audi0z')
 
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -167,6 +167,9 @@ function startup(): void {
     // The importer records the song itself, so the handler must not add it a second time.
     importSong,
     compressSong,
+    // Same tracker, same reason as the media protocol above: a dto measured mid-swap would report
+    // the song being compressed as a file gone missing.
+    awaitCompression: (id) => compressionJobs.waitFor(id),
     trashItem: withErrorReport('trash', reportError, (absPath: string) => shell.trashItem(absPath)),
     fileExists,
     fileSize,

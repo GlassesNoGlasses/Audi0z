@@ -1,5 +1,5 @@
-appId: com.duolume.mymusiclibrary
-productName: my-music-library
+appId: com.duolume.audi0z
+productName: Audi0z
 directories:
   buildResources: build
   output: dist

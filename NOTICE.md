@@ -1,6 +1,6 @@
 # Third-party notices
 
-`my-music-library` bundles and/or executes third-party software. This file records the
+`Audi0z` bundles and/or executes third-party software. This file records the
 licensing obligations that come with them.
 
 ## ffmpeg (via `ffmpeg-static`)

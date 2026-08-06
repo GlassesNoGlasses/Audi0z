@@ -17,7 +17,7 @@ import { createPlaylistStore } from '../store/playlistStore'
 import { createSettingsStore } from '../store/settingsStore'
 import { createTagStore } from '../store/tagStore'
 import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
-import { registerLibraryIpc } from './registerLibraryIpc'
+import { registerLibraryIpc, type LibraryIpcDeps } from './registerLibraryIpc'
 
 type Listener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
@@ -51,7 +51,12 @@ function draftSong(overrides: Partial<Song> = {}): Song {
 
 let lib: TmpLibrary
 
-function setup(): Harness {
+/**
+ * `overrides` replaces individual deps — the compression gate is the only one any test has needed,
+ * and every other fixture leaves it out on purpose: `awaitCompression` is optional, so its absence
+ * here is what proves the handlers still work in a process with nothing tracking swaps.
+ */
+function setup(overrides: Partial<LibraryIpcDeps> = {}): Harness {
   const handlers = new Map<string, Listener>()
   const ipc: Pick<IpcMain, 'handle'> = {
     handle(channel, listener) {
@@ -88,7 +93,8 @@ function setup(): Harness {
     fileExists,
     fileSize,
     compressSong,
-    revealInFolder
+    revealInFolder,
+    ...overrides
   })
 
   return {
@@ -230,6 +236,54 @@ describe(IPC.library.list, () => {
     expect(dto.exists).toBe(false)
     expect(dto.sizeBytes).toBeNull()
     expect(harness.fileSize).not.toHaveBeenCalled()
+  })
+
+  /**
+   * The same courtesy the media protocol pays. `compressExisting` renames the new file into place
+   * and only then removes the old one, so a listing that raced the swap would measure a path that
+   * is already gone and report a song that compressed perfectly as missing — a verdict the
+   * renderer keeps for the rest of the session, since nothing re-derives `exists` on its own.
+   */
+  it('waits out an in-flight compression before measuring a song', async () => {
+    let release!: () => void
+    let swapped = false
+    // The swap and the settle of the compression job are one moment: the rename lands, the record
+    // is updated, and only then is a waiter let through.
+    const gate = new Promise<void>((resolve) => {
+      release = () => {
+        swapped = true
+        resolve()
+      }
+    })
+    const harness = setup({ awaitCompression: (id) => (id === 'a' ? gate : undefined) })
+    const added = await harness.libraryStore.add(draftSong({ id: 'a', fileName: 'a.m4a' }))
+    const asRecorded = (): Song =>
+      swapped ? { ...added, fileName: 'a.opus', compressed: true } : added
+    vi.spyOn(harness.libraryStore, 'list').mockImplementation(async () => [asRecorded()])
+    vi.spyOn(harness.libraryStore, 'getSong').mockImplementation(async () => asRecorded())
+    // Only the post-swap file is on disk; the compressor removed the one the listing set out with.
+    harness.fileSize.mockImplementation(async (absPath: string) =>
+      absPath.endsWith('a.opus') ? 1234 : null
+    )
+
+    const pending = harness.invoke<SongDto[]>(IPC.library.list)
+    // Releasing straight away would pass whether or not the gate is awaited, since the swap would
+    // already have happened by the time the record is re-read. So prove the listener is *stuck*
+    // first: the gate is the only thing here that is not already resolved, and the sentinel is a
+    // macrotask, so a listing that had run to completion — its continuation being a microtask —
+    // would win this race.
+    const raced = Promise.race([
+      pending.then(() => 'settled'),
+      new Promise<string>((resolve) => setImmediate(() => resolve('waiting')))
+    ])
+    expect(await raced).toBe('waiting')
+
+    release()
+
+    const [dto] = await pending
+    expect(dto.fileName).toBe('a.opus')
+    expect(dto.exists).toBe(true)
+    expect(dto.sizeBytes).toBe(1234)
   })
 })
 
@@ -684,11 +738,36 @@ describe('playlist channels', () => {
     expect(await harness.invoke<Playlist[]>(IPC.playlists.list)).toEqual([])
   })
 
+  /** The sidebar's order is this array's order, so rearranging it is a write like any other. */
+  it('reorders the playlists and hands back the stored order', async () => {
+    const harness = setup()
+    const first = await harness.invoke<Playlist>(IPC.playlists.create, 'First')
+    const second = await harness.invoke<Playlist>(IPC.playlists.create, 'Second')
+    const third = await harness.invoke<Playlist>(IPC.playlists.create, 'Third')
+
+    const reordered = await harness.invoke<Playlist[]>(IPC.playlists.reorder, [
+      third.id,
+      first.id,
+      second.id
+    ])
+
+    expect(reordered.map((playlist) => playlist.name)).toEqual(['Third', 'First', 'Second'])
+    expect((await harness.playlistStore.list()).map((playlist) => playlist.name)).toEqual([
+      'Third',
+      'First',
+      'Second'
+    ])
+  })
+
   it.each([
     [IPC.playlists.create, ['']],
     [IPC.playlists.create, [42]],
     [IPC.playlists.rename, ['id', '']],
     [IPC.playlists.remove, [undefined]],
+    [IPC.playlists.reorder, [undefined]],
+    [IPC.playlists.reorder, ['p1']],
+    [IPC.playlists.reorder, [[1]]],
+    [IPC.playlists.reorder, [['']]],
     [IPC.playlists.addSong, ['id', 42]],
     [IPC.playlists.addSong, ['', 'song']],
     [IPC.playlists.removeSong, ['id', '']],
