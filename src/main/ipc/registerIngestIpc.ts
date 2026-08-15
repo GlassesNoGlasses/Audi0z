@@ -5,8 +5,7 @@ import type { Downloader } from '../ingest/downloader'
 import { resolveAudioPath } from '../media/mediaProtocol'
 
 /**
- * The ingest half of the main-process IPC surface: downloads, the file picker and the yt-dlp
- * self-update.
+ * The ingest half of the main-process IPC surface: downloads and the file picker.
  *
  * `electron` is only imported as a *type* — the picker and the renderer send are injected, so this
  * module runs in a plain node test with a fake `ipc`.
@@ -14,7 +13,6 @@ import { resolveAudioPath } from '../media/mediaProtocol'
 
 export interface IngestIpcDeps {
   downloader: Downloader
-  updateYtDlp(): Promise<{ version: string }>
   /** Shows the OS file dialog; returns the chosen absolute paths (empty when cancelled). */
   pickAudioFiles(): Promise<string[]>
   /**
@@ -112,8 +110,6 @@ export function registerIngestIpc(ipc: Pick<IpcMain, 'handle'>, deps: IngestIpcD
   })
 
   ipc.handle(IPC.files.pickAudioFiles, async () => deps.pickAudioFiles())
-
-  ipc.handle(IPC.ytdlp.update, async () => deps.updateYtDlp())
 
   return unsubscribe
 }

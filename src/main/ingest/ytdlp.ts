@@ -1,11 +1,13 @@
-import { access, chmod, copyFile, mkdir } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import type { DownloadProgress, ProbeResult } from '../../shared/types'
 import type { RunLines } from './spawnLines'
 
 /**
- * Everything that talks to the bundled standalone `yt-dlp` binary: locating it, probing a URL,
- * downloading, and the in-place self-update. No `electron` import — directories are injected.
+ * Everything that talks to the bundled standalone `yt-dlp` binary: locating it, probing a URL, and
+ * downloading. No `electron` import — directories are injected. There is no self-update: the pinned
+ * bundled binary is the only one ever run (v3.2), and `removeSelfUpdatedYtDlp` clears the copy older
+ * builds may have left in userData.
  */
 
 /** Release asset names, kept verbatim so `scripts/fetch-ytdlp.mjs` and this module agree. */
@@ -29,24 +31,14 @@ function ytDlpError(message: string, stderrTail: string[]): Error {
 }
 
 export interface ResolveYtDlpPathOptions {
-  /** `<userData>/bin` — where a self-updated copy lands. */
-  userDataBinDir: string
   /** Dev: `<repo>/resources/bin/<platform>`. Packaged: `<process.resourcesPath>/bin`. */
   resourcesBinDir: string
   platform: NodeJS.Platform
-  exists(p: string): boolean
 }
 
-/** The self-updated copy wins; the shipped one is the fallback. */
-export function resolveYtDlpPath({
-  userDataBinDir,
-  resourcesBinDir,
-  platform,
-  exists
-}: ResolveYtDlpPathOptions): string {
-  const asset = assetName(platform)
-  const updated = path.join(userDataBinDir, asset)
-  return exists(updated) ? updated : path.join(resourcesBinDir, asset)
+/** Always the shipped, pinned copy — the in-app self-update was removed in v3.2. */
+export function resolveYtDlpPath({ resourcesBinDir, platform }: ResolveYtDlpPathOptions): string {
+  return path.join(resourcesBinDir, assetName(platform))
 }
 
 export function buildProbeArgs(url: string): string[] {
@@ -244,69 +236,31 @@ export async function download({
   return filePath
 }
 
-/** The slice of `node:fs/promises` the self-update needs, so tests can hand it a fake. */
-export interface YtDlpFs {
-  mkdir(dir: string, opts: { recursive: boolean }): Promise<unknown>
-  access(p: string): Promise<void>
-  copyFile(src: string, dst: string): Promise<void>
-  chmod(p: string, mode: number): Promise<void>
+/** The one fs call the startup cleanup needs, injectable for tests. */
+export interface CleanupFs {
+  rm(p: string, opts: { force: boolean }): Promise<void>
 }
 
-const nodeFs: YtDlpFs = { mkdir, access, copyFile, chmod }
-
-async function pathExists(fs: YtDlpFs, p: string): Promise<boolean> {
-  try {
-    await fs.access(p)
-    return true
-  } catch {
-    return false
-  }
-}
-
-export interface UpdateYtDlpOptions {
-  /** `<userData>/bin` — writable, unlike the app bundle. */
+export interface RemoveSelfUpdatedYtDlpOptions {
+  /** `<userData>/bin` — where the removed self-update feature used to land its copy. */
   userDataBinDir: string
-  /** The shipped binary, copied in on first update. */
-  bundledPath: string
-  run: RunLines
-  fs?: YtDlpFs
+  platform: NodeJS.Platform
+  fs?: CleanupFs
 }
 
 /**
- * yt-dlp updates itself in place, so the update always runs against a writable copy in userData —
- * never against the read-only one inside the app bundle.
+ * Deletes the self-updated copy an older build may have left behind, so the pinned bundled binary
+ * is the one that actually runs. Best-effort by design: a failure here must never break startup,
+ * and `force: true` already makes a missing file a non-event.
  */
-export async function updateYtDlp({
+export async function removeSelfUpdatedYtDlp({
   userDataBinDir,
-  bundledPath,
-  run,
-  fs = nodeFs
-}: UpdateYtDlpOptions): Promise<{ version: string }> {
-  // Same basename as the bundled asset, so `resolveYtDlpPath` finds this copy afterwards.
-  const target = path.join(userDataBinDir, path.basename(bundledPath))
-
-  await fs.mkdir(userDataBinDir, { recursive: true })
-  if (!(await pathExists(fs, target))) {
-    await fs.copyFile(bundledPath, target)
-    await fs.chmod(target, 0o755)
+  platform,
+  fs = { rm }
+}: RemoveSelfUpdatedYtDlpOptions): Promise<void> {
+  try {
+    await fs.rm(path.join(userDataBinDir, assetName(platform)), { force: true })
+  } catch {
+    // Unsupported platform or an unwritable directory — either way, nothing to clean up.
   }
-
-  const updated = await run({ bin: target, args: ['--update-to', 'stable'] })
-  if (updated.code !== 0) {
-    throw ytDlpError(`yt-dlp update failed (exit ${updated.code})`, updated.stderrTail)
-  }
-
-  const versionLines: string[] = []
-  const version = await run({
-    bin: target,
-    args: ['--version'],
-    onStdout: (line) => versionLines.push(line)
-  })
-  if (version.code !== 0) {
-    throw ytDlpError(`yt-dlp --version failed (exit ${version.code})`, version.stderrTail)
-  }
-
-  const reported = versionLines.at(-1)?.trim() ?? ''
-  if (reported === '') throw new Error('yt-dlp did not report a version')
-  return { version: reported }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
+import { useSmartPrev } from '../hooks/useSmartPrev'
 import { errorMessage } from '../lib/errors'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
@@ -28,6 +29,7 @@ function formatTime(seconds: number): string {
 export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): ReactElement {
   const { songs, playback, settings } = useAppState()
   const dispatch = useAppDispatch()
+  const prev = useSmartPrev(audioRef)
   const [position, setPosition] = useState(0)
   const [duration, setDuration] = useState(0)
   const volumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -119,7 +121,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
           type="button"
           aria-label="Previous"
           disabled={playback.currentId === null}
-          onClick={() => dispatch({ type: 'transport/prev' })}
+          onClick={prev}
         >
           ⏮
         </button>

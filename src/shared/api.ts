@@ -78,9 +78,6 @@ export interface Api {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
   }
-  ytdlp: {
-    update(): Promise<{ version: string }>
-  }
   events: {
     onLibraryChanged(cb: () => void): () => void
     onError(cb: (e: AppError) => void): () => void

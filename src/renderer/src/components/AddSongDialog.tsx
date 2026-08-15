@@ -230,8 +230,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
               </button>
               <p className="dialog-hint">
                 Downloads use yt-dlp: YouTube, SoundCloud, Bandcamp and most audio and video sites
-                work. Audio arrives as M4A or WebM. A playlist link fetches only the linked item —
-                and &quot;Update yt-dlp&quot; in Settings refreshes which sites are supported.
+                work. Audio arrives as M4A or WebM. A playlist link fetches only the linked item.
               </p>
               {/*
                 The bundled yt-dlp is self-extracting: its first run after launch spends half a

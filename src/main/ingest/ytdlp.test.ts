@@ -9,8 +9,8 @@ import {
   parseProgressLine,
   probe,
   PROBE_TIMEOUT_MS,
-  resolveYtDlpPath,
-  updateYtDlp
+  removeSelfUpdatedYtDlp,
+  resolveYtDlpPath
 } from './ytdlp'
 
 /** A `runLines` stand-in that replays canned output and exits with `code`. */
@@ -23,7 +23,6 @@ function fakeRun(stdout: string[], code = 0, stderrTail: string[] = []): RunLine
 }
 
 describe('resolveYtDlpPath', () => {
-  const userDataBinDir = path.join('/userData', 'bin')
   const resourcesBinDir = path.join('/resources', 'bin', 'darwin')
 
   it.each([
@@ -31,30 +30,38 @@ describe('resolveYtDlpPath', () => {
     ['win32' as const, 'yt-dlp.exe'],
     ['linux' as const, 'yt-dlp_linux']
   ])('uses the %s release asset name', (platform, asset) => {
-    expect(
-      resolveYtDlpPath({ userDataBinDir, resourcesBinDir, platform, exists: () => false })
-    ).toBe(path.join(resourcesBinDir, asset))
-  })
-
-  it('prefers the self-updated userData copy when it exists', () => {
-    const preferred = path.join(userDataBinDir, 'yt-dlp_macos')
-    const exists = vi.fn((p: string) => p === preferred)
-
-    expect(resolveYtDlpPath({ userDataBinDir, resourcesBinDir, platform: 'darwin', exists })).toBe(
-      preferred
-    )
-    expect(exists).toHaveBeenCalledWith(preferred)
+    expect(resolveYtDlpPath({ resourcesBinDir, platform })).toBe(path.join(resourcesBinDir, asset))
   })
 
   it('throws on a platform with no bundled binary', () => {
-    expect(() =>
-      resolveYtDlpPath({
-        userDataBinDir,
-        resourcesBinDir,
-        platform: 'freebsd',
-        exists: () => false
-      })
-    ).toThrow(/freebsd/)
+    expect(() => resolveYtDlpPath({ resourcesBinDir, platform: 'freebsd' })).toThrow(/freebsd/)
+  })
+})
+
+describe('removeSelfUpdatedYtDlp', () => {
+  const userDataBinDir = path.join('/userData', 'bin')
+
+  it('force-removes the platform asset from userData', async () => {
+    const rm = vi.fn(async () => undefined)
+    await removeSelfUpdatedYtDlp({ userDataBinDir, platform: 'darwin', fs: { rm } })
+    expect(rm).toHaveBeenCalledWith(path.join(userDataBinDir, 'yt-dlp_macos'), { force: true })
+  })
+
+  it('swallows a failing rm — cleanup must never break startup', async () => {
+    const rm = vi.fn(async () => {
+      throw new Error('EPERM')
+    })
+    await expect(
+      removeSelfUpdatedYtDlp({ userDataBinDir, platform: 'darwin', fs: { rm } })
+    ).resolves.toBeUndefined()
+  })
+
+  it('swallows an unsupported platform the same way', async () => {
+    const rm = vi.fn(async () => undefined)
+    await expect(
+      removeSelfUpdatedYtDlp({ userDataBinDir, platform: 'freebsd', fs: { rm } })
+    ).resolves.toBeUndefined()
+    expect(rm).not.toHaveBeenCalled()
   })
 })
 
@@ -258,62 +265,5 @@ describe('download', () => {
     await download({ ...base, run, signal: controller.signal })
 
     expect(vi.mocked(run).mock.calls[0][0].signal).toBe(controller.signal)
-  })
-})
-
-describe('updateYtDlp', () => {
-  const userDataBinDir = path.join('/userData', 'bin')
-  const bundledPath = path.join('/resources', 'bin', 'darwin', 'yt-dlp_macos')
-  const copyPath = path.join(userDataBinDir, 'yt-dlp_macos')
-
-  function fakeFs(copyExists: boolean) {
-    return {
-      mkdir: vi.fn(async () => undefined),
-      access: vi.fn(async () => {
-        if (!copyExists) throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
-      }),
-      copyFile: vi.fn(async () => {}),
-      chmod: vi.fn(async () => {})
-    }
-  }
-
-  /** `--update-to` prints nothing useful; `--version` prints the version. */
-  const versionRun: RunLines = vi.fn(async ({ args, onStdout }) => {
-    if (args[0] === '--version') onStdout?.('2026.07.04')
-    return { code: 0, stderrTail: [] }
-  })
-
-  it('copies the bundled binary in when the userData copy is absent, then updates', async () => {
-    const fs = fakeFs(false)
-    const run = vi.fn(versionRun)
-
-    await expect(updateYtDlp({ userDataBinDir, bundledPath, run, fs })).resolves.toEqual({
-      version: '2026.07.04'
-    })
-
-    expect(fs.mkdir).toHaveBeenCalledWith(userDataBinDir, { recursive: true })
-    expect(fs.copyFile).toHaveBeenCalledWith(bundledPath, copyPath)
-    expect(fs.chmod).toHaveBeenCalledWith(copyPath, 0o755)
-    expect(run.mock.calls.map((c) => c[0].args)).toEqual([['--update-to', 'stable'], ['--version']])
-    expect(run.mock.calls.every((c) => c[0].bin === copyPath)).toBe(true)
-  })
-
-  it('does not re-copy when the userData copy already exists', async () => {
-    const fs = fakeFs(true)
-
-    await updateYtDlp({ userDataBinDir, bundledPath, run: vi.fn(versionRun), fs })
-
-    expect(fs.copyFile).not.toHaveBeenCalled()
-  })
-
-  it('rejects with the stderr tail when the update fails', async () => {
-    const run: RunLines = vi.fn(async () => ({
-      code: 1,
-      stderrTail: ['ERROR: unable to fetch release info']
-    }))
-
-    await expect(
-      updateYtDlp({ userDataBinDir, bundledPath, run, fs: fakeFs(true) })
-    ).rejects.toThrow(/unable to fetch release info/)
   })
 })

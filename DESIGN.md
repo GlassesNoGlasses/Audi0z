@@ -56,12 +56,19 @@ Played flags are per-queue and live **in memory only** — they are never persis
   _excluding the song that just finished_ (so it cannot immediately repeat).
 - **Repeat**: replay the current song without touching played flags.
 - **Manual click**: play the clicked song and reset every _other_ song's played flag.
-- **Previous**: pop from a capped history stack.
+- **Previous**: more than 5s into the song, rewind it to 0 — an element-only write, like a seek; the
+  engine never hears it (v3.2). Otherwise pop from a capped history stack.
+- **Remote commands** (v3.2): a `useMediaSession` hook mirrors the cued title and play state into
+  the Media Session API and answers play/pause/nexttrack/previoustrack — that is AirPods taps, the
+  keyboard media keys, and the macOS Now Playing widget. previoustrack goes through the same
+  5-second gate as the on-screen button. No song cued → no handlers registered.
 - **Invariant**: if `currentId` is set, that song is marked played.
 
 ## Key decisions
 
-- **No Python.** `yt-dlp` is shipped as a pinned standalone binary per platform.
+- **No Python.** `yt-dlp` is shipped as a pinned standalone binary per platform — and that pinned
+  copy is the only one ever run: the in-app self-update was removed in v3.2, and startup clears any
+  copy it once left in userData.
 - Songs store a **`fileName`, not a path** — the library directory can move.
 - **The view and the queue are separate things.** Choosing Library or a playlist in the sidebar
   changes only what is listed — playback carries on untouched. The queue follows when the user

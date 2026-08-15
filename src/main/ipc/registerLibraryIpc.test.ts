@@ -142,11 +142,7 @@ describe('channel registration', () => {
   it('leaves the ingest channels to their own module', () => {
     const { channels } = setup()
 
-    for (const channel of [
-      ...Object.values(IPC.files),
-      ...Object.values(IPC.download),
-      ...Object.values(IPC.ytdlp)
-    ]) {
+    for (const channel of [...Object.values(IPC.files), ...Object.values(IPC.download)]) {
       expect(channels).not.toContain(channel)
     }
   })

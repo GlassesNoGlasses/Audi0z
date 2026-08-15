@@ -24,7 +24,6 @@ function bySizeDescending(songs: SongDto[]): SongDto[] {
 export function SettingsDialog(): ReactElement {
   const { settings, songs, playback } = useAppState()
   const dispatch = useAppDispatch()
-  const [updating, setUpdating] = useState(false)
   const [filesOpen, setFilesOpen] = useState(false)
   /** Ids whose compression is in flight — the button they came from stays disabled meanwhile. */
   const [compressing, setCompressing] = useState<ReadonlySet<string>>(new Set())
@@ -44,17 +43,6 @@ export function SettingsDialog(): ReactElement {
       .set({ compressByDefault })
       .then((updated) => dispatch({ type: 'settings/updated', settings: updated }))
       .catch(fail)
-  }
-
-  function updateYtDlp(): void {
-    setUpdating(true)
-    void window.api.ytdlp
-      .update()
-      .then(({ version }) =>
-        dispatch({ type: 'toast/pushed', message: `yt-dlp updated to ${version}` })
-      )
-      .catch(fail)
-      .finally(() => setUpdating(false))
   }
 
   function markCompressing(songId: string, busy: boolean): void {
@@ -238,17 +226,6 @@ export function SettingsDialog(): ReactElement {
           Compression re-encodes to Opus 96k on the way in. It saves space and loses a little
           quality.
         </p>
-        {/*
-          Updating yt-dlp is a thing this dialog does, not a way out of it: every preference here
-          persists the moment it is used, so the footer has nothing to submit and nothing to take
-          back — only Ok.
-        */}
-        <div className="settings-update">
-          <button type="button" disabled={updating} onClick={updateYtDlp}>
-            Update yt-dlp
-          </button>
-          <span className="compress-note">Refreshes which sites downloads support.</span>
-        </div>
         <div className="dialog-actions">
           <button type="button" onClick={close}>
             Ok
