@@ -15,6 +15,8 @@ import { useAudioElement } from './hooks/useAudioElement'
 import { useClickFocusReset } from './hooks/useClickFocusReset'
 import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useMediaSession } from './hooks/useMediaSession'
+import { useSmartPrev } from './hooks/useSmartPrev'
 import { errorMessage, trashFailureMessage } from './lib/errors'
 import { songsInView, sortSongs } from './lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from './playback/types'
@@ -143,6 +145,21 @@ function AppShell(): ReactElement {
     volume: settings.volume,
     onEnded: handleEnded,
     onError: handleError
+  })
+
+  const smartPrev = useSmartPrev(audioRef)
+  const mediaPlay = useCallback(() => dispatch({ type: 'transport/play' }), [dispatch])
+  const mediaPause = useCallback(() => dispatch({ type: 'transport/pause' }), [dispatch])
+  const mediaNext = useCallback(() => dispatch({ type: 'transport/next' }), [dispatch])
+
+  // AirPods taps, keyboard media keys, the macOS Now Playing widget — same four commands.
+  useMediaSession({
+    title: current?.title ?? null,
+    isPlaying: playback.isPlaying,
+    onPlay: mediaPlay,
+    onPause: mediaPause,
+    onNext: mediaNext,
+    onPrev: smartPrev
   })
 
   /** What to come back to when unmuting — muting must not lose where the slider was. */

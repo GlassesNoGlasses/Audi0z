@@ -68,9 +68,6 @@ export const api: Api = {
     get: () => ipcRenderer.invoke(IPC.settings.get),
     set: (patch) => ipcRenderer.invoke(IPC.settings.set, patch)
   },
-  ytdlp: {
-    update: () => ipcRenderer.invoke(IPC.ytdlp.update)
-  },
   events: {
     onLibraryChanged: (cb) => subscribe<[]>(IPC_EVENTS.libraryChanged, cb),
     onError: (cb) => subscribe<[AppError]>(IPC_EVENTS.error, cb)

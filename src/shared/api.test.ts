@@ -51,8 +51,7 @@ describe('Api contract', () => {
       'library',
       'playlists',
       'settings',
-      'tags',
-      'ytdlp'
+      'tags'
     ])
     for (const [namespace, members] of Object.entries(shape)) {
       expect(members.length, `${namespace} has no members`).toBeGreaterThan(0)

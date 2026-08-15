@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell } from 'electron'
-import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { IPC_EVENTS, MEDIA_SCHEME } from '../shared/ipc'
@@ -10,7 +9,7 @@ import { createDownloader } from './ingest/downloader'
 import { resolveFfmpegPath, transcode } from './ingest/ffmpeg'
 import { importFile, type ImportDeps, type ImportRequest } from './ingest/importer'
 import { runLines } from './ingest/spawnLines'
-import { download, probe, resolveYtDlpPath, updateYtDlp } from './ingest/ytdlp'
+import { download, probe, removeSelfUpdatedYtDlp, resolveYtDlpPath } from './ingest/ytdlp'
 import { registerIngestIpc } from './ipc/registerIngestIpc'
 import { registerLibraryIpc } from './ipc/registerLibraryIpc'
 import { createMediaHandler } from './media/mediaProtocol'
@@ -183,22 +182,14 @@ function startup(): void {
     mainDir: __dirname,
     platform: process.platform
   })
-  // Resolved per call: a self-update lands a newer copy in userData that must win from then on.
-  const ytDlpPath = (): string =>
-    resolveYtDlpPath({
-      userDataBinDir,
-      resourcesBinDir,
-      platform: process.platform,
-      exists: existsSync
-    })
-  /** The shipped copy, whatever the platform names it — never the self-updated one. */
-  const bundledYtDlpPath = (): string =>
-    resolveYtDlpPath({
-      userDataBinDir,
-      resourcesBinDir,
-      platform: process.platform,
-      exists: () => false
-    })
+  // One resolution for the process lifetime: with the self-update gone, the answer never changes.
+  const ytDlpPath = resolveYtDlpPath({
+    resourcesBinDir,
+    platform: process.platform
+  })
+  // Older builds could self-update yt-dlp into userData, and that copy used to shadow the bundled
+  // one — delete it so the pinned binary is what actually runs. Fire-and-forget by design.
+  void removeSelfUpdatedYtDlp({ userDataBinDir, platform: process.platform })
 
   const downloader = createDownloader({
     tempDir: app.getPath('temp'),
@@ -209,11 +200,11 @@ function startup(): void {
         outTemplate: job.outTemplate,
         ffmpegDir: path.dirname(ffmpegPath),
         run: runLines,
-        binPath: ytDlpPath(),
+        binPath: ytDlpPath,
         ...(job.onProgress ? { onProgress: job.onProgress } : {}),
         signal: job.signal
       }),
-    probe: (url) => probe({ url, run: runLines, binPath: ytDlpPath() })
+    probe: (url) => probe({ url, run: runLines, binPath: ytDlpPath })
   })
 
   // The returned unsubscribe is dropped on purpose: the progress subscription lives as long as
@@ -225,8 +216,6 @@ function startup(): void {
       ...downloader,
       start: withErrorReport('ytdlp', reportError, (request) => downloader.start(request))
     },
-    updateYtDlp: () =>
-      updateYtDlp({ userDataBinDir, bundledPath: bundledYtDlpPath(), run: runLines }),
     pickAudioFiles: async () => {
       const result = await dialog.showOpenDialog({
         title: 'Add songs',
