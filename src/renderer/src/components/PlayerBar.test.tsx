@@ -5,6 +5,7 @@ import {
   audioElement,
   nowPlaying,
   playlist,
+  playSpy,
   renderApp,
   seedApi,
   sidebar,
@@ -44,6 +45,61 @@ describe('PlayerBar transport', () => {
     expect(nowPlaying()).toBe('Bravo Beat')
 
     await user.click(screen.getByRole('button', { name: 'Previous' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  /**
+   * Past five seconds Previous is a rewind, not a step back — and the rewind is element-only, so
+   * the song playing never changes hands. `nowPlaying` is the half that catches a regression here:
+   * a stray `transport/prev` would land on the history entry behind Bravo and zero the element on
+   * its way, which looks the same from `currentTime` alone.
+   */
+  it('rewinds the song rather than stepping back once it is past five seconds', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    const audio = audioElement()
+    audio.currentTime = 6
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }))
+
+    expect(audio.currentTime).toBe(0)
+    expect(nowPlaying()).toBe('Bravo Beat')
+  })
+
+  it('steps back through the history when barely into the song', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    audioElement().currentTime = 3
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }))
+
+    expect(nowPlaying()).toBe('Alpha Mix')
+  })
+
+  /** Under the threshold the engine decides — with nothing behind it, that is a restart. */
+  it('restarts through the engine when there is nothing behind the current song', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    const audio = audioElement()
+    audio.currentTime = 3
+    const plays = playSpy().mock.calls.length
+
+    await user.click(screen.getByRole('button', { name: 'Previous' }))
+
+    // The play-token bump the engine answers with is audible; a rewind swallowed here would not be.
+    expect(playSpy().mock.calls.length).toBe(plays + 1)
+    expect(audio.currentTime).toBe(0)
     expect(nowPlaying()).toBe('Alpha Mix')
   })
 

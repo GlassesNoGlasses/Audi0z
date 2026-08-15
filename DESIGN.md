@@ -56,7 +56,8 @@ Played flags are per-queue and live **in memory only** — they are never persis
   _excluding the song that just finished_ (so it cannot immediately repeat).
 - **Repeat**: replay the current song without touching played flags.
 - **Manual click**: play the clicked song and reset every _other_ song's played flag.
-- **Previous**: pop from a capped history stack.
+- **Previous**: more than 5s into the song, rewind it to 0 — an element-only write, like a seek; the
+  engine never hears it (v3.2). Otherwise pop from a capped history stack.
 - **Invariant**: if `currentId` is set, that song is marked played.
 
 ## Key decisions
