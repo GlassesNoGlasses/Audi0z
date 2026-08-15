@@ -386,9 +386,6 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         return { ...state.settings }
       })
     },
-    ytdlp: {
-      update: vi.fn(async () => ({ version: '0.0.0-mock' }))
-    },
     events: {
       onLibraryChanged: vi.fn((cb) => libraryChanged.subscribe(cb)),
       onError: vi.fn((cb) => errors.subscribe(cb))

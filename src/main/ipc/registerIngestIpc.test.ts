@@ -48,7 +48,6 @@ function setup() {
   }
   const deps = {
     downloader,
-    updateYtDlp: vi.fn(async () => ({ version: '2026.07.04' })),
     pickAudioFiles: vi.fn(async () => ['/music/a.mp3']),
     sendProgress: vi.fn(),
     audioDir: AUDIO_DIR,
@@ -71,21 +70,15 @@ function setup() {
 }
 
 describe('registerIngestIpc', () => {
-  it('wires exactly the five ingest channels', () => {
+  it('wires exactly the four ingest channels', () => {
     const { handlers } = setup()
 
     expect([...handlers.keys()].sort()).toEqual(
-      [
-        IPC.download.probe,
-        IPC.download.start,
-        IPC.download.cancel,
-        IPC.files.pickAudioFiles,
-        IPC.ytdlp.update
-      ].sort()
+      [IPC.download.probe, IPC.download.start, IPC.download.cancel, IPC.files.pickAudioFiles].sort()
     )
   })
 
-  it('delegates probe, start, cancel, file picking and the yt-dlp update', async () => {
+  it('delegates probe, start, cancel and file picking', async () => {
     const { deps, downloader, invoke } = setup()
 
     await expect(invoke(IPC.download.probe, 'https://example.test/v/1')).resolves.toEqual({
@@ -106,9 +99,6 @@ describe('registerIngestIpc', () => {
 
     await expect(invoke(IPC.files.pickAudioFiles)).resolves.toEqual(['/music/a.mp3'])
     expect(deps.pickAudioFiles).toHaveBeenCalledTimes(1)
-
-    await expect(invoke(IPC.ytdlp.update)).resolves.toEqual({ version: '2026.07.04' })
-    expect(deps.updateYtDlp).toHaveBeenCalledTimes(1)
   })
 
   it('forwards downloader progress on the download progress channel', () => {

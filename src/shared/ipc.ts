@@ -41,9 +41,6 @@ export const IPC = {
   settings: {
     get: 'settings:get',
     set: 'settings:set'
-  },
-  ytdlp: {
-    update: 'ytdlp:update'
   }
 } as const
 

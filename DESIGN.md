@@ -61,7 +61,9 @@ Played flags are per-queue and live **in memory only** — they are never persis
 
 ## Key decisions
 
-- **No Python.** `yt-dlp` is shipped as a pinned standalone binary per platform.
+- **No Python.** `yt-dlp` is shipped as a pinned standalone binary per platform — and that pinned
+  copy is the only one ever run: the in-app self-update was removed in v3.2, and startup clears any
+  copy it once left in userData.
 - Songs store a **`fileName`, not a path** — the library directory can move.
 - **The view and the queue are separate things.** Choosing Library or a playlist in the sidebar
   changes only what is listed — playback carries on untouched. The queue follows when the user
