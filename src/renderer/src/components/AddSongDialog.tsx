@@ -204,18 +204,14 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
           {mode === 'files' ? (
             <div className="field">
               <button type="button" onClick={chooseFiles} disabled={busy}>
-                Choose files…
+                Add Files Here…
               </button>
               <p className="dialog-hint">
                 {paths.length === 0
-                  ? 'No file chosen yet — or drop one onto the window.'
+                  ? 'Choose audio file(s) to add!'
                   : `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
               <p className="dialog-hint">
-                {/* The playable subset of the picker filter in main/index.ts — change them
-                    together. The filter is a net and stays wider on purpose; this is a claim, and
-                    the two types it drops (AIFF, WMA) have no entry in the media protocol's
-                    mimeTypes because Chromium cannot decode them. */}
                 Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus.
               </p>
             </div>
@@ -223,15 +219,18 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
             <div className="field">
               <label className="field">
                 URL
-                <input value={url} onChange={(event) => setUrl(event.target.value)} />
+                <input
+                type='text'
+                placeholder='www.youtube.com/watch?v=...'
+                value={url}
+                onChange={(event) => setUrl(event.target.value)} />
               </label>
               <button type="button" onClick={fetchDetails} disabled={busy || url.trim() === ''}>
-                Fetch details
+                Fetch Title
               </button>
               <p className="dialog-hint">
-                Downloads use yt-dlp: YouTube, SoundCloud, Bandcamp and most audio and video sites
-                work. Audio arrives as M4A or WebM. A playlist link fetches only the linked item —
-                and &quot;Update yt-dlp&quot; in Settings refreshes which sites are supported.
+                Downloads via yt-dlp: YouTube, SoundCloud, Bandcamp and most audio and video sites
+                work.
               </p>
               {/*
                 The bundled yt-dlp is self-extracting: its first run after launch spends half a
@@ -249,7 +248,11 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
 
           <label className="field">
             Title
-            <input value={title} onChange={(event) => setTitle(event.target.value)} />
+            <input
+            type='text'
+            placeholder='Brainrot.exe'
+            value={title}
+            onChange={(event) => setTitle(event.target.value)} />
           </label>
 
           <div className="field">
@@ -283,12 +286,11 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                 checked={compress}
                 onChange={(event) => setCompress(event.target.checked)}
               />
-              Compress to Opus
+              Compress to Opus format
             </label>
             <span className="compress-note">
               —{' '}
               <strong className="compress-estimate">
-                {/* A URL has no size before it is downloaded, so the quote is always the generic one. */}
                 {formatCompressionSaving(null, undefined)}
               </strong>
             </span>

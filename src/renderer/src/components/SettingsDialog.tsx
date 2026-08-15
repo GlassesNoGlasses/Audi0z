@@ -14,7 +14,7 @@ import { useAppDispatch, useAppState } from '../state/AppContext'
  * fail, and the app reads that failure as a file gone missing: the user would be told compression
  * lost the song. Not offering it is the cheap, deterministic way out.
  */
-const HELD_BY_PLAYER = 'Loaded in the player — compressing would replace the file it is streaming'
+const HELD_BY_PLAYER = 'Cannot compress file currently playing.'
 
 /** Heaviest first; a file whose size could not be read has nothing to sort by, so it sinks. */
 function bySizeDescending(songs: SongDto[]): SongDto[] {
@@ -225,7 +225,7 @@ export function SettingsDialog(): ReactElement {
               checked={settings.compressByDefault}
               onChange={(event) => toggleCompress(event.target.checked)}
             />
-            Compress new songs by default
+            Compress new audios option by default
           </label>
           <span className="compress-note">
             —{' '}
@@ -235,8 +235,7 @@ export function SettingsDialog(): ReactElement {
           </span>
         </div>
         <p className="dialog-hint">
-          Compression re-encodes to Opus 96k on the way in. It saves space and loses a little
-          quality.
+          Re-encodes to Opus 96k, saving space with minimal quality loss.
         </p>
         {/*
           Updating yt-dlp is a thing this dialog does, not a way out of it: every preference here

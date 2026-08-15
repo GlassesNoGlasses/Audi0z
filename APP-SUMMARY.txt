@@ -1,0 +1,1058 @@
+================================================================================
+AUDI0Z (formerly MY-MUSIC-LIBRARY) — COMPLETE ARCHITECTURE SUMMARY
+================================================================================
+Generated 2026-08-02 against main @ 13002c4; revised 2026-08-04 against main @
+fabe952 (v0.1.0 + the UI/UX v2 batch: tags, storage manager, TopNav rework,
+shortcuts, view/queue split — PR #9); revised again 2026-08-04 against main @
+bbec27c (the v2.1 polish batch: app icon, batched duration backfill,
+queue-clearing playlist delete, compress-vs-play fix, menu accessibility —
+PR #10); revised again 2026-08-05 against main @ 6fc4fa3 (the v3 batch:
+Opus 96k with a keep-original size guard, start-latency fix, play/pause
+toggle, space-pauses-only, arrow-key seek with silent scrubbing, view
+sorting, sidebar playlist search, dialog/overflow hardening, bordered row
+surfaces, Desktop installer delivery — PR #11); revised again 2026-08-05
+against main @ eb55132 (the v3.1 batch: the rename to Audi0z, the
+compress-observation fix — DTO building waits out in-flight compressions
+and Settings re-reads the library on settle — the click-focus reset that
+keeps the keyboard shortcuts alive after any mouse click, the date-added
+row column, real tag chips in the row menu via a shared TagChip,
+drag-and-drop playlist reordering over a new playlists:reorder channel,
+the playing-source sidebar marker, and an add-to-playlist dialog that
+offers only unadded songs — PR #12).
+
+--------------------------------------------------------------------------------
+1. WHAT THE APP IS
+--------------------------------------------------------------------------------
+Audi0z: a local-only desktop music player/library (Electron 43 + React 18 +
+TypeScript, built with electron-vite). It manages a single library folder on
+disk (~/Music/my-music-library by default — the folder keeps the pre-rename
+name so existing libraries survive — overridable via the MML_LIBRARY_DIR
+environment variable), imports audio from local files or URL downloads
+(yt-dlp), optionally transcodes imports to Opus 96k (ffmpeg) — at import time
+or later, per file, from the Settings storage manager, and only committed when
+the re-encode actually comes out smaller (otherwise the original is kept
+untouched) — organises songs with a first-class tag registry, sorts any view
+by date added or duration (each row shows its added date), keeps playlists in
+a user-arranged order (drag to reorder; the sidebar marks the playlist the
+playing queue came from), and plays audio through a custom media:// protocol
+with full seek support (arrow keys skip ±10s; scrubbing is silent until
+released). There is no network service, no account, and no
+database — four atomically-written JSON files and a folder of audio files are
+the entire persistent state.
+
+--------------------------------------------------------------------------------
+2. PROCESS ARCHITECTURE (the three Electron worlds)
+--------------------------------------------------------------------------------
+MAIN PROCESS (src/main/) — owns the filesystem, the stores, the media protocol,
+  the ingest pipeline (yt-dlp/ffmpeg child processes), and all IPC handlers.
+  Composition happens once in src/main/index.ts.
+
+PRELOAD (src/preload/) — the only bridge. Exposes a typed `window.api` object
+  to the renderer via contextBridge. The renderer never touches Node, Electron,
+  or the filesystem directly (contextIsolation on, nodeIntegration off, CSP
+  restricts everything to 'self' + media:).
+
+RENDERER (src/renderer/) — the React UI. One reducer-driven state tree, a pure
+  playback engine, and an <audio> element fed by media:// URLs. All server-ish
+  work goes through window.api (IPC invoke) and two push channels (download
+  progress, error events).
+
+Shared contracts between all three live in src/shared/ and are the spine of
+the app: every boundary speaks these types and channel names.
+
+--------------------------------------------------------------------------------
+3. FILE-BY-FILE WALKTHROUGH
+--------------------------------------------------------------------------------
+Convention: every module has a colocated .test file (vitest); tests are noted
+inline rather than listed separately unless they matter independently.
+
+=== Repo root ===
+
+package.json            App manifest (name: audi0z since the v3.1 rename):
+                        scripts (dev/test/e2e/package/dist:*),
+                        two runtime deps (@electron-toolkit/utils,
+                        ffmpeg-static), everything else dev-only. postinstall
+                        installs the Electron binary.
+package-lock.json       Locked dependency graph (npm ci reproduces it exactly).
+.nvmrc                  Pins Node v22.23.2 (arm64 native on Apple Silicon).
+electron.vite.config.ts Build config: three bundles (main → out/main as CJS,
+                        preload → out/preload, renderer → out/renderer), React
+                        fast-refresh in dev.
+vitest.config.ts        Two test projects: "node" (main-process code, node env)
+                        and "web" (renderer code, jsdom env + setup file).
+playwright.config.ts    E2E config; testDir tests/e2e; launches the BUILT app
+                        (out/main/index.js), not a browser.
+electron-builder.yml    Packaging: dmg/nsis/AppImage targets, asarUnpack for
+                        the ffmpeg binary, extraResources copies the platform's
+                        yt-dlp binary into the bundle, afterPack hook for
+                        macOS ad-hoc signing, identity:null + publish:null
+                        (both deliberate — comments in the file explain the
+                        electron-builder pitfalls that forced them), and (v3)
+                        an afterAllArtifactBuild hook that copies finished
+                        installers to ~/Desktop. v3.1 renamed the identity:
+                        appId com.gng.audi0z + productName Audi0z, so
+                        artifacts (Audi0z-<version>-arm64.dmg) and the
+                        packaged userData folder follow the new name — the
+                        library folder deliberately does not (see paths.ts).
+                        No icon key: build/icon.icns
+                        + icon.png are found by convention
+                        (directories.buildResources).
+tsconfig.json/.node/.web  Split typecheck programs: node (main/preload/shared/
+                        tests) and web (renderer) — keeps Node types out of
+                        renderer code at compile time.
+eslint.config.mjs, .prettierrc.json, .prettierignore   Lint/format config.
+.gitignore              Ignores out/, dist/, node_modules/, resources/bin/
+                        (fetched binaries), handoffs/, etc.
+DESIGN.md               The product/design document — kept current through
+                        v3.1 (the Audi0z title, sidebar-order-IS-stored-order
+                        with the reorder rules) and
+                        v3 (compression size guard, sort semantics incl. the
+                        cross-view queue effect, Desktop delivery, plus the
+                        v2.1 icon pipeline, tag-cascade caveat and the
+                        contract-sweep rule that replaced "frozen").
+PLAN.txt                The approved implementation plan the app was built from.
+NOTICE.md               Third-party license obligations: the bundled ffmpeg is
+                        a GPL build; yt-dlp is Unlicense; what that implies.
+README.md               User/developer documentation (install, usage, scripts).
+
+=== build/ (packaging assets) ===
+
+adhocSign.js            electron-builder afterPack hook: runs
+                        `codesign --force --deep --sign -` on the packed .app.
+                        Exists because electron-builder's identity:'-' is
+                        keychain-dependent (the dash substring-matches any
+                        hyphen-named cert, e.g. a gdb-cert) — the hook makes
+                        ad-hoc signing deterministic. Without ANY signature an
+                        arm64 app is refused by macOS ("damaged").
+entitlements.mac.plist  Entitlements kept for a future Developer ID build
+                        (disable-library-validation etc.); inert while the
+                        ad-hoc hook signs without the hardened runtime.
+icon-source.avif        v2.1: the committed icon source (740×528 AVIF).
+                        Regeneration is macOS system tools only: sips
+                        center-crop to the 528px short side, upscale to a
+                        1024 master, size ladder, iconutil -c icns (recorded
+                        in DESIGN.md).
+icon.icns / icon.png    v2.1: the app icon, picked up by convention — the
+                        icns (10-image set) for the mac bundle, the 1024²
+                        png as the linux/win fallback master. Guarded by
+                        tests/support/buildAssets.test.ts; the afterPack
+                        hook re-seals the bundle with the icon inside.
+copyArtifactsToDesktop.js  v3: the afterAllArtifactBuild hook. Pure selection
+                        (desktopCopies: dmg/exe/AppImage only — never
+                        blockmaps; undefined-safe so --dir builds no-op) +
+                        a thin copyFile loop to ~/Desktop. Runs after the
+                        dmg is checksummed, so it cannot invalidate the
+                        ad-hoc signature. Tested from tests/support/.
+
+=== scripts/ ===
+
+fetch-ytdlp.mjs         Downloads the pinned yt-dlp release (2026.07.04) for
+                        darwin/win32/linux into resources/bin/<platform>/,
+                        verifying each binary against the release's SHA-256
+                        sums. Run automatically by package/dist scripts.
+
+=== src/shared/ — contracts every process speaks ===
+
+types.ts                All DTOs: Song (id, title, tags, compressed, optional
+                        durationSec — measured lazily by the renderer and
+                        persisted), SongDto (adds exists, url, and sizeBytes —
+                        null EXACTLY when exists is false, an invariant every
+                        producer honours), CompressResult {song, shrank} —
+                        v3, what library.compress answers: shrank:false means
+                        the re-encode came out no smaller and the original
+                        was kept — Tag {id, name, color} + TagsFile,
+                        Playlist, Settings, AddSongRequest, DownloadRequest/
+                        Progress (stages: downloading/saving/transcoding),
+                        AppError, ProbeResult (title + echoed sourceUrl only —
+                        v3 dropped the durationSec nobody read; playing time
+                        comes from the renderer's backfill, one source).
+ipc.ts                  The channel-name constants: library channels
+                        (list/add/update/updateDurations/remove/compress/
+                        showFolder — v2.1 added the batched duration write
+                        and retired the caller-less reveal),
+                        playlist CRUD + (v3.1) reorder +
+                        addSong/removeSong/setPlaybackOptions,
+                        tags CRUD (list/create/rename/remove), settings
+                        get/set, 5 ingest channels (probe/start/cancel/
+                        update-ytdlp/pick-files) + push events
+                        (downloadProgress, error, libraryChanged — note the
+                        last has NO main-process emitter; components refresh
+                        explicitly after mutations).
+api.ts (+ test)         The typed shape of window.api — the renderer-facing
+                        API surface built from those channels; the mock in
+                        tests implements exactly this interface.
+
+=== src/main/ — the main process ===
+
+index.ts                COMPOSITION ROOT. Wires everything exactly once:
+                        resolves the library root and ensures dirs; constructs
+                        ONE instance each of libraryStore/playlistStore/
+                        settingsStore (the one-instance rule is load-bearing —
+                        stores cache their file forever, so a second instance
+                        over the same dir would serve stale data and clobber
+                        writes); registers the media:// protocol handler;
+                        registers library + ingest IPC with those instances;
+                        builds the downloader (yt-dlp + ffmpeg + importer);
+                        forwards download progress and AppErrors to the window
+                        lazily and destruction-safely; creates the
+                        BrowserWindow; catches any startup failure into a
+                        visible error dialog instead of a silent no-window.
+wiring.ts (+ test)      The composition root's testable helpers: fileExists
+                        and fileSize (both never reject — fileSize returns
+                        the byte count, or null for anything that is not a
+                        regular file; v2.1 made directories answer null too.
+                        It is what makes SongDto's exists/sizeBytes pair one
+                        measurement),
+                        binary-directory resolution (__dirname-relative so it
+                        works in dev, `electron .`, AND direct out/main
+                        launches; packaged uses process.resourcesPath),
+                        createWindowSender (resolves the window per call,
+                        guards isDestroyed, swallows throws — it runs inside
+                        child-process stdout handlers), withErrorReport (report
+                        on the error channel then rethrow so the invoke also
+                        rejects), runStartup (catch → showErrorBox → quit).
+paths.ts (+ test)       Library root resolution (~/Music/my-music-library or
+                        MML_LIBRARY_DIR), audio dir layout, ensureDirs.
+                        v3.1: LIBRARY_DIR_NAME stays 'my-music-library' BY
+                        DESIGN after the rename — a comment in the file warns
+                        that renaming it would strand every existing library.
+
+--- src/main/store/ — persistence ---
+
+jsonFile.ts (+ test)    The atomic JSON file primitive: temp file → fsync →
+                        rename on write; per-path write serialization; one
+                        retry on Windows EPERM; corrupt-file quarantine to
+                        .bak (original left in place) with defaults returned;
+                        loadOnce caching (read the file once per process —
+                        the root of the one-instance contract).
+storeTypes.ts           Shared store record types (LibraryDocument etc.).
+errors.ts               Store error taxonomy (InvalidPayloadError etc.).
+libraryStore.ts (+test) Songs: list/get/add/update/remove, plus the v2
+                        additions: renameTag/removeTag (cascade a registry
+                        rename/delete through every song's tags in ONE
+                        persist; a same-name rename is a guarded no-op — the
+                        unguarded version silently wiped the tag off every
+                        song) and replaceFile (repoints a row at its
+                        compressed file). update also accepts durationSec;
+                        v2.1's updateDurations writes a whole batch of
+                        measured durations in ONE persist (unknown ids
+                        skipped — a song can be deleted between probe and
+                        flush), mutating the cached array in place so
+                        list/getSong stay coherent with disk.
+                        Keeps caller-supplied ids verbatim BY DESIGN (the
+                        importer derives the audio filename from the same
+                        uuid — regenerating ids would orphan files).
+playlistStore.ts (+test) Playlists: CRUD, addSong/removeSong (idempotent),
+                        per-playlist shuffle/repeat, cascadeRemoveSong (called
+                        on library delete). v3.1: reorder(orderedIds) — the
+                        sidebar's order is this array's order, so rearranging
+                        the sidebar is a write to it. Dupes or a wrong count
+                        refuse with Conflict, an unknown id with NotFound,
+                        and every check runs BEFORE the in-place splice (the
+                        loadOnce cache array is rearranged, never reassigned)
+                        so a bad call cannot half-apply.
+settingsStore.ts (+test) Settings with defaults (compressByDefault:false,
+                        volume:1, libraryShuffle/Repeat:false) and validation.
+tagStore.ts (+ test)    The v2 tag registry (`tags.json`): create/rename/
+                        remove/list with case-insensitive unique names
+                        (ConflictError, name 'Conflict'), and a random colour
+                        per tag minted at creation — hslToHex over an injected
+                        rng (hue 0-359, 65%/55%), so tests pin exact hexes.
+
+--- src/main/media/ — the streaming protocol ---
+
+mediaProtocol.ts (+test) Handles media://audio/<id>: resolves the id through
+                        the SHARED libraryStore, path-traversal-guards the
+                        resolved file (single reusable check), implements RFC
+                        9110 Range semantics (206 + Content-Range, suffix and
+                        open-ended ranges, 416 past EOF), and destroys the
+                        read stream on request abort so scrubbing can't leak
+                        file descriptors. This is what makes <audio> seeking
+                        real. v2.1: an optional awaitCompression dep is
+                        awaited BEFORE the record lookup, so a request racing
+                        an in-flight compression waits for the swap and
+                        streams the settled file instead of erroring
+                        mid-stream. v3: the dep answers undefined when
+                        nothing is in flight and the handler skips the await
+                        entirely — the idle path costs not even a microtask.
+mimeTypes.ts (+ test)   Extension → Content-Type map with octet-stream
+                        fallback. v3 added .aac (raw ADTS decodes in
+                        Chromium, but only if it isn't served as
+                        octet-stream); .aiff/.wma stay absent — the picker
+                        accepts them but Chromium can't play them, which is
+                        why the add dialog's hint no longer lists them.
+
+--- src/main/ipc/ — the request/response surface ---
+
+registerLibraryIpc.ts   The library/playlist/tags/settings handlers. Every
+(+ test)                handler validates its payload at the trust boundary.
+                        v2 additions: tags CRUD (rename/remove cascade through
+                        libraryStore after the registry write), library:compress
+                        (delegates to the injected compressSong; v3 — answers
+                        CompressResult, converting the Song to a DTO and
+                        passing shrank through), and
+                        library:showFolder (reveals the audio dir — the old
+                        per-row Reveal's replacement). v2.1 adds
+                        library:updateDurations (every entry validated up
+                        front, then one store pass) and retires the
+                        caller-less library:revealInFolder channel (the
+                        injected reveal function survives for showFolder).
+                        toDto derives exists AND
+                        sizeBytes from ONE injected fileSize call (0 bytes =>
+                        exists true), and the update patch accepts durationSec.
+                        v3.1: toDto first awaits the optional awaitCompression
+                        dep (the same compressionJobs.waitFor seam the media
+                        protocol takes) and re-reads the record after the
+                        wait — a DTO built mid-swap would measure the file
+                        the compressor just removed and brand a freshly
+                        compressed song missing for the rest of the session.
+                        Also v3.1: playlists:reorder — the whole order in one
+                        validated payload of non-empty string ids; whether
+                        they are the RIGHT ids is the store's call.
+                        Notable: LIBRARY_ADD delegates to the injected
+                        importSong (the importer records the song itself —
+                        the handler must NOT double-add); LIBRARY_REMOVE
+                        trashes the file FIRST and only then removes the row +
+                        cascades playlists (a trash refusal can't orphan
+                        anything), skipping the trash step when the file is
+                        already gone (so missing-file songs stay deletable);
+                        list() stats every file concurrently to compute the
+                        `exists` flag, relying on fileExists never rejecting.
+                        DTO mapping (media:// URL construction, URL-encoded
+                        ids) lives here.
+registerIngestIpc.ts    The 5 ingest handlers: probe (title lookup), start
+(+ test)                (download), cancel, updateYtDlp (downloads latest into
+                        userData/bin, used in preference to the bundled binary
+                        afterward), pickAudioFiles (native dialog). Its DTO
+                        builder measures the just-imported file (same audioDir
+                        + fileSize seam as the library module) so a fresh
+                        download honours the sizeBytes/exists invariant. Subscribes
+                        the downloader's progress seam and forwards each event
+                        over the DOWNLOAD_PROGRESS channel. URL validation
+                        anchors on ^https?:// case-insensitively — everything
+                        else is rejected before it can reach a child process
+                        argv.
+
+--- src/main/ingest/ — the download/import pipeline ---
+
+spawnLines.ts (+ test)  The child-process primitive: spawn with argv arrays
+                        (never shell strings), line-buffered stdout/stderr
+                        callbacks, abort → SIGTERM then SIGKILL after a 5s
+                        grace timer (cleared on settle, unref'd), stderr tail
+                        kept for error messages.
+ytdlp.ts (+ test)       Everything yt-dlp: binary resolution (userData copy
+                        first, then bundled resources/bin — names are
+                        yt-dlp_macos / yt-dlp.exe / yt-dlp_linux), the frozen
+                        download arg template (--no-playlist, bestaudio,
+                        --progress-template machine-readable lines, --print
+                        after_move:filepath PAIRED WITH --progress because
+                        --print implies --quiet and would otherwise kill all
+                        progress output — found by the live release gate),
+                        probe (--print title --skip-download; v3 — the
+                        probe's answer is title + echoed sourceUrl only, the
+                        forwarded-but-never-read duration is gone) with a 90s
+                        timeout (the PyInstaller onefile binary takes ~25s to
+                        cold-start before any network; measured), progress-
+                        line parsing, and update-to-latest.
+ffmpeg.ts (+ test)      ffmpeg binary resolution (ffmpeg-static in dev,
+                        asar-unpacked path when packaged) and the transcode
+                        arg builder: Opus 96k with `-f opus` (staged through
+                        a .part file, format forced because the staging
+                        extension would otherwise break ffmpeg's container
+                        detection). v3 dropped the target from 128k: the
+                        downloader's own sources are ~128k AAC, so a 128k
+                        re-encode had no headroom and could grow the file;
+                        96k sits safely under it (measured −33% on a
+                        worst-case source).
+importer.ts (+ test)    importFile: the single write path into the library for
+                        BOTH local adds and downloads. Generates the uuid,
+                        derives the audio filename from it, copies (or
+                        transcodes) into audio/, records the song in the SAME
+                        libraryStore instance, cleans up on failure. v3: a
+                        compress request stages the re-encode beside the
+                        final name, compares sizes, and falls back to a plain
+                        copy (compressed:false) when the Opus came out no
+                        smaller — the rollback removes staged AND target,
+                        whichever exists.
+compressExisting.ts     v2, reworked in v3: compresses a song ALREADY in the
+(+ test)                library — resolves the source through the same
+                        path-traversal guard as the media protocol, then
+                        stage-compare-commits: transcodes to
+                        <id>.opus.staged, stats both files, and when the
+                        re-encode is NOT smaller removes the staged file and
+                        returns {song, shrank:false} with the row and the
+                        original untouched (previously the smaller original
+                        was deleted unconditionally and the row stamped
+                        compressed forever). A win renames staged into
+                        place, repoints the row via replaceFile, then
+                        best-effort deletes the old file — staging beside
+                        the final name is what keeps src === dst (an
+                        uncompressed .opus named after its id) safe. A
+                        transcode failure leaves record and directory
+                        untouched.
+compressionJobs.ts      v2.1: the main process's memory of which songs are
+(+ test)                mid-compression — run() tracks a job under its song
+                        id (settle-safe, identity-guarded cleanup so a job
+                        only ever clears its own slot); waitFor() (v3)
+                        answers the in-flight promise, or undefined when the
+                        song has none — so an idle library pays nothing.
+                        index.ts wraps compressSong in it and hands waitFor
+                        to the media protocol AND (v3.1) to the library IPC,
+                        so DTO measurement gets the same courtesy as
+                        streaming; success and failure look the same to a
+                        waiter (a failed transcode leaves the original file
+                        in place).
+downloader.ts (+ test)  createDownloader: orchestrates probe → download →
+                        importFile with a single-flight BUSY latch (one
+                        download at a time; a second start throws), an
+                        AbortController per job (cancel kills the child and
+                        cleans the temp job dir), and an onProgress
+                        subscription seam whose listeners must not throw
+                        (guarded). Custom error names (BUSY/Cancelled) do NOT
+                        survive IPC serialization — the renderer matches
+                        message text instead (see renderer lib/errors.ts).
+
+=== src/preload/ ===
+
+index.ts                Builds window.api with contextBridge: an invoke
+                        wrapper per channel, subscribe/unsubscribe pairs for
+                        the push events, and files.getPathForFile (Electron
+                        43's webUtils path lookup — File.path does not exist
+                        anymore), used by drag-and-drop.
+index.d.ts              Ambient typing that gives the renderer a typed
+                        window.api.
+
+=== src/renderer/ — the UI ===
+
+index.html              Shell page with the strict CSP (default-src 'self';
+                        media-src 'self' media:).
+src/main.tsx            React entry: mounts <App/> inside the state provider.
+src/App.tsx             Layout + orchestration: sidebar / TopNav / song list /
+                        player bar composition, drag-and-drop handling, dialog
+                        routing (one dialog slot — Add/Edit/Settings/Confirm/
+                        Tags/AddToPlaylist), confirm-intent execution (delete
+                        song → trash → cascade; delete playlist — deleting one
+                        you are only VIEWING no longer touches the queue,
+                        while v2.1 makes deleting the one that IS the queue
+                        take the queue down with it), the
+                        audio-error auto-skip policy (dispatch transport/next,
+                        or pause when nothing playable remains), keyboard-
+                        shortcut wiring (gated off while any dialog is open)
+                        with the mute toggle's last-audible-volume ref, the
+                        v3.1 click-focus reset (useClickFocusReset, mounted
+                        beside the shortcut hook), the
+                        duration-backfill hook (v3: passed !isPlaying so
+                        probing yields to playback), and library refresh
+                        after mutations. v3: consumes useAudioElement's
+                        AudioController — seekBy feeds the keyboard hook's
+                        arrow branch, beginScrub/endScrub go to PlayerBar —
+                        and the queue-sync memo applies the global sort to
+                        whatever queue is playing, so the queue can never
+                        drift from a sorted view.
+src/styles.css          The whole visual layer: dark, compact, no framework.
+                        Includes the toast stack's max-height + overflow
+                        clamp, and (v2.1) the file's first media query:
+                        prefers-reduced-motion stops the spinner and swaps
+                        the indeterminate bar's slide for a full-width
+                        opacity pulse (motion was the "busy" message, so
+                        reduced motion gets a different signal, not a
+                        frozen sliver). v3 hardened the layout — body clamps
+                        (overflow hidden), dialogs cap at 85vh and scroll
+                        inside a scrollable padded backdrop, confirm-strips
+                        and chip names get min-width:0 + wrap/ellipsis so
+                        long titles stop widening dialogs, the emptied song
+                        list keeps its flex ground — and reworked surfaces:
+                        song rows are bordered cards (rest/hover/playing
+                        states, playing = accent-tinted fill + accent
+                        border), playlist/file rows gained hover steps, the
+                        segmented control joined the accent-fill "on" idiom
+                        (ink kept AA-readable on the fill), --line lightened
+                        one step, and the sidebar became a clipped panel
+                        whose playlist list is the scroll region. v3.1 adds
+                        the .song-added figures column, the shared pill rule
+                        (.song-tag, .menu-tag-chip) with a flexed
+                        .menu-check-item gutter, the .is-playing-source
+                        inset accent bar, and the drag drop-seam shadows
+                        (.playlist-item.drop-before/after) — inset shadows
+                        rather than borders, so nothing ever shifts.
+
+--- src/renderer/src/state/ ---
+
+appReducer.ts (+ test)  The single app reducer: songs, playlists, tags,
+                        settings, view (library vs playlist — the VIEW is now
+                        independent of the playing queue), search query,
+                        (v3) the SortMode — {field: addedAt|durationSec,
+                        direction} or null for stored order, global and
+                        session-only, surviving view switches like the query
+                        does — expanded playlists, the dialog slot, and toasts
+                        (exact-duplicate messages collapse against what is
+                        currently on screen; distinct messages stack).
+                        library/songMissing nulls sizeBytes alongside exists —
+                        the DTO invariant holds in renderer state too. Composes the
+                        playback reducer under the same dispatch via a
+                        compile-time-exhaustive action-type map — adding a
+                        playback action without listing it breaks the build,
+                        so actions can't be silently dropped. v2.1:
+                        library/songsUpdated merges a backfill batch by id in
+                        one dispatch, and playlists/removed became the second
+                        action BOTH halves handle — the playlist list and
+                        the playback engine each see it.
+AppContext.tsx          useReducer + context provider; the app's only state
+                        container (no state libraries).
+
+--- src/renderer/src/playback/ — the pure engine ---
+
+types.ts                PlaybackState (queueId, order, currentId, isPlaying,
+                        playToken, shuffle, repeat, playedByQueue, history)
+                        and the action union.
+engine.ts (+ test)      A pure reducer — no side effects, fully unit-tested
+                        (100% branch): queue selection (with an optional
+                        startSongId that switches queue AND starts that song —
+                        the row-click and TopNav-play contract; without it the
+                        switch stops playback as before; callers must pass an
+                        id present in the order — documented precondition, not
+                        validated), song selection, togglePlay (cold-starts
+                        order[0]), next (sequential or shuffle-without-repeat
+                        until the queue is exhausted, honoring repeat),
+                        previous (a real history stack — returns to what
+                        actually played), song/ended (repeat restarts the
+                        current song via playToken bump), orderChanged
+                        (removing the current song stops playback), played
+                        tracking per queue, and (v2.1) playlists/removed —
+                        drops the playlist's played flags always, and when
+                        it owned the queue clears queueId/order/current/
+                        history and stops (so Shuffle/Repeat after deleting
+                        the playing playlist no-op instead of error-toasting).
+                        The playToken increments whenever
+                        audio should (re)start — the audio hook keys on it.
+selectors.ts (+ test)   The only sanctioned reads of playedByQueue (it may be
+                        undefined for fresh queues): isPlayed, playedCount,
+                        currentIndex.
+
+--- src/renderer/src/hooks/ ---
+
+useAudioElement.ts      Binds the one <audio> element to the engine: sets src
+(+ test)                only when currentId CHANGES, resets currentTime and
+                        calls play() on every playToken bump (so repeat-same-
+                        song audibly restarts — regression-guarded by a
+                        MutationObserver test proving no refetch), dispatches
+                        song/ended on 'ended', and on 'error' toasts + flags
+                        the song missing + auto-skips. Volume comes from
+                        settings and persists debounced (250ms). v3: returns
+                        an AudioController {ref, seekBy, beginScrub,
+                        endScrub} — seekBy moves ±delta clamped to [0,
+                        duration−0.25s] (the end guard keeps a skip from
+                        firing 'ended' itself; Infinity cap while duration
+                        is unknown); scrubbing silences the ELEMENT only
+                        (the store's isPlaying — and the ⏸ glyph — stay
+                        honest), resuming on pointer release or 300ms after
+                        the last arrow press, and only when the store says
+                        playing (a scrub during pause stays paused). A song
+                        change mid-scrub resets the scrub state so the next
+                        song is never born silenced.
+useApiEvents.ts         Subscribes the push channels on mount (library
+                        changed → refetch; error events → toast, normalized
+                        through errorMessage), unsubscribes on unmount. Also
+                        home to refreshLibrary, the post-mutation refetch —
+                        songs + playlists + (v2) the tag registry.
+useEscapeKey.ts         Document-level Escape handling for dialogs (single
+                        listener, callback in a ref).
+useKeyboardShortcuts.ts v2, extended in v3: Space (play/pause, only when a
+(+ test)                song is cued — no cold start), ArrowLeft/Right
+                        (seek ∓/+10s via the AudioController), and m/M
+                        (mute). One document listener; ignores repeats,
+                        modifier combos (Cmd/Ctrl/Alt are the OS's), typing
+                        targets (which keeps the sliders' native arrow
+                        stepping), and — for Space — buttons/links whose
+                        native activation would double-fire, EXCEPT targets
+                        inside [data-space-transport]: the song-row title
+                        opts back in, so Space on a clicked row pauses
+                        instead of natively re-clicking it into a replay
+                        (preventDefault on the keydown cancels the keyup
+                        click; Enter still activates the row). Arrows stand
+                        down for defaultPrevented events and targets inside
+                        [role="menu"] (the row menu owns its Up/Down; the
+                        sort menu focuses its first item on open so its
+                        arrows land inside it). Disabled entirely while a
+                        dialog is open. Since v3.1 the guards rarely fire for
+                        mouse users at all: useClickFocusReset returns focus
+                        to the body after every click, so the keys land there.
+useClickFocusReset.ts   v3.1: one document-level click listener that blurs a
+(+ test)                mouse-clicked button or range slider back to the
+                        body — a focused slider swallows Space/arrows/M
+                        outright (isTyping), a focused button turns Space
+                        into "press it again", and Chromium paints its focus
+                        ring on whatever was last clicked the moment any key
+                        goes down. Exempt: keyboard-activated clicks
+                        (detail 0 — Tab-and-Enter users keep their place),
+                        typing controls, menu triggers (aria-haspopup) and
+                        everything inside [role=menu], whose programmatic
+                        focus the popup keyboard walking depends on. The
+                        narrowing is Element, not HTMLElement — an icon
+                        button is all glyph, so clicks land on the SVG.
+useDurationBackfill.ts  v2, batched in v2.1, yielding in v3: measures
+(+ test)                durations the library doesn't know yet — for each
+                        existing song without durationSec, loads metadata
+                        through an off-screen Audio element (the media://
+                        protocol serves it) and flushes measurements in
+                        batches of 8 through library.updateDurations: ONE
+                        library write and ONE merged dispatch per batch
+                        (size-triggered, plus the last reader out writes the
+                        tail). v3 added the idle parameter (App passes
+                        !isPlaying): no NEW probe starts while a song plays —
+                        the in-flight read finishes, queued songs wait, and
+                        probing resumes on pause/stop. This was the real
+                        v2.1 start-latency culprit: back-to-back probes
+                        contended with the player's own media:// fetch on
+                        the 4-thread libuv pool. The cost: a library that is
+                        always playing never finishes measuring. A probe
+                        rounding to 0s is skipped so it can't poison its
+                        batch. Max 2 concurrent, failed ids never retried
+                        in-session; the unmount path un-marks queued,
+                        in-flight AND unflushed ids so a remount (React
+                        StrictMode) re-asks them.
+
+--- src/renderer/src/lib/ ---
+
+search.ts (+ test)      The search predicate: case-insensitive match over
+                        title and tags; pure, view-only (never reorders the
+                        queue).
+errors.ts (+ test)      The IPC-error decoding helpers: strips Electron's
+                        "Error invoking remote method…" wrapper and the
+                        error-name prefix, and classifies BUSY / Cancelled /
+                        trash failures BY MESSAGE TEXT — custom error names do
+                        not survive ipcMain.handle serialization, so message
+                        matching is the contract. v2.1: the name-prefix strip
+                        is gated on the invoke wrapper having matched — a
+                        push-channel "ENOENT: …" keeps its errno, so both
+                        channels' tellings of one failure collapse to one
+                        toast — and trashFailureMessage() owns the
+                        delete-refused sentence App and Settings both show.
+text.ts (+ test)        Basename derivation for pre-filling titles. (The old
+                        comma-separated tag parsing left with free-text tag
+                        entry — tags come from the registry now.)
+format.ts (+ test)      v2 presentation helpers: formatBytes ('—' for null,
+                        1024-based with one decimal), formatDuration ('–:––'
+                        unknown, else m:ss), (v3.1) formatDate — the row's
+                        added-date column: local-time MM/DD/YYYY, with an
+                        en-dash '––/––/––––' for anything unparseable —
+                        formatCompressionSaving — the
+                        bold estimate everywhere a compress option appears:
+                        '~3.6 MB save' when size+duration allow (size −
+                        duration × 12 kB/s at Opus 96k), else 'Saves ~25%' —
+                        v3 retired the fictional ~50% along with the 128k
+                        target — and readableTextColor (WCAG luminance) for
+                        chip ink.
+viewSongs.ts (+ test)   viewedPlaylist/songsInView/sortSongs, extracted from
+                        SongList so the TopNav play button and the list
+                        compute "what is this view about" from ONE
+                        implementation — the queue the play button hands over
+                        cannot drift from the list on screen. v3: sortSongs
+                        (pure, stable, non-mutating; ISO string compare for
+                        addedAt; unmeasured durations sink in BOTH
+                        directions, matching the storage list's convention)
+                        and songsInView takes the SortMode as a REQUIRED 4th
+                        argument — a defaulted one would reinvite the silent
+                        list/queue disagreement the module exists to prevent.
+
+--- src/renderer/src/components/ ---
+
+TopNav.tsx (+ test)     v2, replaces the old toolbar. Left→right: the accent
+                        play button (plays the CURRENT VIEW — first song, or
+                        an rng pick when that view's shuffle is on, via
+                        queue/selected+startSongId; disabled on an empty
+                        view; v3 — when the view's queue is already cued it
+                        becomes a ▶/⏸ TOGGLE dispatching transport/togglePlay
+                        instead of restarting from the top, labelled
+                        "Pause <view>"; the currentId!==null conjunct is
+                        load-bearing and test-pinned — a boot-cued queue with
+                        nothing playing still takes the shuffle-respecting
+                        start path), the SearchBox, a playlist-view-only
+                        "Add Song" button (opens the add-to-playlist dialog),
+                        then (v3) the sort-icon menu — Manual order / Date
+                        added / Duration as menuitemradios; first click on a
+                        field sorts ascending, a second flips it; the first
+                        item is focused on open (which is also what keeps the
+                        global arrow-seek out of an open menu); closes on
+                        choice, Escape (focus back on the trigger) and
+                        outside click — then the download-icon add button
+                        (inline SVG so CSS can tint it; keeps aria-label
+                        "Add song"), "Tags", "Settings".
+Sidebar.tsx (+ test)    "Library" + playlist list: selecting changes the VIEW
+                        ONLY — playback continues (the v2 view/queue split);
+                        the chevron expands/collapses children ("playlist is
+                        empty" when there are none), new-playlist creation,
+                        rename/delete affordances. v3: a "Search playlists"
+                        box (sidebar-local state, never the global query —
+                        the AddToPlaylist precedent; "no playlists match"
+                        when the filter empties a non-empty list) sits above
+                        the playlist list, which is now the panel's scroll
+                        region — and the New-playlist button moved into a
+                        .sidebar-footer PINNED to the panel's bottom edge
+                        instead of trailing below the fold. v3.1: playlist
+                        rows (li.playlist-item) are draggable — midpoint
+                        before/after seam, then the whole new order over
+                        playlists:reorder, the list redrawn from the store's
+                        answer rather than the drag's guess. No drag while
+                        the filter narrows the list (a partial list cannot
+                        say where the hidden ones go) or while a rename is
+                        open; OS file-drags fall through untouched to the app
+                        root's add-drop (the dragId guards — a drag is ours
+                        only between our own dragStart and dragEnd). Entries
+                        also carry is-playing-source, the accent mark for
+                        where the sound is coming from: gated on
+                        playback.currentId (boot cues a silent library queue
+                        that must NOT light up), self-clearing when the
+                        playing playlist is deleted, and independent of
+                        aria-current — the browsed view — so the two marks
+                        part company exactly when the split matters.
+SongList.tsx (+ test)   The visible, search-filtered song list for the current
+                        view. Row click on the queue's own view is a plain
+                        song/selected; on a DIFFERENT view it dispatches
+                        queue/selected with the full view order (not the
+                        filtered subset) + the clicked startSongId + that
+                        view's shuffle/repeat. Also owns the row callbacks:
+                        tag toggling (whole-tags-array library.update), edit,
+                        remove-from-playlist, delete (ConfirmDialog with the
+                        spec-verbatim "Move {title} to the trash?").
+SongRow.tsx (+ test)    One v2 row, memoised: duration + title (+ colored
+                        registry chips) on the left; file size + a "…"
+                        overflow menu on the right (Tags checkables / Edit /
+                        Remove from playlist / Delete — the old inline select,
+                        Reveal, Edit, Delete buttons are gone). Border-
+                        separated rows; missing files flagged and inert.
+                        v2.1: the menu is named (aria-label per song), walks
+                        with ArrowUp/Down + Home/End (wrapping, disabled
+                        items skipped, first item focused on open, focus
+                        back on the ⋯ after Escape), and flips upward when
+                        opening downward would clip into the list's bottom
+                        edge (measured pre-paint; stays down when neither
+                        direction fits). v3: the title button carries
+                        data-space-transport — the keyboard hook's opt-in
+                        that makes Space pause the transport instead of
+                        natively re-clicking the focused row into a replay.
+                        v3.1: a .song-added date cell (formatDate) sits
+                        between the tags and the size, and both the row's
+                        chips and the menu's tag items render through the
+                        shared TagChip — the menu chip is the item's only
+                        visible text, so the menuitemcheckbox accessible
+                        name stays the bare tag name, and it is classed
+                        menu-tag-chip, deliberately NOT song-tag
+                        (TagsDialog's tests select .song-list .song-tag and
+                        the popup lives inside .song-list).
+TagChip.tsx (+ test)    v3.1: the one pill for a tag name — a span with the
+                        registry colour + luminance-picked ink inline when a
+                        colour is known, the stylesheet's grey fallback
+                        otherwise. The row chips and the row menu's items
+                        both draw it; the class arrives as a prop so the two
+                        render sites stay independently selectable.
+SearchBox.tsx (+ test)  Debounced query input; clearing restores the full
+                        list.
+PlayerBar.tsx (+ test)  Transport controls: play/pause (fixed equal-size
+                        boxes, so ▶/⏸ no longer shift the row), prev/next,
+                        shuffle/repeat toggles (dual-write: dispatch AND
+                        persist — per-playlist or settings depending on the
+                        queue; an ON toggle gets an unmistakable accent
+                        color-mix fill, because border/color alone are inert
+                        on colour-emoji glyphs and identical to hover), seek
+                        slider (v3: pointer down/up/cancel + lostpointercapture
+                        bracket the drag in the AudioController's silence —
+                        audio is quiet until release while the thumb and the
+                        ⏸ glyph keep tracking; onChange still seeks
+                        immediately, which is what the fill()-driven e2e
+                        exercises), volume slider (debounced persist),
+                        current-title display.
+AddSongDialog.tsx       The add flow. File source: picker or drag-drop
+(+ test)                pre-fill, title from basename, and (v3) a static
+                        hint naming the playable types — "Supported: MP3,
+                        M4A, AAC, FLAC, WAV, OGG, Opus." (deliberately the
+                        playable SUBSET of the picker filter, which stays
+                        wider as a permissive net; AIFF/WMA import but
+                        Chromium can't play them). Tags are a chip
+                        multi-select over the registry (free-text entry is
+                        gone — the Tags dialog is the sole creator); the
+                        compress checkbox defaults from settings and carries
+                        the bold generic savings estimate. URL source:
+                        two-step probe (spinner + "first fetch can take ~30s"
+                        note) → start, with (v3) a standing hint — yt-dlp
+                        sites work, audio arrives as M4A or WebM, a playlist
+                        link fetches only the linked item, Update yt-dlp in
+                        Settings refreshes site support — and the v2
+                        progress UI — styled bar
+                        with percent + byte counts, indeterminate animation
+                        when a stage has no percentage — a cancel button while
+                        downloading, and a close path that is ALWAYS available.
+                        Failures toast with the real yt-dlp stderr and leave
+                        the dialog open. Multiple files import sequentially.
+EditSongDialog.tsx      Title-only editing → library.update (tags moved to the
+(+ test)                row menu; tag existence to the Tags dialog). v2.1:
+                        closes itself when its song is deleted from under it
+                        (the async delete window) instead of invisibly
+                        gating the keyboard shortcuts until Escape.
+TagsDialog.tsx (+ test) v2, the ONLY place tags are created/renamed/deleted:
+                        centred wrapping chip grid (solid tag colour,
+                        luminance-picked ink), inline rename, in-dialog
+                        delete confirm; every mutation refetches the registry
+                        and — for cascades — the library, so rows update
+                        immediately. Duplicate names surface the store's
+                        Conflict message as a toast.
+AddToPlaylistDialog.tsx v2, the Spotify-style playlist filler: local search
+(+ test)                (never touches the global query) over the whole
+                        library, round "+" per row → playlists.addSong.
+                        v3.1: only songs the playlist LACKS are offered — a
+                        row vanishes the moment its song lands (the filter
+                        reads playlist.songIds outside the search memo, so a
+                        failed add leaves the row in place), and an emptied
+                        list says which of FOUR reasons applies: empty
+                        library / no search match / every song already in /
+                        every match already in. X/Escape close, self-closes
+                        if the playlist vanishes.
+ConfirmDialog.tsx       The generic destructive-action gate (song delete,
+                        playlist delete). Escape = cancel, never confirm.
+                        v3: the message paragraph is classed (.dialog-message,
+                        overflow-wrap) so an unbroken downloaded title can't
+                        stretch the dialog past its 460px width.
+SettingsDialog.tsx      v2, the storage manager: total library size with the
+(+ test)                "Show" button (library:showFolder), a disclosure list
+                        of every file sorted by size desc — each row offering
+                        grey "Compress" (uncompressed files that EXIST only —
+                        v2.1 stopped offering it on missing rows; bold
+                        estimate beside it, disabled while in flight or while
+                        that song is loaded in the player, and v2.1 made that
+                        guard audible: the hint is visible text wired to the
+                        button via aria-describedby, no longer a title
+                        attribute on a disabled control) and
+                        red "Delete" (in-dialog confirm, then songsRemoved +
+                        refresh so playback history forgets it too; trash
+                        failures get the same "still in your library" copy as
+                        the row path). v3: a compress that would not shrink
+                        keeps the original, leaves the row uncompressed and
+                        says so ("… is already smaller than an Opus
+                        re-encode — kept the original"). Plus the
+                        compress-by-default toggle (with estimate) and the
+                        "Update yt-dlp" button — moved (v3) from the footer
+                        into a body row with an explainer; the footer is a
+                        single "Ok" now, because every control in this
+                        dialog persists immediately and dismissal is the
+                        footer's only job. v3.1: a compress settle — success
+                        OR failure — re-reads the library: exists is derived
+                        only on the main side of an IPC call, so a dto that
+                        raced the file swap and branded a row "File missing"
+                        heals here instead of surviving to the next restart.
+ToastHost.tsx (+ test)  Renders the toast stack: dismissible, stacking,
+                        scroll-clamped, and — v2 — each toast auto-expires
+                        after 10 seconds on its own timer.
+
+--- src/renderer/src/testing/ ---
+
+harness.tsx             The RTL test harness: renders the real <App/> against
+                        createMockApi() with seeded data; used by every
+                        component test (tests assert real rendered behavior,
+                        not implementation details).
+testing.d.ts            Types for the harness/test globals.
+
+=== tests/ ===
+
+support/mockApi.ts      A complete in-memory implementation of window.api
+(+ test)                with seedable songs/playlists/settings/tags (songs
+                        carry sizeBytes/durationSec; compress and the tag
+                        cascades are simulated; v3.1's playlist reorder
+                        mirrors the store's refuse-unless-exact contract)
+                        and emit controls for the push channels; what all
+                        renderer unit tests run against.
+support/makeWav.ts      Generates real, playable WAV bytes for tests and e2e
+(+ test)                seeds.
+support/tmpLibrary.ts   Creates disposable on-disk library dirs for main-
+(+ test)                process tests (node project only — renderer tests
+                        must not import it).
+support/setupJsdom.ts   jsdom test setup: HTMLMediaElement play/pause stubs
+                        (jsdom has no audio), jest-dom matchers, cleanup.
+support/adhocSignHook.test.ts  Unit test for build/adhocSign.js (lives here
+                        because the vitest globs don't cover build/).
+support/copyToDesktopHook.test.ts  v3: pins the Desktop hook's pure selection
+                        (installers copied, blockmaps skipped, --dir builds
+                        a no-op) — same placement rationale as its sibling.
+support/buildAssets.test.ts  v2.1: pins build/icon.icns (icns magic + size
+                        floor) and icon.png — electron-builder finds the icon
+                        by convention and silently ships the stock Electron
+                        one when it is missing, so only a test can guard it.
+e2e/smoke.spec.ts       Nine Playwright tests driving the BUILT app with an
+                        isolated MML_LIBRARY_DIR per launch: window + seeded
+                        library render (v3.1: plus an MM/DD/YYYY shape pin
+                        on the .song-added cells — shape only, because the
+                        literal day depends on the machine's timezone), real
+                        media:// playback (readyState +
+                        paused checks, plus a v3 start-latency budget —
+                        click-to-audible under 1.2s, measured 272-370ms),
+                        mid-song seek (proves 206/Range), search filtering,
+                        playlist creation persisted to disk, a v3 sidebar
+                        layout pin (New-playlist on the panel's bottom edge,
+                        gap bounded on BOTH sides, Library button not
+                        stretched), duration backfill persisted to
+                        library.json, the add-to-playlist dialog flow
+                        (v3.1: the added row VANISHES rather than flipping
+                        to ✓ disabled), and the full add-via-picker flow
+                        (dialog stubbed via electronApp.evaluate).
+
+--------------------------------------------------------------------------------
+4. THE KEY DATA FLOWS
+--------------------------------------------------------------------------------
+LOCAL IMPORT   picker/drop → AddSongDialog → api.library.add(AddSongRequest)
+               → LIBRARY_ADD handler → importFile → (optional ffmpeg
+               transcode) → copy into audio/<uuid><ext> → libraryStore.add
+               → SongDto back to the renderer → list refresh.
+
+URL DOWNLOAD   AddSongDialog URL step → api.download.probe (title) → start →
+               downloader (BUSY latch) → yt-dlp child (spawnLines) → progress
+               lines → onProgress seam → DOWNLOAD_PROGRESS channel → dialog
+               progress bar → downloaded file → importFile (same path as
+               local import) → row appears. Cancel → AbortController →
+               SIGTERM/SIGKILL → temp job dir cleaned → latch released.
+
+PLAYBACK       row click → song/selected (same queue) or queue/selected +
+               startSongId (playing from a view that is not the queue —
+               sidebar clicks alone NEVER move the queue or pause anything)
+               → engine sets currentId + bumps playToken → useAudioElement
+               sets audio.src = media://audio/<id> → mediaProtocol streams
+               the file (Range requests as the user seeks — v3: arrow keys
+               skip ±10s and pointer drags on the slider run silent until
+               release, both through the AudioController, never the store)
+               → 'ended' → song/ended → engine picks next (shuffle/repeat/
+               played rules) → repeat. v3: a sort change re-sorts the queue
+               in place around the playing song (queue/orderChanged — no
+               restart, no playToken bump).
+
+TAG CASCADE    TagsDialog rename/delete → tags:rename/remove → tagStore
+               (registry write) → libraryStore.renameTag/removeTag (every
+               song, one persist) → dialog refetches tags + library → chips
+               and rows update everywhere at once.
+
+COMPRESS LATER Settings row "Compress" → library:compress → compressExisting
+               (transcode to <id>.opus.staged, compare sizes; a win renames
+               into place + replaceFile + delete old, a loss removes the
+               staged file and keeps everything) → CompressResult back →
+               library/songUpdated + a toast that tells the truth either
+               way: shrank → row shows the new size and the Compress button
+               disappears; not smaller → original kept, row unchanged and
+               re-attemptable. Guarded off for the song currently loaded in
+               the player; v2.1 covers the other direction — playing a song
+               mid-compression waits (compressionJobs → mediaProtocol) and
+               streams the settled file instead of false-flagging it
+               missing. v3.1 covers the last observer: DTO building
+               (library:list / updateDurations) waits out the swap through
+               the same tracker and re-reads the record, and the Settings
+               flow re-reads the library once the compress settles either
+               way — the download-then-compress repro that used to strand a
+               "file not found" row until restart is pinned by tests end to
+               end.
+
+DELETE         Row-menu delete → ConfirmDialog (or Settings row → in-dialog
+               confirm) → api.library.remove → trash the file first (skipped
+               if already missing) → remove row → cascade out of playlists →
+               library/songsRemoved (scrubs the engine's order, history AND
+               played maps — both paths) → renderer refetch.
+
+ERRORS         Main wraps import/trash/ytdlp work in withErrorReport: pushes
+               an AppError on the error channel AND rethrows so the invoke
+               rejects. The renderer normalizes both through errorMessage()
+               and the reducer collapses exact duplicates; distinct messages
+               stack as toasts.
+
+--------------------------------------------------------------------------------
+5. INVARIANTS WORTH KNOWING (the things reviews bled for)
+--------------------------------------------------------------------------------
+- ONE store instance set (library, playlists, settings, tags), constructed
+  once in index.ts and shared by IPC, media protocol, and importer. Stores
+  cache their JSON forever; two instances over one dir = stale reads +
+  clobbered writes.
+- SongDto.sizeBytes is null EXACTLY when exists is false — one measurement
+  produces both fields, at all three producers (library IPC, ingest IPC,
+  and the renderer's songMissing reducer case); since v2.1 the test mocks
+  and harness enforce it on seeds too.
+- In-flight compressions are tracked in main (compressionJobs); a media://
+  request for a compressing song waits for the settle and reads the record
+  fresh. The renderer-side guard (no compressing the cued song) holds the
+  reverse direction. Since v3.1, DTO measurement (library:list /
+  updateDurations) takes the same wait-then-re-read path, and the Settings
+  compress flow re-reads the library on settle — a raced "missing" verdict
+  can no longer outlive the moment it was wrong.
+- The sidebar's order IS playlists.json's array order (v3.1): reordering
+  crosses playlists:reorder as one whole-order payload, refused outright
+  unless it names every playlist exactly once; create still appends; no
+  drag while the sidebar filter narrows the list or a rename is open; OS
+  file-drags fall through to the app root's add-drop untouched.
+- Mouse clicks never park focus on a control (v3.1, useClickFocusReset):
+  focus returns to the body after every pointer click on a button or
+  slider, so the global shortcuts always work. Keyboard-activated clicks
+  and everything menu-shaped are exempt — menu focus is programmatic and
+  load-bearing.
+- The app renamed to Audi0z (v3.1) but LIBRARY_DIR_NAME did not: the
+  library folder stays ~/Music/my-music-library so no existing library is
+  stranded. Only the packaged userData folder moved with the name (it held
+  nothing but a re-downloadable yt-dlp copy).
+- Shared-contract changes (src/shared/*, storeTypes) are additive-or-removal
+  sweeps landing in ONE commit across api.ts, the preload, the mock and the
+  handler — api.test.ts's structural equality plus the compiler enforce it
+  (DESIGN.md records the rule; the old "frozen" claim is retired).
+- The VIEW and the QUEUE are separate: browsing never pauses playback; only
+  playing a song (or the TopNav play button) moves the queue, via
+  queue/selected + startSongId (the id must be in the dispatched order —
+  the engine trusts its callers on that).
+- Ordering has ONE implementation: songsInView/sortSongs (viewSongs.ts) feed
+  the list, the TopNav play button AND App's queue-resync memo, all with the
+  same global SortMode — so a sorted view, the queue it hands over, and a
+  live queue being re-sorted can never disagree. The sort is view-layer and
+  session-only; stored order (library insertion, playlist manual) is never
+  rewritten.
+- Scrub silence is ELEMENT-local: seeking pauses/resumes the <audio> element
+  directly and never dispatches, so playback.isPlaying (and the ⏸ glyph)
+  stay honest through a drag, and a store-level pause always wins.
+- The duration backfill yields to playback: no new probe starts while a song
+  plays (the media:// handler's idle path is also await-free). The song
+  playing has first claim on the disk — since v3 the code enforces what the
+  comment always claimed.
+- The Tags dialog is the only creator/renamer/deleter of tags; song rows
+  and the add dialog only pick from the registry. Registry mutations
+  cascade through the library in one persist — and a same-name rename must
+  stay a no-op (the unguarded version deleted the tag from every song).
+- The importer is the ONLY writer of new songs; ids and audio filenames
+  derive from the same uuid.
+- Custom error names don't survive IPC — message-text matching in
+  renderer lib/errors.ts is the contract.
+- The playback engine is pure; the <audio> element is driven exclusively by
+  (currentId, playToken) — src changes only on id change, playToken bumps
+  restart playback.
+- All JSON writes are atomic (temp+fsync+rename); corrupt files quarantine
+  to .bak and the app keeps running.
+- One download at a time (BUSY latch); cancel must always release the latch
+  (SIGKILL escalation guarantees the child dies).
+- yt-dlp arg list: --print implies --quiet, so --progress must stay paired
+  with it or the progress bar dies silently.
+- Renderer code never imports Node builtins (enforced by the split
+  tsconfig programs); renderer tests never import tmpLibrary.
+- macOS packaging must produce SOME signature (ad-hoc via the afterPack
+  hook) or arm64 refuses to launch; electron-builder's identity:'-' and
+  publish defaults are both booby-trapped (see electron-builder.yml
+  comments).
+
+--------------------------------------------------------------------------------
+6. TEST STRATEGY AT A GLANCE
+--------------------------------------------------------------------------------
+804 unit/component tests across 51 files in two vitest projects (node:
+stores, media protocol, ingest, IPC, wiring, build assets + both packaging
+hooks; web/jsdom: reducer, engine, hooks, every component against the real
+<App/> + mock api — whose media stub tracks paused per element since v3,
+which is what made scrub silence testable at all) + 9 Playwright e2e tests
+against the real built app with real files, real IPC, and the real media://
+protocol. The v1 release process additionally ran live gates: packaged-app
+launch, dmg mount + signature verification, and three real YouTube
+downloads (plain, compressed, cancel) through the built UI. The v2 batch
+(PR #9), the v2.1 polish batch (PR #10), the v3 batch (PR #11) and the
+v3.1 batch (PR #12) were each built with a per-task independent review
+loop plus a whole-branch final review, one fix wave, and a clean scoped
+re-review; the remaining deferrals live in PR #12's body (v3.1) and
+PR #11's body (v3). v3 and v3.1 each additionally verified a real dmg end
+to end: sha256-identical copies in dist/ and on ~/Desktop and codesign
+--deep --strict clean — v3.1's Audi0z-0.1.0-arm64.dmg built from a tree
+byte-identical to merged main.
+================================================================================

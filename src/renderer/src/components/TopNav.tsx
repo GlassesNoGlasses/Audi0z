@@ -122,6 +122,13 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     })
   }
 
+  function chosenSortVisual(sort: SortMode, target: SortField): string {
+    if (sort?.field != target) {
+      return ""
+    }
+    return sort.direction === 'asc' ? '↓' : '↑'
+  }
+
   return (
     <header className="topnav">
       <button
@@ -184,7 +191,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
               aria-checked={sort?.field === 'addedAt'}
               onClick={() => choose('addedAt')}
             >
-              Date added {sort?.field === 'addedAt' ? (sort.direction === 'asc' ? '↓' : '↑') : ''}
+              {chosenSortVisual(sort, 'addedAt')} Date added
             </button>
             <button
               type="button"
@@ -192,7 +199,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
               aria-checked={sort?.field === 'durationSec'}
               onClick={() => choose('durationSec')}
             >
-              Duration {sort?.field === 'durationSec' ? (sort.direction === 'asc' ? '↓' : '↑') : ''}
+              {chosenSortVisual(sort, 'durationSec')} Duration
             </button>
           </div>
         ) : null}

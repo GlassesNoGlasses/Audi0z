@@ -177,15 +177,6 @@ function AppShell(): ReactElement {
     onSeekBy: seekBy
   })
 
-  function onDrop(event: DragEvent<HTMLDivElement>): void {
-    event.preventDefault()
-    const files = event.dataTransfer?.files
-    if (!files || files.length === 0) return
-    // Electron 43 removed `File.path`; the preload's `webUtils` helper is the only way to a path.
-    const paths = Array.from(files).map((file) => window.api.files.getPathForFile(file))
-    dispatch({ type: 'dialog/opened', dialog: { kind: 'add', source: { kind: 'files', paths } } })
-  }
-
   function confirmIntent(intent: ConfirmIntent): void {
     dispatch({ type: 'dialog/closed' })
     if (intent.kind === 'deleteSong') {
@@ -204,8 +195,6 @@ function AppShell(): ReactElement {
       .remove(intent.playlistId)
       .then(() => {
         dispatch({ type: 'playlists/removed', playlistId: intent.playlistId })
-        // The view has nowhere left to be. The queue looks after itself: `playlists/removed` goes
-        // through the playback engine too, which stops it only if this playlist was the one queued.
         if (state.view.kind === 'playlist' && state.view.id === intent.playlistId) {
           dispatch({ type: 'view/selected', view: { kind: 'library' } })
         }
@@ -214,7 +203,7 @@ function AppShell(): ReactElement {
   }
 
   return (
-    <div className="app" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+    <div className="app" onDragOver={(event) => event.preventDefault()}>
       <Sidebar />
       <section className="library">
         <TopNav />

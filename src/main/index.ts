@@ -98,7 +98,7 @@ function createWindow(): BrowserWindow {
  * than lost as an unhandled rejection.
  */
 function startup(): void {
-  electronApp.setAppUserModelId('com.duolume.audi0z')
+  electronApp.setAppUserModelId('com.gng.audi0z')
 
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)
