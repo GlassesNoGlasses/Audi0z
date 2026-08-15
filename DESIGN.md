@@ -48,7 +48,8 @@ next state. No I/O, no timers, fully unit-testable.
 
 ## Playback engine semantics
 
-Played flags are per-queue and live **in memory only** — they are never persisted.
+Played flags describe the **current queue only** and live **in memory only** — the set is cleared
+on every queue switch (v3.3) and never persisted.
 
 - **Sequential**: advance through the queue; on wrap, reset all played flags and replay from the
   first song.
