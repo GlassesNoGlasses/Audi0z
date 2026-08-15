@@ -58,6 +58,10 @@ Played flags are per-queue and live **in memory only** — they are never persis
 - **Manual click**: play the clicked song and reset every _other_ song's played flag.
 - **Previous**: more than 5s into the song, rewind it to 0 — an element-only write, like a seek; the
   engine never hears it (v3.2). Otherwise pop from a capped history stack.
+- **Remote commands** (v3.2): a `useMediaSession` hook mirrors the cued title and play state into
+  the Media Session API and answers play/pause/nexttrack/previoustrack — that is AirPods taps, the
+  keyboard media keys, and the macOS Now Playing widget. previoustrack goes through the same
+  5-second gate as the on-screen button. No song cued → no handlers registered.
 - **Invariant**: if `currentId` is set, that song is marked played.
 
 ## Key decisions
