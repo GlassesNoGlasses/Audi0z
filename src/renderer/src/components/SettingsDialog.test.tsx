@@ -41,18 +41,6 @@ describe('SettingsDialog', () => {
     ).toBeChecked()
   })
 
-  it('updates yt-dlp and reports the version it landed on', async () => {
-    const user = userEvent.setup()
-    const api = seedApi()
-    await renderApp()
-
-    await user.click(screen.getByRole('button', { name: 'Settings' }))
-    await user.click(screen.getByRole('button', { name: 'Update yt-dlp' }))
-
-    expect(api.ytdlp.update).toHaveBeenCalled()
-    expect(await screen.findByRole('alert')).toHaveTextContent('yt-dlp updated to 0.0.0-mock')
-  })
-
   it('closes on Escape', async () => {
     const user = userEvent.setup()
     seedApi()
@@ -66,8 +54,8 @@ describe('SettingsDialog', () => {
 
   /**
    * Every control in here persists the moment it is used, so the footer has nothing to submit and
-   * nothing to take back — dismissal is its whole job. The one button in it pins that, and pins
-   * that Update yt-dlp now lives in the body instead.
+   * nothing to take back — dismissal is its whole job. The one button in it pins that. The body
+   * offers no yt-dlp update either: the app runs the pinned bundled binary, full stop (v3.2).
    */
   it('closes from the ok button', async () => {
     seedApi()
@@ -77,7 +65,7 @@ describe('SettingsDialog', () => {
     expect([...(footer?.querySelectorAll('button') ?? [])].map((el) => el.textContent)).toEqual([
       'Ok'
     ])
-    expect(within(settings()).getByRole('button', { name: 'Update yt-dlp' })).toBeVisible()
+    expect(within(settings()).queryByRole('button', { name: 'Update yt-dlp' })).toBeNull()
 
     await user.click(within(settings()).getByRole('button', { name: 'Ok' }))
 
