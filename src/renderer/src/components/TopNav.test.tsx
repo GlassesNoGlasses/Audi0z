@@ -287,10 +287,10 @@ describe('TopNav sort menu', () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
 
-    await sortView(user, /^Date added/)
+    await sortView(user, /Date added$/)
     expect(probe('sort')).toBe('addedAt asc')
 
-    await sortView(user, /^Date added/)
+    await sortView(user, /Date added$/)
     expect(probe('sort')).toBe('addedAt desc')
   })
 
@@ -299,10 +299,10 @@ describe('TopNav sort menu', () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
 
-    await sortView(user, /^Date added/, 2)
+    await sortView(user, /Date added$/, 2)
     expect(probe('sort')).toBe('addedAt desc')
 
-    await sortView(user, /^Duration/)
+    await sortView(user, /Duration$/)
     expect(probe('sort')).toBe('durationSec asc')
   })
 
@@ -310,7 +310,7 @@ describe('TopNav sort menu', () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
 
-    await sortView(user, /^Duration/)
+    await sortView(user, /Duration$/)
     await sortView(user, 'Manual order')
 
     expect(probe('sort')).toBe('manual')
@@ -328,7 +328,7 @@ describe('TopNav sort menu', () => {
       'false'
     ])
 
-    await user.click(screen.getByRole('menuitemradio', { name: /^Duration/ }))
+    await user.click(screen.getByRole('menuitemradio', { name: /Duration$/ }))
     expect(screen.queryByRole('menu')).toBeNull()
 
     await user.click(trigger())

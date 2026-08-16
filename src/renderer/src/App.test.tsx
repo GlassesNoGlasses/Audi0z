@@ -175,7 +175,7 @@ describe('App sorting', () => {
     expect(nowPlaying()).toBe('Alpha Mix')
 
     // Twice: the first press is ascending, which this library is already in.
-    await sortView(user, /^Date added/, 2)
+    await sortView(user, /Date added$/, 2)
 
     expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
     expect(nowPlaying()).toBe('Alpha Mix')

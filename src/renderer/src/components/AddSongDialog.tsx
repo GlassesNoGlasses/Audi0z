@@ -211,19 +211,18 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                   ? 'Choose audio file(s) to add!'
                   : `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
-              <p className="dialog-hint">
-                Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus.
-              </p>
+              <p className="dialog-hint">Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus.</p>
             </div>
           ) : (
             <div className="field">
               <label className="field">
                 URL
                 <input
-                type='text'
-                placeholder='www.youtube.com/watch?v=...'
-                value={url}
-                onChange={(event) => setUrl(event.target.value)} />
+                  type="text"
+                  placeholder="www.youtube.com/watch?v=..."
+                  value={url}
+                  onChange={(event) => setUrl(event.target.value)}
+                />
               </label>
               <button type="button" onClick={fetchDetails} disabled={busy || url.trim() === ''}>
                 Fetch Title
@@ -249,10 +248,11 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
           <label className="field">
             Title
             <input
-            type='text'
-            placeholder='Brainrot.exe'
-            value={title}
-            onChange={(event) => setTitle(event.target.value)} />
+              type="text"
+              placeholder="Brainrot.exe"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </label>
 
           <div className="field">

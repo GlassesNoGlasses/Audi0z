@@ -124,7 +124,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
   function chosenSortVisual(sort: SortMode, target: SortField): string {
     if (sort?.field != target) {
-      return ""
+      return ''
     }
     return sort.direction === 'asc' ? '↓' : '↑'
   }

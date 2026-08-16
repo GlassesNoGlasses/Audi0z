@@ -33,11 +33,13 @@ describe('SettingsDialog', () => {
     await renderApp()
 
     await user.click(screen.getByRole('button', { name: 'Settings' }))
-    await user.click(screen.getByRole('checkbox', { name: 'Compress new songs by default' }))
+    await user.click(
+      screen.getByRole('checkbox', { name: 'Compress new audios option by default' })
+    )
 
     expect(api.settings.set).toHaveBeenCalledWith({ compressByDefault: true })
     expect(
-      await screen.findByRole('checkbox', { name: 'Compress new songs by default' })
+      await screen.findByRole('checkbox', { name: 'Compress new audios option by default' })
     ).toBeChecked()
   })
 
@@ -79,7 +81,9 @@ describe('SettingsDialog', () => {
     const estimate = screen.getByText('Saves ~25%')
     expect(estimate.tagName).toBe('STRONG')
     // The preference itself is still addressable by exactly the words on it.
-    expect(screen.getByRole('checkbox', { name: 'Compress new songs by default' })).toBeVisible()
+    expect(
+      screen.getByRole('checkbox', { name: 'Compress new audios option by default' })
+    ).toBeVisible()
   })
 })
 
@@ -232,7 +236,7 @@ describe('SettingsDialog storage', () => {
 
     const held = within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })
     expect(held).toBeDisabled()
-    expect(held).toHaveAccessibleDescription(/player/i)
+    expect(held).toHaveAccessibleDescription(/currently playing/i)
     // Every other row is untouched: only the one file is under the player.
     expect(within(settings()).getByRole('button', { name: 'Compress Bravo Beat' })).toBeEnabled()
   })
@@ -258,14 +262,8 @@ describe('SettingsDialog storage', () => {
     // A `title` computes an accessible description too, so pin its absence: the description has to
     // come from the text on the page, which is the only version of it anyone can actually read.
     expect(held).not.toHaveAttribute('title')
-    expect(held).toHaveAccessibleDescription(
-      'Loaded in the player — compressing would replace the file it is streaming'
-    )
-    expect(
-      within(settings()).getByText(
-        'Loaded in the player — compressing would replace the file it is streaming'
-      )
-    ).toBeVisible()
+    expect(held).toHaveAccessibleDescription('Cannot compress file currently playing.')
+    expect(within(settings()).getByText('Cannot compress file currently playing.')).toBeVisible()
     // The reason takes the savings quote's slot: a figure for a file you cannot compress right
     // now is noise. Two are left — the preference's, and the row the player is not holding.
     expect(screen.getAllByText('Saves ~25%')).toHaveLength(2)

@@ -247,7 +247,7 @@ test('adds a song chosen from the file picker', async () => {
   }, sourcePath)
 
   await page.getByRole('button', { name: 'Add song', exact: true }).click()
-  await page.getByRole('button', { name: 'Choose files…' }).click()
+  await page.getByRole('button', { name: 'Add Files Here…' }).click()
   await expect(page.getByRole('textbox', { name: 'Title' })).toHaveValue('Fixture Song')
   await page.getByRole('button', { name: 'Add to library' }).click()
 

@@ -1,6 +1,6 @@
 # Audi0z
 
-A lightweight, local-only desktop music library for remixes, mashups, and slowed+reverb edits — the tracks that never make it to streaming services. Built with Electron, React, and TypeScript (and formerly named *my-music-library*). No accounts, no cloud, no telemetry: your music lives in a folder on your machine and the app is just a fast way to play and organize it.
+A lightweight, local-only desktop music library for remixes, mashups, and slowed+reverb edits — the tracks that never make it to streaming services. Built with Electron, React, and TypeScript (and formerly named _my-music-library_). No accounts, no cloud, no telemetry: your music lives in a folder on your machine and the app is just a fast way to play and organize it.
 
 ## Features
 
@@ -35,7 +35,7 @@ npm run dist:mac
 
 The installer lands at `dist/Audi0z-<version>-arm64.dmg` — and a copy is placed on your **Desktop** so you don't have to dig for it. Open it and drag the app to Applications.
 
-**First launch:** the app is ad-hoc signed, not notarized, so Gatekeeper will refuse a normal double-click on a downloaded copy ("cannot be opened because the developer cannot be verified"). **Right-click the app → Open → Open** the first time; after that it opens normally. This is expected for a self-built app without an Apple Developer ID. (If you're upgrading from a build made under the old *my-music-library* name, macOS treats Audi0z as a new app, so the right-click dance happens once more.)
+**First launch:** the app is ad-hoc signed, not notarized, so Gatekeeper will refuse a normal double-click on a downloaded copy ("cannot be opened because the developer cannot be verified"). **Right-click the app → Open → Open** the first time; after that it opens normally. This is expected for a self-built app without an Apple Developer ID. (If you're upgrading from a build made under the old _my-music-library_ name, macOS treats Audi0z as a new app, so the right-click dance happens once more.)
 
 ### Windows
 
@@ -77,9 +77,9 @@ npm run dev           # launches the app with hot reload
 
 Everything is stored in one folder:
 
-| Platform | Default location |
-|---|---|
-| all | `~/Music/my-music-library/` |
+| Platform | Default location            |
+| -------- | --------------------------- |
+| all      | `~/Music/my-music-library/` |
 
 The folder deliberately keeps the app's original name: libraries created before the rename to Audi0z keep working untouched, and nothing about your data moves.
 
@@ -90,7 +90,7 @@ To use a different folder (or keep multiple libraries), set the `MML_LIBRARY_DIR
 ## Using the app
 
 - **Add songs:** the download icon (top right) opens a dialog with two sources — local file(s) via picker or drag-and-drop, or a URL. Each mode says what it accepts: the file side lists the playable formats (MP3, M4A, AAC, FLAC, WAV, OGG, Opus), the URL side explains yt-dlp coverage and that a playlist link fetches only the linked item. The URL flow probes the title first (a spinner notes that the first probe after launch can take ~30 seconds — the bundled yt-dlp binary is slow to cold-start; later ones are quicker), then downloads with a live progress bar showing percent and bytes. Download errors surface as toasts with yt-dlp's actual message. Tags are picked from the registry's chips.
-- **Views vs. queues:** clicking "Library" or a playlist in the sidebar only changes what you're *looking at* — the music keeps playing. The queue actually switches when you play a song from the new view (click a row, or hit the highlighted play button in the top bar, which starts the first song — or a random one if that view has shuffle on). When the view you're looking at is already the one playing, that same button is its pause/resume toggle. While a song is cued, the sidebar entry the queue came from carries an accent marker — so you can always see where the sound is coming from, even while browsing somewhere else. The expand/collapse chevron on a playlist only shows its songs.
+- **Views vs. queues:** clicking "Library" or a playlist in the sidebar only changes what you're _looking at_ — the music keeps playing. The queue actually switches when you play a song from the new view (click a row, or hit the highlighted play button in the top bar, which starts the first song — or a random one if that view has shuffle on). When the view you're looking at is already the one playing, that same button is its pause/resume toggle. While a song is cued, the sidebar entry the queue came from carries an accent marker — so you can always see where the sound is coming from, even while browsing somewhere else. The expand/collapse chevron on a playlist only shows its songs.
 - **Reordering playlists:** drag a playlist up or down the sidebar; an accent seam shows which edge it will land on, and the new order is saved. Dragging pauses while the sidebar's filter is narrowing the list (a partial list can't say where the hidden ones go) or while a rename is open. Dropping audio files from Finder/Explorer still adds songs — the app tells its own drags apart from yours.
 - **Sorting:** the sort icon (left of the download icon) offers Manual order, Date added, and Duration — click a field to sort ascending, click it again to flip. The sort applies to whichever view you're in and carries into the play queue; it never rewrites the stored order, and it resets to Manual on relaunch.
 - **Filling playlists:** in a playlist view, the "Add Song" button (next to the search bar) opens a search-the-whole-library dialog that only offers songs the playlist doesn't already have — `+` adds a song and its row disappears on the spot. When there's nothing left to offer, the dialog says which reason applies (empty library, no search match, or everything's already in).
@@ -104,15 +104,15 @@ To use a different folder (or keep multiple libraries), set the `MML_LIBRARY_DIR
 
 ## Development reference
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | run the app with hot reload |
-| `npm test` | full unit/component suite (vitest, node + jsdom projects) |
-| `npm run e2e` | build, then Playwright end-to-end suite driving the real built app |
-| `npm run typecheck` / `lint` / `format` | the usual hygiene |
-| `npm run package` | unpacked build in `dist/` (no installer) |
-| `npm run dist:mac` / `dist:win` / `dist:linux` | platform installers (a copy lands on your Desktop) |
-| `npm run fetch:ytdlp` | (re)download the pinned yt-dlp binaries into `resources/bin/` |
+| Command                                        | What it does                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------ |
+| `npm run dev`                                  | run the app with hot reload                                        |
+| `npm test`                                     | full unit/component suite (vitest, node + jsdom projects)          |
+| `npm run e2e`                                  | build, then Playwright end-to-end suite driving the real built app |
+| `npm run typecheck` / `lint` / `format`        | the usual hygiene                                                  |
+| `npm run package`                              | unpacked build in `dist/` (no installer)                           |
+| `npm run dist:mac` / `dist:win` / `dist:linux` | platform installers (a copy lands on your Desktop)                 |
+| `npm run fetch:ytdlp`                          | (re)download the pinned yt-dlp binaries into `resources/bin/`      |
 
 `APP-SUMMARY.txt` in the repo root walks through the entire architecture file by file. `DESIGN.md` and `PLAN.txt` record the original design and build plan.
 
