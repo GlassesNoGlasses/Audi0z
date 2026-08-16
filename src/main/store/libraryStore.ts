@@ -50,6 +50,29 @@ function cloneSong(song: Song): Song {
   return { ...song, tags: [...song.tags] }
 }
 
+/**
+ * Writes a finished tag cascade back into the cached array, once the disk has taken it.
+ *
+ * Two rules meet here. **Disk first:** a write that rejects (ENOSPC, EIO) in a process that carries
+ * on must not leave the cache holding contents the file does not have, or the next unrelated write
+ * — which stringifies the cache as it finds it — would silently commit half a cascade nobody asked
+ * for.
+ *
+ * **And in place, song by song,** rather than swapping the array for the snapshot the cascade set
+ * out with: `persist` is an await, nothing serialises this store's methods against each other, and
+ * `current` IS the array every read is served from. An import or the startup duration backfill can
+ * land in it while the write is still in the air, and overwriting the array would erase them — from
+ * the cache, and then from disk on the very next write. Re-running the same rewrite over whatever
+ * `current` holds now touches only the songs that still match, and leaves everything that arrived
+ * meanwhile exactly as it arrived.
+ */
+function adopt(current: Song[], rewrite: (song: Song) => Song | null): void {
+  for (let index = 0; index < current.length; index++) {
+    const rewritten = rewrite(current[index])
+    if (rewritten !== null) current[index] = rewritten
+  }
+}
+
 export const createLibraryStore: CreateLibraryStore = (dir) => {
   const filePath = libraryJsonPath(dir)
   // Loaded once and kept for the life of the process: this cache never re-reads the file, so every
@@ -125,8 +148,8 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       const current = await load()
       const updated: Song[] = []
       // In place: `current` IS the cache every read is served from, so a rebuilt array would reach
-      // the disk while `list` kept answering with the old durations. (The tag passes below build
-      // into a copy and splice it back after the write — a stricter shape this one does not yet
+      // the disk while `list` kept answering with the old durations. (The tag passes below go
+      // further and only `adopt` once the write has landed — a stricter shape this one does not yet
       // share; see the backlog line covering the rest of the mutators.)
       for (let index = 0; index < current.length; index++) {
         const durationSec = byId.get(current[index].id)
@@ -157,43 +180,52 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       // "drop the old one" — and deletes the tag from every song that had it.
       if (oldName === newName) return
 
-      const current = await load()
-      // Built into a copy and adopted only once the disk has taken it. A write that rejects
-      // (ENOSPC, EIO) in a process that carries on must not leave the cache holding contents the
-      // file does not have: the next unrelated write flushes the whole cache, which would silently
-      // commit half of a tag cascade nobody asked for. The splice keeps `current`'s identity —
-      // it IS the array every read is served from.
-      const next = [...current]
-      let changed = false
-      for (let index = 0; index < next.length; index++) {
-        const song = next[index]
-        if (!song.tags.includes(oldName)) continue
+      // The whole pass, as one function of one song — `null` for a song that does not carry the
+      // tag and must not be touched. Written once and used twice, to build the document and then to
+      // adopt it, so the two passes cannot drift apart.
+      const rewrite = (song: Song): Song | null => {
+        if (!song.tags.includes(oldName)) return null
         // A song that already carries the new name merges the two rather than listing it twice.
         const tags = song.tags.includes(newName)
           ? song.tags.filter((tag) => tag !== oldName)
           : song.tags.map((tag) => (tag === oldName ? newName : tag))
-        next[index] = { ...song, tags }
-        changed = true
+        return { ...song, tags }
       }
-      if (!changed) return
-      await persist(next)
-      current.splice(0, current.length, ...next)
-    },
 
-    /** Drops one tag from every song. Same single-write and disk-first rules as `renameTag`. */
-    async removeTag(name) {
       const current = await load()
       const next = [...current]
       let changed = false
       for (let index = 0; index < next.length; index++) {
-        const song = next[index]
-        if (!song.tags.includes(name)) continue
-        next[index] = { ...song, tags: song.tags.filter((tag) => tag !== name) }
+        const rewritten = rewrite(next[index])
+        if (rewritten === null) continue
+        next[index] = rewritten
         changed = true
       }
       if (!changed) return
       await persist(next)
-      current.splice(0, current.length, ...next)
+      adopt(current, rewrite)
+    },
+
+    /**
+     * Drops one tag from every song. Same single-write, disk-first and in-place-adoption rules as
+     * `renameTag`.
+     */
+    async removeTag(name) {
+      const rewrite = (song: Song): Song | null =>
+        song.tags.includes(name) ? { ...song, tags: song.tags.filter((tag) => tag !== name) } : null
+
+      const current = await load()
+      const next = [...current]
+      let changed = false
+      for (let index = 0; index < next.length; index++) {
+        const rewritten = rewrite(next[index])
+        if (rewritten === null) continue
+        next[index] = rewritten
+        changed = true
+      }
+      if (!changed) return
+      await persist(next)
+      adopt(current, rewrite)
     },
 
     /**

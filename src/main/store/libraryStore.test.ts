@@ -397,6 +397,60 @@ describe('a cascade whose write is refused', () => {
   })
 })
 
+/**
+ * `persist` is an await, and nothing serialises the store's methods against each other — an import
+ * or the startup duration backfill can land in the cache while a cascade's write is still in the
+ * air. Adoption is therefore the same per-song rewrite applied in place, never a swap for the
+ * snapshot the cascade set out with: that would erase whatever arrived in the meantime from the
+ * cache, and then from disk, since the next write stringifies the cache as it finds it.
+ */
+describe('a cascade whose write is still in flight', () => {
+  /** Parks the next `writeJsonFile` call until it is released, and says when it got there. */
+  function parkNextWrite(): { started: Promise<void>; release: () => void } {
+    let announce!: () => void
+    let release!: () => void
+    const started = new Promise<void>((resolve) => {
+      announce = resolve
+    })
+    const parked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.mocked(writeJsonFile).mockImplementationOnce(() => {
+      announce()
+      return parked
+    })
+    return { started, release }
+  }
+
+  it('keeps a song added while the renameTag write is in flight', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed'] }))
+    const write = parkNextWrite()
+
+    const renaming = store.renameTag('slowed', 'slow')
+    await write.started
+    const added = await store.add(draft({ title: 'arrived mid-write', tags: [] }))
+    write.release()
+    await renaming
+
+    expect(await store.list()).toEqual([{ ...first, tags: ['slow'] }, added])
+  })
+
+  it('keeps a song added while the removeTag write is in flight', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
+    const write = parkNextWrite()
+
+    const removing = store.removeTag('slowed')
+    await write.started
+    const added = await store.add(draft({ title: 'arrived mid-write', tags: [] }))
+    write.release()
+    await removing
+
+    expect(await store.list()).toEqual([{ ...first, tags: ['edit'] }, added])
+  })
+})
+
 describe('replaceFile', () => {
   it('repoints the song at a new file, persists, and hands back a copy', async () => {
     const store = createLibraryStore(lib.root)
