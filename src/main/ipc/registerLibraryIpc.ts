@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { IpcMain } from 'electron'
-import { AUDIO_EXTENSIONS } from '../../shared/audioFormats'
+import { AUDIO_FORMAT_LABELS } from '../../shared/audioFormats'
 import { IPC, MEDIA_SCHEME } from '../../shared/ipc'
 import type {
   AddSongRequest,
@@ -139,9 +139,9 @@ function parseAddSongRequest(value: unknown): AddSongRequest {
 function assertPlayableSource(sourcePath: string): void {
   if (!isPlayableFile(sourcePath)) {
     throw new InvalidPayloadError(
-      `Cannot play "${path.basename(sourcePath)}" — supported formats are ${AUDIO_EXTENSIONS.map(
-        (ext) => ext.toUpperCase()
-      ).join(', ')}.`
+      `Cannot play "${path.basename(sourcePath)}" — supported formats are ${AUDIO_FORMAT_LABELS.join(
+        ', '
+      )}.`
     )
   }
 }

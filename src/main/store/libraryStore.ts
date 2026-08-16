@@ -63,8 +63,8 @@ function cloneSong(song: Song): Song {
  * `current` IS the array every read is served from. An import or the startup duration backfill can
  * land in it while the write is still in the air, and overwriting the array would erase them — from
  * the cache, and then from disk on the very next write. Re-running the same rewrite over whatever
- * `current` holds now touches only the songs that still match, and leaves everything that arrived
- * meanwhile exactly as it arrived.
+ * `current` holds touches only the songs that match as the cache stands now — including one that
+ * arrived mid-write already carrying the tag — and leaves the rest exactly as they arrived.
  */
 function adopt(current: Song[], rewrite: (song: Song) => Song | null): void {
   for (let index = 0; index < current.length; index++) {

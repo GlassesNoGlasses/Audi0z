@@ -11,9 +11,6 @@ import { AUDIO_EXTENSIONS, MIME_TYPES } from '../../shared/audioFormats'
  * `<audio>` refuse to play.
  */
 
-// Re-exported so the protocol side has one import for the whole content-type story.
-export { MIME_TYPES }
-
 export const DEFAULT_CONTENT_TYPE = 'application/octet-stream'
 
 export function contentTypeFor(fileName: string): string {

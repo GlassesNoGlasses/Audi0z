@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { AUDIO_EXTENSIONS } from '../../shared/audioFormats'
+import { AUDIO_EXTENSIONS, MIME_TYPES } from '../../shared/audioFormats'
 import {
   AUDIO_FILE_FILTERS,
   DEFAULT_CONTENT_TYPE,
-  MIME_TYPES,
   contentTypeFor,
   isPlayableFile
 } from './mimeTypes'
@@ -45,12 +44,23 @@ describe('isPlayableFile', () => {
     expect(isPlayableFile(`song.${ext}`)).toBe(true)
   })
 
-  it.each(['song.aiff', 'song.wma', 'song.mp4', 'notes.txt', 'no-extension', ''])(
-    'rejects "%s"',
-    (fileName) => {
-      expect(isPlayableFile(fileName)).toBe(false)
-    }
-  )
+  it('accepts a file whose extension is upper-cased', () => {
+    expect(isPlayableFile('Song.MP3')).toBe(true)
+  })
+
+  it.each([
+    'song.aiff',
+    'song.wma',
+    'song.mp4',
+    'notes.txt',
+    'no-extension',
+    '',
+    'TRACK.AIFF',
+    // A leading dot is a name, not an extension, as far as `path.extname` is concerned.
+    '/downloads/.wav'
+  ])('rejects "%s"', (fileName) => {
+    expect(isPlayableFile(fileName)).toBe(false)
+  })
 })
 
 /** The one filter the Audio entry offers; the escape hatch is checked separately. */

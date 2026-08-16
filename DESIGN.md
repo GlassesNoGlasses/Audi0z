@@ -41,7 +41,7 @@ Every method is a thin `ipcRenderer.invoke` / `ipcRenderer.on` passthrough — n
 off — the preload's `webUtils.getPathForFile`, which is how drag-and-drop obtained file paths once
 Electron removed `File.path` — went with that member when drag-and-drop-to-add was removed.
 `sandbox` stays off regardless: turning it on is a runtime posture change with its own testing
-burden, deliberately deferred to its own piece of work rather than folded into this deletion.
+burden, deliberately deferred to its own piece of work.
 
 ### Renderer — React 18 + TypeScript
 

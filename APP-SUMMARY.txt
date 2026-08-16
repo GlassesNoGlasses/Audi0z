@@ -428,8 +428,8 @@ downloader.ts (+ test)  createDownloader: orchestrates probe → download →
 
 index.ts                Builds window.api with contextBridge: an invoke
                         wrapper per channel and subscribe/unsubscribe pairs
-                        for the push events — every member a passthrough,
-                        nothing preload-local.
+                        for the push events — every member crosses IPC,
+                        nothing computed in the preload.
 index.d.ts              Ambient typing that gives the renderer a typed
                         window.api.
 
@@ -780,11 +780,14 @@ PlayerBar.tsx (+ test)  Transport controls: play/pause (fixed equal-size
                         current-title display.
 AddSongDialog.tsx       The add flow. File source: a file-picker
 (+ test)                pre-fill, title from basename, and (v3) a static
-                        hint naming the playable types — "Supported: MP3,
-                        M4A, AAC, FLAC, WAV, OGG, Opus." (deliberately the
-                        playable SUBSET of the picker filter, which stays
-                        wider as a permissive net; AIFF/WMA import but
-                        Chromium can't play them). Tags are a chip
+                        hint naming the playable types, rendered (v3.4)
+                        from the shared catalogue
+                        (src/shared/audioFormats.ts) — the same list that
+                        drives the picker filter and the media:// mime
+                        map, WebM included. The picker no longer offers
+                        AIFF/WMA, and a file the protocol cannot label is
+                        refused at library:add with a toast naming the
+                        supported formats. Tags are a chip
                         multi-select over the registry (free-text entry is
                         gone — the Tags dialog is the sole creator); the
                         compress checkbox defaults from settings and carries
