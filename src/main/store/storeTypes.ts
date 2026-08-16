@@ -43,6 +43,15 @@ export interface TagStore {
   list(): Promise<Tag[]>
   create(name: string): Promise<Tag>
   rename(id: string, name: string): Promise<Tag>
+  /**
+   * The name `rename` would store — trimmed, and held to the registry's uniqueness rule — or the
+   * error it would throw. Writes nothing.
+   *
+   * The IPC layer runs the library cascade *before* it commits the registry (`tags.json` is the
+   * commit record, so it goes last), and this is what still lets it refuse a clash before a single
+   * song moves.
+   */
+  resolveRename(id: string, name: string): Promise<string>
   /** Idempotent: removing an id that is not there is a no-op, not an error. */
   remove(id: string): Promise<void>
   getTag(id: string): Promise<Tag | undefined>

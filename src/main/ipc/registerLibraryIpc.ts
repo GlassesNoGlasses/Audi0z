@@ -41,8 +41,9 @@ export interface LibraryIpcDeps {
   playlistStore: PlaylistStore
   settingsStore: SettingsStore
   /**
-   * The tag registry. It knows nothing about songs, so this module owns the cascade: a rename or a
-   * removal here is followed by the matching pass over `libraryStore`.
+   * The tag registry. It knows nothing about songs, so this module owns the cascade — and runs the
+   * pass over `libraryStore` *first*, committing here last (the `tags:rename` handler explains
+   * why).
    */
   tagStore: TagStore
   /** Absolute path of the library's `audio/` directory. */
@@ -308,9 +309,24 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
   )
 
   /**
-   * Registry first, then the songs — and the cascade uses the name the tag had *before* the
-   * rename, which is why the old tag is read up front. If the registry refuses the new name the
-   * cascade never runs, so the two can only disagree if the library write itself fails.
+   * Songs first, registry last.
+   *
+   * `library.json` and `tags.json` are two separate atomic writes, and no filesystem lands two
+   * renames as one commit — so the window between them cannot be closed by any amount of write
+   * plumbing, only pointed somewhere harmless. The order is what decides *which* half a crash
+   * strands, and only one of the two halves is benign.
+   *
+   * The tags dialog draws the registry and nothing else, so committing it first would leave the
+   * app reporting a rename that succeeded while every song still carried the dead string — a grey,
+   * unreachable chip, and no reason for the user to retry. Committing it last leaves the tag under
+   * its old name: the operation plainly did not take, which is what the user will believe, and
+   * repeating the identical gesture *is* the repair — the library pass is a no-op once the songs
+   * have already moved.
+   *
+   * `resolveRename` writes nothing. It is what still refuses a clashing name before a single song
+   * moves, and it answers with the *trimmed* name, so the songs and the registry can only agree on
+   * spelling. The cascade matches on the name the tag had before the rename, which is why the old
+   * tag is read up front.
    */
   ipc.handle(IPC.tags.rename, async (_event, id: unknown, name: unknown): Promise<Tag> => {
     const tagId = assertNonEmptyString(id, 'id')
@@ -318,19 +334,27 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     const existing = await deps.tagStore.getTag(tagId)
     if (!existing) throw new NotFoundError(`No tag with id "${tagId}"`)
 
-    const renamed = await deps.tagStore.rename(tagId, newName)
-    await deps.libraryStore.renameTag(existing.name, renamed.name)
-    return renamed
+    const resolved = await deps.tagStore.resolveRename(tagId, newName)
+    await deps.libraryStore.renameTag(existing.name, resolved)
+    return deps.tagStore.rename(tagId, resolved)
   })
 
-  /** Removing a tag that is not in the registry is a no-op: the end state is what was asked for. */
+  /**
+   * Songs first, registry last, for the reason `tags:rename` spells out. What an interrupted delete
+   * leaves behind is an ordinary unused registry tag — indistinguishable from one just created, and
+   * with a Delete button next to it — rather than an orphan string on every song that no dialog in
+   * the app can reach.
+   *
+   * Removing a tag that is not in the registry is still a no-op: the end state is what was asked
+   * for.
+   */
   ipc.handle(IPC.tags.remove, async (_event, id: unknown): Promise<void> => {
     const tagId = assertNonEmptyString(id, 'id')
     const existing = await deps.tagStore.getTag(tagId)
     if (!existing) return
 
-    await deps.tagStore.remove(tagId)
     await deps.libraryStore.removeTag(existing.name)
+    await deps.tagStore.remove(tagId)
   })
 
   ipc.handle(IPC.playlists.list, (): Promise<Playlist[]> => deps.playlistStore.list())

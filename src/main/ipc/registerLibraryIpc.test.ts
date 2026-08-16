@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +13,7 @@ import type {
   SongDto,
   Tag
 } from '../../shared/types'
+import { libraryJsonPath } from '../paths'
 import { createLibraryStore } from '../store/libraryStore'
 import { createPlaylistStore } from '../store/playlistStore'
 import { createSettingsStore } from '../store/settingsStore'
@@ -700,6 +702,201 @@ describe('tag channels', () => {
     const harness = setup()
 
     await expect(harness.invoke(IPC.tags.remove, id)).rejects.toThrow()
+  })
+})
+
+/**
+ * A tag rename or delete replaces two files, and no filesystem commits two renames as one — so the
+ * window between them cannot be closed, only pointed somewhere harmless. Which half a crash strands
+ * is decided entirely by the order, and these tests watch that order directly.
+ *
+ * A crash is stood in for by making the *second* write reject, and the residue is read back through
+ * **fresh** stores, which is what a restart is: a store caches its document for the life of the
+ * process, so only the bytes on disk say what actually survived.
+ */
+describe('tag cascade ordering', () => {
+  interface Cascade {
+    libraryStore: LibraryStore
+    tagStore: TagStore
+    /** `'library'` then `'registry'`, in the order the two cascade writes were attempted. */
+    order: string[]
+    renameTag: ReturnType<typeof vi.fn>
+    removeTag: ReturnType<typeof vi.fn>
+    deps: Partial<LibraryIpcDeps>
+  }
+
+  /**
+   * Real stores, with the library pass and the registry commit both announcing themselves. `crash`
+   * makes the registry commit reject the way a lost power supply would — after the songs have
+   * already moved.
+   */
+  function cascade({ crash = false } = {}): Cascade {
+    const libraryStore = createLibraryStore(lib.root)
+    const tagStore = createTagStore(lib.root)
+    const order: string[] = []
+    const renameTag = vi.fn(async (oldName: string, newName: string) => {
+      order.push('library')
+      await libraryStore.renameTag(oldName, newName)
+    })
+    const removeTag = vi.fn(async (name: string) => {
+      order.push('library')
+      await libraryStore.removeTag(name)
+    })
+
+    return {
+      libraryStore,
+      tagStore,
+      order,
+      renameTag,
+      removeTag,
+      deps: {
+        libraryStore: { ...libraryStore, renameTag, removeTag },
+        tagStore: {
+          ...tagStore,
+          async rename(id: string, name: string): Promise<Tag> {
+            order.push('registry')
+            if (crash) throw new Error('power lost')
+            return tagStore.rename(id, name)
+          },
+          async remove(id: string): Promise<void> {
+            order.push('registry')
+            if (crash) throw new Error('power lost')
+            await tagStore.remove(id)
+          }
+        }
+      }
+    }
+  }
+
+  const namesOnDisk = async (): Promise<string[]> =>
+    (await createTagStore(lib.root).list()).map((tag) => tag.name)
+
+  const libraryBytes = (): Promise<string> => readFile(libraryJsonPath(lib.root), 'utf8')
+
+  it('writes the songs before it commits the registry on a rename', async () => {
+    const { deps, order, tagStore, libraryStore } = cascade()
+    const harness = setup(deps)
+    const created = await tagStore.create('slowed')
+    await libraryStore.add(draftSong({ tags: ['slowed'] }))
+
+    await harness.invoke<Tag>(IPC.tags.rename, created.id, 'slow')
+
+    expect(order).toEqual(['library', 'registry'])
+  })
+
+  it('writes the songs before it commits the registry on a remove', async () => {
+    const { deps, order, tagStore, libraryStore } = cascade()
+    const harness = setup(deps)
+    const created = await tagStore.create('slowed')
+    await libraryStore.add(draftSong({ tags: ['slowed'] }))
+
+    await harness.invoke(IPC.tags.remove, created.id)
+
+    expect(order).toEqual(['library', 'registry'])
+  })
+
+  /**
+   * The tags dialog lists the registry and nothing else, so committing it first would tell the user
+   * a rename succeeded while every song still carried the dead string — and nothing would prompt
+   * the retry that repairs it. Stranding the other half leaves the tag plainly un-renamed.
+   */
+  it('leaves the registry holding the old name when a rename never reaches the commit', async () => {
+    const { deps, tagStore, libraryStore } = cascade({ crash: true })
+    const harness = setup(deps)
+    const created = await tagStore.create('slowed')
+    const song = await libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+
+    await expect(harness.invoke(IPC.tags.rename, created.id, 'slow')).rejects.toThrow('power lost')
+
+    expect(await namesOnDisk()).toEqual(['slowed'])
+    expect((await createLibraryStore(lib.root).getSong(song.id))?.tags).toEqual(['slow', 'edit'])
+  })
+
+  /** Repeating the identical gesture *is* the repair: the library pass has nothing left to do. */
+  it('converges when the interrupted rename is repeated', async () => {
+    const crashed = cascade({ crash: true })
+    const created = await crashed.tagStore.create('slowed')
+    const song = await crashed.libraryStore.add(draftSong({ tags: ['slowed'] }))
+    await expect(setup(crashed.deps).invoke(IPC.tags.rename, created.id, 'slow')).rejects.toThrow(
+      'power lost'
+    )
+
+    // Fresh stores, the way the next launch would come up.
+    const retry = cascade()
+    const stranded = await libraryBytes()
+
+    await setup(retry.deps).invoke<Tag>(IPC.tags.rename, created.id, 'slow')
+
+    expect(retry.renameTag).toHaveBeenCalledTimes(1)
+    expect(await libraryBytes()).toBe(stranded)
+    expect(await namesOnDisk()).toEqual(['slow'])
+    expect((await createLibraryStore(lib.root).getSong(song.id))?.tags).toEqual(['slow'])
+  })
+
+  /** The residue of an interrupted delete is an ordinary unused tag — with a Delete button on it. */
+  it('leaves the tag listed when a remove never reaches the commit', async () => {
+    const { deps, tagStore, libraryStore } = cascade({ crash: true })
+    const harness = setup(deps)
+    const created = await tagStore.create('slowed')
+    const song = await libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+
+    await expect(harness.invoke(IPC.tags.remove, created.id)).rejects.toThrow('power lost')
+
+    await expect(createTagStore(lib.root).list()).resolves.toEqual([created])
+    expect((await createLibraryStore(lib.root).getSong(song.id))?.tags).toEqual(['edit'])
+  })
+
+  it('converges when the interrupted remove is repeated', async () => {
+    const crashed = cascade({ crash: true })
+    const created = await crashed.tagStore.create('slowed')
+    const song = await crashed.libraryStore.add(draftSong({ tags: ['slowed', 'edit'] }))
+    await expect(setup(crashed.deps).invoke(IPC.tags.remove, created.id)).rejects.toThrow(
+      'power lost'
+    )
+
+    const retry = cascade()
+    const stranded = await libraryBytes()
+
+    await setup(retry.deps).invoke(IPC.tags.remove, created.id)
+
+    expect(retry.removeTag).toHaveBeenCalledTimes(1)
+    expect(await libraryBytes()).toBe(stranded)
+    await expect(createTagStore(lib.root).list()).resolves.toEqual([])
+    expect((await createLibraryStore(lib.root).getSong(song.id))?.tags).toEqual(['edit'])
+  })
+
+  /**
+   * Cascading first must not cost the clash check: `resolveRename` answers it without writing, so a
+   * refused rename still never touches `library.json`.
+   */
+  it('refuses a clashing rename before a single song moves', async () => {
+    const { deps, renameTag, tagStore, libraryStore } = cascade()
+    const harness = setup(deps)
+    await tagStore.create('reverb')
+    const created = await tagStore.create('slowed')
+    await libraryStore.add(draftSong({ tags: ['slowed'] }))
+    const before = await libraryBytes()
+
+    await expect(harness.invoke(IPC.tags.rename, created.id, 'REVERB')).rejects.toThrow(
+      'A tag named "reverb" already exists'
+    )
+
+    expect(renameTag).not.toHaveBeenCalled()
+    expect(await libraryBytes()).toBe(before)
+  })
+
+  /** The reorder's easy mistake: cascading the raw payload instead of the name the registry keeps. */
+  it('cascades the trimmed name onto the songs', async () => {
+    const { deps, renameTag, tagStore, libraryStore } = cascade()
+    const harness = setup(deps)
+    const created = await tagStore.create('slowed')
+    const song = await libraryStore.add(draftSong({ tags: ['slowed'] }))
+
+    const renamed = await harness.invoke<Tag>(IPC.tags.rename, created.id, '  slow  ')
+
+    expect(renamed.name).toBe('slow')
+    expect(renameTag).toHaveBeenCalledWith('slowed', 'slow')
+    expect((await libraryStore.getSong(song.id))?.tags).toEqual(['slow'])
   })
 })
 
