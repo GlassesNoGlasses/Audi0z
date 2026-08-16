@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Lightweight local-only desktop music library for remixes, mashups and slowed+reverb edits",
-  "author": "duolume",
+  "author": "gng",
   "license": "UNLICENSED",
   "main": "./out/main/index.js",
   "scripts": {

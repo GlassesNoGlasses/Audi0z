@@ -18,7 +18,16 @@ keeps the keyboard shortcuts alive after any mouse click, the date-added
 row column, real tag chips in the row menu via a shared TagChip,
 drag-and-drop playlist reordering over a new playlists:reorder channel,
 the playing-source sidebar marker, and an add-to-playlist dialog that
-offers only unadded songs — PR #12).
+offers only unadded songs — PR #12); revised again 2026-08-15 for the
+v3.2 batch (PR #13: the yt-dlp self-update removed end to end — the
+pinned bundled binary is the only one ever run and startup deletes any
+self-updated userData copy; Previous past 5s rewinds the song instead of
+stepping back, element-only via a useSmartPrev hook; and a useMediaSession
+hook that answers AirPods taps, media keys, and the macOS Now Playing
+widget, with previoustrack routed through the same 5s gate); revised again
+2026-08-15 for the v3.3 engine refactor (PR #14: playedByQueue collapsed
+to a single current-queue played set, cleared on every queue switch —
+behavior-identical, the per-queue retention was unreachable after boot).
 
 --------------------------------------------------------------------------------
 1. WHAT THE APP IS
@@ -353,7 +362,10 @@ ytdlp.ts (+ test)       Everything yt-dlp: binary resolution (userData copy
                         forwarded-but-never-read duration is gone) with a 90s
                         timeout (the PyInstaller onefile binary takes ~25s to
                         cold-start before any network; measured), progress-
-                        line parsing, and update-to-latest.
+                        line parsing. v3.2: update-to-latest is gone — the
+                        pinned bundled binary is the only one ever run, and
+                        removeSelfUpdatedYtDlp best-effort deletes the copy
+                        an older build's self-update left in userData.
 ffmpeg.ts (+ test)      ffmpeg binary resolution (ffmpeg-static in dev,
                         asar-unpacked path when packaged) and the transcode
                         arg builder: Opus 96k with `-f opus` (staged through
@@ -503,8 +515,12 @@ AppContext.tsx          useReducer + context provider; the app's only state
 --- src/renderer/src/playback/ — the pure engine ---
 
 types.ts                PlaybackState (queueId, order, currentId, isPlaying,
-                        playToken, shuffle, repeat, playedByQueue, history)
-                        and the action union.
+                        playToken, shuffle, repeat, played, history) and the
+                        action union. v3.3: playedByQueue (a per-queue map)
+                        became `played` — one set for the current queue,
+                        cleared on every queue switch. The old retention was
+                        unreachable: every user-caused switch starts a song,
+                        which reset the target queue's flags anyway.
 engine.ts (+ test)      A pure reducer — no side effects, fully unit-tested
                         (100% branch): queue selection (with an optional
                         startSongId that switches queue AND starts that song —
@@ -518,16 +534,17 @@ engine.ts (+ test)      A pure reducer — no side effects, fully unit-tested
                         actually played), song/ended (repeat restarts the
                         current song via playToken bump), orderChanged
                         (removing the current song stops playback), played
-                        tracking per queue, and (v2.1) playlists/removed —
-                        drops the playlist's played flags always, and when
-                        it owned the queue clears queueId/order/current/
-                        history and stops (so Shuffle/Repeat after deleting
-                        the playing playlist no-op instead of error-toasting).
+                        tracking for the current queue (v3.3: one set, not
+                        per-queue), and (v2.1, reshaped v3.3)
+                        playlists/removed — deleting the queue-owning
+                        playlist clears queueId/order/current/history and
+                        stops (so Shuffle/Repeat after deleting the playing
+                        playlist no-op instead of error-toasting); deleting
+                        any other playlist is a no-op for playback.
                         The playToken increments whenever
                         audio should (re)start — the audio hook keys on it.
-selectors.ts (+ test)   The only sanctioned reads of playedByQueue (it may be
-                        undefined for fresh queues): isPlayed, playedCount,
-                        currentIndex.
+selectors.ts (+ test)   The only sanctioned reads of the played set: isPlayed,
+                        playedCount, currentIndex (v3.3 — no map hop left).
 
 --- src/renderer/src/hooks/ ---
 
@@ -776,8 +793,8 @@ AddSongDialog.tsx       The add flow. File source: picker or drag-drop
                         two-step probe (spinner + "first fetch can take ~30s"
                         note) → start, with (v3) a standing hint — yt-dlp
                         sites work, audio arrives as M4A or WebM, a playlist
-                        link fetches only the linked item, Update yt-dlp in
-                        Settings refreshes site support — and the v2
+                        link fetches only the linked item (the Update-yt-dlp
+                        mention left with the button in v3.2) — and the v2
                         progress UI — styled bar
                         with percent + byte counts, indeterminate animation
                         when a stage has no percentage — a cancel button while
@@ -829,12 +846,12 @@ SettingsDialog.tsx      v2, the storage manager: total library size with the
                         keeps the original, leaves the row uncompressed and
                         says so ("… is already smaller than an Opus
                         re-encode — kept the original"). Plus the
-                        compress-by-default toggle (with estimate) and the
-                        "Update yt-dlp" button — moved (v3) from the footer
-                        into a body row with an explainer; the footer is a
-                        single "Ok" now, because every control in this
-                        dialog persists immediately and dismissal is the
-                        footer's only job. v3.1: a compress settle — success
+                        compress-by-default toggle (with estimate). The
+                        "Update yt-dlp" button — footer → body row in v3 —
+                        was removed outright in v3.2 (pinned bundled binary
+                        only); the footer stays a single "Ok", because every
+                        control in this dialog persists immediately and
+                        dismissal is the footer's only job. v3.1: a compress settle — success
                         OR failure — re-reads the library: exists is derived
                         only on the main side of an IPC call, so a dto that
                         raced the file swap and branded a row "File missing"
