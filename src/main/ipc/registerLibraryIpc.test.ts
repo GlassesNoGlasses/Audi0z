@@ -316,6 +316,27 @@ describe(IPC.library.add, () => {
     await expect(harness.invoke(IPC.library.add, request)).rejects.toThrow()
     expect(harness.importSong).not.toHaveBeenCalled()
   })
+
+  /**
+   * The picker's "All files" escape hatch hands back whatever the user clicked. A file the media
+   * protocol cannot label would be copied in verbatim and then never play — so it is turned away
+   * at the door, with a sentence the renderer can show. The downloader never comes through here.
+   */
+  it.each(['track.aiff', 'track.wma', 'track.mp4', 'notes.txt', 'no-extension'])(
+    'refuses %s, which the app cannot play',
+    async (fileName) => {
+      const harness = setup()
+      const request: AddSongRequest = {
+        sourcePath: path.join(path.sep, 'downloads', fileName),
+        title: 'Track',
+        tags: [],
+        compress: false
+      }
+
+      await expect(harness.invoke(IPC.library.add, request)).rejects.toThrow(/supported formats/i)
+      expect(harness.importSong).not.toHaveBeenCalled()
+    }
+  )
 })
 
 describe(IPC.library.update, () => {

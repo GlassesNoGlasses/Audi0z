@@ -1,4 +1,6 @@
+import path from 'node:path'
 import type { IpcMain } from 'electron'
+import { AUDIO_EXTENSIONS } from '../../shared/audioFormats'
 import { IPC, MEDIA_SCHEME } from '../../shared/ipc'
 import type {
   AddSongRequest,
@@ -10,6 +12,7 @@ import type {
   Tag
 } from '../../shared/types'
 import { resolveAudioPath } from '../media/mediaProtocol'
+import { isPlayableFile } from '../media/mimeTypes'
 import { NotFoundError } from '../store/errors'
 import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
 
@@ -121,6 +124,25 @@ function parseAddSongRequest(value: unknown): AddSongRequest {
     title: assertNonEmptyString(raw.title, 'request.title'),
     tags: assertStringArray(raw.tags, 'request.tags'),
     compress: assertBoolean(raw.compress, 'request.compress')
+  }
+}
+
+/**
+ * The picker keeps an "All files" escape hatch — a correctly encoded file with an odd name is the
+ * user's to add — so this is where a file the app could never play is turned away. Importing one
+ * costs a copy of the whole file and mints a song that is silent forever and reported as missing;
+ * refusing costs a sentence the renderer already knows how to show.
+ *
+ * The downloader calls `importFile` directly and never comes through this handler, so URL ingest
+ * is untouched by this check.
+ */
+function assertPlayableSource(sourcePath: string): void {
+  if (!isPlayableFile(sourcePath)) {
+    throw new InvalidPayloadError(
+      `Cannot play "${path.basename(sourcePath)}" — supported formats are ${AUDIO_EXTENSIONS.map(
+        (ext) => ext.toUpperCase()
+      ).join(', ')}.`
+    )
   }
 }
 
@@ -239,7 +261,9 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
   })
 
   ipc.handle(IPC.library.add, async (_event, request: unknown): Promise<SongDto> => {
-    return toDto(await deps.importSong(parseAddSongRequest(request)))
+    const parsed = parseAddSongRequest(request)
+    assertPlayableSource(parsed.sourcePath)
+    return toDto(await deps.importSong(parsed))
   })
 
   ipc.handle(IPC.library.update, async (_event, id: unknown, patch: unknown): Promise<SongDto> => {
