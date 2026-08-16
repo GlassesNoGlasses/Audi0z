@@ -71,7 +71,7 @@ describe('SongList', () => {
     await renderApp()
 
     // Twice: the first press is ascending, which this library is already in.
-    await sortView(user, /^Date added/, 2)
+    await sortView(user, /Date added$/, 2)
 
     expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
   })
@@ -91,7 +91,7 @@ describe('SongList', () => {
     })
     await renderApp()
 
-    await sortView(user, /^Duration/)
+    await sortView(user, /Duration$/)
 
     expect(songTitles()).toEqual(['Charlie Tune', 'Alpha Mix', 'Bravo Beat'])
   })

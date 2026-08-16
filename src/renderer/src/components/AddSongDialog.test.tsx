@@ -1,8 +1,8 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { mockApiControls } from '../../../../tests/support/mockApi'
-import { appRoot, renderApp, seedApi, songTitles, stubMediaElement } from '../testing/harness'
+import { renderApp, seedApi, songTitles, stubMediaElement } from '../testing/harness'
 
 stubMediaElement()
 
@@ -38,12 +38,12 @@ describe('AddSongDialog — file source', () => {
     await renderApp()
 
     await openAddDialog(user)
-    await user.click(screen.getByRole('button', { name: 'Choose files…' }))
+    await user.click(screen.getByRole('button', { name: 'Add Files Here…' }))
 
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Great Track')
     )
-    expect(screen.getByRole('checkbox', { name: 'Compress to Opus' })).toBeChecked()
+    expect(screen.getByRole('checkbox', { name: 'Compress to Opus format' })).toBeChecked()
 
     await user.click(screen.getByRole('button', { name: 'slowed' }))
     await user.click(screen.getByRole('button', { name: 'Add to library' }))
@@ -56,24 +56,6 @@ describe('AddSongDialog — file source', () => {
     })
     await waitFor(() => expect(songTitles()).toEqual(['Great Track']))
   })
-
-  it('opens pre-filled from a drop, resolving every dropped file through the preload', async () => {
-    const api = seedApi()
-    await renderApp()
-
-    const files = [
-      new File(['x'], 'One Track.mp3', { type: 'audio/mpeg' }),
-      new File(['y'], 'Two Track.wav', { type: 'audio/wav' })
-    ]
-    await act(async () => {
-      fireEvent.drop(appRoot(), { dataTransfer: { files, types: ['Files'] } })
-    })
-
-    // `File.path` no longer exists in Electron — every path comes from the preload helper.
-    expect(api.files.getPathForFile).toHaveBeenCalledTimes(2)
-    expect(screen.getByRole('dialog', { name: 'Add song' })).toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('One Track')
-  })
 })
 
 describe('AddSongDialog — tags', () => {
@@ -84,7 +66,7 @@ describe('AddSongDialog — tags', () => {
     await renderApp()
 
     await openAddDialog(user)
-    await user.click(screen.getByRole('button', { name: 'Choose files…' }))
+    await user.click(screen.getByRole('button', { name: 'Add Files Here…' }))
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: 'Title' })).toHaveValue('Great Track')
     )
@@ -123,7 +105,7 @@ describe('AddSongDialog — tags', () => {
 
     expect(screen.getByText('Saves ~25%').tagName).toBe('STRONG')
     // The preference itself is still addressable by exactly the words on it.
-    expect(screen.getByRole('checkbox', { name: 'Compress to Opus' })).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Compress to Opus format' })).toBeInTheDocument()
   })
 })
 
@@ -138,7 +120,7 @@ describe('AddSongDialog — url source', () => {
     await openAddDialog(user)
     await user.click(screen.getByRole('button', { name: 'From URL' }))
     await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
-    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.click(screen.getByRole('button', { name: 'Fetch Title' }))
 
     expect(api.download.probe).toHaveBeenCalledWith(URL_UNDER_TEST)
     await waitFor(() =>
@@ -238,11 +220,11 @@ describe('AddSongDialog — url source', () => {
     ).toBeNull()
 
     await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
-    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.click(screen.getByRole('button', { name: 'Fetch Title' }))
 
     const hint = screen.getByText('Fetching details… (the first fetch after launch can take ~30s)')
     expect(hint.querySelector('.spinner')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Fetch details' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Fetch Title' })).toBeDisabled()
   })
 
   it('stops warning once the probe answers', async () => {
@@ -253,7 +235,7 @@ describe('AddSongDialog — url source', () => {
     await openAddDialog(user)
     await user.click(screen.getByRole('button', { name: 'From URL' }))
     await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
-    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.click(screen.getByRole('button', { name: 'Fetch Title' }))
 
     await waitFor(() =>
       expect(
@@ -276,7 +258,7 @@ describe('AddSongDialog — url source', () => {
     await openAddDialog(user)
     await user.click(screen.getByRole('button', { name: 'From URL' }))
     await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
-    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.click(screen.getByRole('button', { name: 'Fetch Title' }))
 
     expect(screen.queryByRole('button', { name: 'Cancel download' })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
@@ -294,7 +276,7 @@ describe('AddSongDialog — url source', () => {
     await openAddDialog(user)
     await user.click(screen.getByRole('button', { name: 'From URL' }))
     await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
-    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.click(screen.getByRole('button', { name: 'Fetch Title' }))
     await user.keyboard('{Escape}')
 
     expect(screen.queryByRole('dialog', { name: 'Add song' })).toBeNull()
@@ -337,7 +319,7 @@ describe('AddSongDialog — url source', () => {
     await openAddDialog(user)
     await user.click(screen.getByRole('button', { name: 'From URL' }))
     await user.type(screen.getByRole('textbox', { name: 'URL' }), URL_UNDER_TEST)
-    await user.click(screen.getByRole('button', { name: 'Fetch details' }))
+    await user.click(screen.getByRole('button', { name: 'Fetch Title' }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Title' })).not.toHaveValue(''))
     await user.click(screen.getByRole('button', { name: 'Download' }))
 
@@ -362,12 +344,12 @@ describe('AddSongDialog — what it accepts', () => {
     await openAddDialog(user)
     expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Choose files…' }))
+    await user.click(screen.getByRole('button', { name: 'Add Files Here…' }))
     await waitFor(() => expect(screen.getByText('/music/Great Track.mp3')).toBeInTheDocument())
     expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
   })
 
-  /** yt-dlp decides what a URL may be, and a playlist link is the one that surprises people. */
+  /** yt-dlp decides what a URL may be, so the hint is the only place the coverage is spelled out. */
   it('says what urls can come from', async () => {
     const user = userEvent.setup()
     seedApi()
@@ -376,8 +358,10 @@ describe('AddSongDialog — what it accepts', () => {
     await openAddDialog(user)
     await user.click(screen.getByRole('button', { name: 'From URL' }))
 
-    const hint = screen.getByText(/Downloads use yt-dlp/)
-    expect(hint).toHaveTextContent('A playlist link fetches only the linked item')
+    const hint = screen.getByText(/Downloads via yt-dlp/)
+    expect(hint).toHaveTextContent(
+      'Downloads via yt-dlp: YouTube, SoundCloud, Bandcamp and most audio and video sites work.'
+    )
     // Standing hint, not the probing one: it is here before any fetch and says nothing about waiting.
     expect(
       screen.queryByText('Fetching details… (the first fetch after launch can take ~30s)')

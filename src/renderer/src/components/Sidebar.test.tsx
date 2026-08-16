@@ -1,4 +1,4 @@
-import { act, createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { createEvent, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -341,11 +341,11 @@ describe('Sidebar', () => {
 
   /**
    * A file dragged in from the OS never went through the sidebar's own `dragStart`, so `dragId` is
-   * still null and every handler on the row has to leave the event completely alone. The proof is
-   * that the drop arrives at the app root's handler and opens the add dialog: the sidebar's `onDrop`
-   * calls `stopPropagation`, so a row that had taken this drag would have swallowed it here.
+   * still null and every handler on the row has to leave the event completely alone: no seam, no
+   * reorder, and neither `preventDefault` nor `stopPropagation` on the way past. Nothing downstream
+   * takes a dropped file any more, so what is under test is the containment itself.
    */
-  it('lets a drag it never started fall through to the app root', async () => {
+  it('leaves a drag it never started completely alone', async () => {
     const api = seedApi({ songs, playlists: three })
     await renderApp()
 
@@ -358,12 +358,13 @@ describe('Sidebar', () => {
     // No seam drawn: the row is not offering to receive anything.
     expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
 
-    await act(async () => {
-      fireEvent.drop(alpha, { dataTransfer })
-    })
+    const dropped = createEvent.drop(alpha, { dataTransfer })
+    fireEvent(alpha, dropped)
 
-    expect(screen.getByRole('dialog', { name: 'Add song' })).toBeInTheDocument()
+    // Untouched: a row that had taken this drag would have cancelled the event here.
+    expect(dropped.defaultPrevented).toBe(false)
     expect(api.playlists.reorder).not.toHaveBeenCalled()
+    expect(itemNames()).toEqual(['Alpha', 'Bravo', 'Chill'])
   })
 
   /** The store is the order of record, so a reorder it refused must leave the list where it was. */
