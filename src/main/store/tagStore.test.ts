@@ -128,6 +128,60 @@ describe('rename', () => {
   })
 })
 
+/**
+ * `rename`'s decision without `rename`'s write. The IPC layer commits `tags.json` last — the songs
+ * move first — so the naming rules have to be answerable before anything is stored, and they have
+ * to stay in here rather than being restated in the caller.
+ */
+describe('resolveRename', () => {
+  it('answers with the trimmed name it would store, and writes nothing', async () => {
+    const store = createTagStore(lib.root)
+    const created = await store.create('old')
+    const before = await readFile(tagsJsonPath(lib.root), 'utf8')
+
+    await expect(store.resolveRename(created.id, '  new  ')).resolves.toBe('new')
+
+    expect(await readFile(tagsJsonPath(lib.root), 'utf8')).toBe(before)
+    expect(await store.list()).toEqual([created])
+    await expect(createTagStore(lib.root).list()).resolves.toEqual([created])
+  })
+
+  it('lets a tag re-case its own name', async () => {
+    const store = createTagStore(lib.root)
+    const created = await store.create('slowed')
+
+    await expect(store.resolveRename(created.id, 'Slowed')).resolves.toBe('Slowed')
+  })
+
+  it('refuses a name another tag already holds, whatever its case', async () => {
+    const store = createTagStore(lib.root)
+    await store.create('slowed')
+    const other = await store.create('reverb')
+    const before = await readFile(tagsJsonPath(lib.root), 'utf8')
+
+    await expect(store.resolveRename(other.id, 'SLOWED')).rejects.toBeInstanceOf(ConflictError)
+    await expect(store.resolveRename(other.id, '  Slowed ')).rejects.toThrow(
+      'A tag named "slowed" already exists'
+    )
+
+    expect(await readFile(tagsJsonPath(lib.root), 'utf8')).toBe(before)
+  })
+
+  it('refuses an empty name', async () => {
+    const store = createTagStore(lib.root)
+    const created = await store.create('slowed')
+
+    await expect(store.resolveRename(created.id, '   ')).rejects.toThrow()
+  })
+
+  it('throws NotFound for an unknown id', async () => {
+    const store = createTagStore(lib.root)
+
+    await expect(store.resolveRename('missing', 'x')).rejects.toBeInstanceOf(NotFoundError)
+    await expect(store.resolveRename('missing', 'x')).rejects.toMatchObject({ name: 'NotFound' })
+  })
+})
+
 describe('remove', () => {
   it('drops the tag and persists', async () => {
     const store = createTagStore(lib.root)

@@ -1,6 +1,7 @@
 import { act, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
+import { AUDIO_FORMAT_LABELS, MIME_TYPES } from '../../../shared/audioFormats'
 import { mockApiControls } from '../../../../tests/support/mockApi'
 import { renderApp, seedApi, songTitles, stubMediaElement } from '../testing/harness'
 
@@ -331,9 +332,9 @@ describe('AddSongDialog — url source', () => {
 
 describe('AddSongDialog — what it accepts', () => {
   /**
-   * The list is the playable subset of the picker filter in main/index.ts — the filter stays wider
-   * on purpose — and it has to survive a pick: the other files-mode hint turns into the chosen
-   * path, so the list cannot live inside it.
+   * The hint is the shared catalogue read out loud: exactly the formats the media protocol can
+   * label, which is exactly what the picker filter offers. It also has to survive a pick — the
+   * other files-mode hint turns into the chosen path, so the list cannot live inside it.
    */
   it('lists the audio types the app can actually play', async () => {
     const user = userEvent.setup()
@@ -342,11 +343,17 @@ describe('AddSongDialog — what it accepts', () => {
     await renderApp()
 
     await openAddDialog(user)
-    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
+    const supported = `Supported: ${AUDIO_FORMAT_LABELS.join(', ')}.`
+    expect(screen.getByText(/^Supported:/)).toHaveTextContent(supported)
+    // Every format the protocol can label is named, and nothing it cannot is.
+    for (const ext of Object.keys(MIME_TYPES)) {
+      expect(screen.getByText(/^Supported:/)).toHaveTextContent(new RegExp(ext.slice(1), 'i'))
+    }
+    expect(screen.getByText(/^Supported:/)).not.toHaveTextContent(/aiff|wma/i)
 
     await user.click(screen.getByRole('button', { name: 'Add Files Here…' }))
     await waitFor(() => expect(screen.getByText('/music/Great Track.mp3')).toBeInTheDocument())
-    expect(screen.getByText(/MP3, M4A, AAC, FLAC, WAV, OGG, Opus\./)).toBeInTheDocument()
+    expect(screen.getByText(/^Supported:/)).toHaveTextContent(supported)
   })
 
   /** yt-dlp decides what a URL may be, so the hint is the only place the coverage is spelled out. */

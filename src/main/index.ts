@@ -13,6 +13,7 @@ import { download, probe, removeSelfUpdatedYtDlp, resolveYtDlpPath } from './ing
 import { registerIngestIpc } from './ipc/registerIngestIpc'
 import { registerLibraryIpc } from './ipc/registerLibraryIpc'
 import { createMediaHandler } from './media/mediaProtocol'
+import { AUDIO_FILE_FILTERS } from './media/mimeTypes'
 import { audioDir, ensureDirs, resolveLibraryRoot } from './paths'
 import { createLibraryStore } from './store/libraryStore'
 import { createPlaylistStore } from './store/playlistStore'
@@ -60,7 +61,10 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // The preload needs `webUtils.getPathForFile`, which is unavailable in a sandboxed preload.
+      // Left off deliberately, not by need: the reason it was ever off — the preload's
+      // `webUtils.getPathForFile`, unavailable in a sandboxed preload — went with that member.
+      // Turning it back on is a runtime posture change with its own testing burden, so it is
+      // evaluated as its own piece of work rather than as a side effect of deleting dead code.
       sandbox: false
     }
   })
@@ -134,8 +138,8 @@ function startup(): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ffmpegStaticPath = require('ffmpeg-static') as string | null
   const ffmpegPath = resolveFfmpegPath({ ffmpegStaticPath, isPackaged: app.isPackaged })
-  // Both ways into the library — the picker/drop handler and the downloader — import through the
-  // same deps, and therefore through the same `libraryStore` instance.
+  // Both ways into the library — the file picker and the downloader — import through the same
+  // deps, and therefore through the same `libraryStore` instance.
   const importDeps: ImportDeps = {
     audioDir: audio,
     libraryStore,
@@ -207,6 +211,15 @@ function startup(): void {
     probe: (url) => probe({ url, run: runLines, binPath: ytDlpPath })
   })
 
+  // Quitting mid-download would otherwise orphan yt-dlp and its ffmpeg: nothing else in the app
+  // ever signals them, so they outlive the window that started them. One cancel takes the whole
+  // process group with it (see `killProcessTree`). Nothing is awaited — the rejected `start` is a
+  // `Cancelled`, which `withErrorReport` already declines to toast, and blocking a quit on the
+  // temp-directory cleanup isn't worth the delay.
+  app.on('before-quit', () => {
+    downloader.cancel()
+  })
+
   // The returned unsubscribe is dropped on purpose: the progress subscription lives as long as
   // the process does, and `sendToWindow` already copes with the window coming and going.
   registerIngestIpc(ipcMain, {
@@ -220,13 +233,7 @@ function startup(): void {
       const result = await dialog.showOpenDialog({
         title: 'Add songs',
         properties: ['openFile', 'multiSelections'],
-        filters: [
-          {
-            name: 'Audio',
-            extensions: ['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus', 'aiff', 'wma']
-          },
-          { name: 'All files', extensions: ['*'] }
-        ]
+        filters: [...AUDIO_FILE_FILTERS]
       })
       return result.canceled ? [] : result.filePaths
     },

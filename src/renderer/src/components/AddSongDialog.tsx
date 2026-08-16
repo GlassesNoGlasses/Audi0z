@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react'
+import { AUDIO_FORMAT_LABELS } from '../../../shared/audioFormats'
 import type { DownloadProgress } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
@@ -38,7 +39,7 @@ function bytesLabel(progress: DownloadProgress): string | null {
  * real title and tags before yt-dlp starts pulling bytes — and stays open when it fails, because
  * the usual fix (a different URL) is right there in the form.
  *
- * Several dropped files are imported one after another: the form re-arms with the next file's name
+ * Several picked files are imported one after another: the form re-arms with the next file's name
  * instead of silently ignoring everything past the first.
  */
 export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
@@ -132,7 +133,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
           close()
           return
         }
-        // More files were dropped or picked: re-arm the form for the next one.
+        // More files were picked: re-arm the form for the next one.
         setPaths(rest)
         setTitle(titleFromPath(rest[0]))
         setPicked(new Set())
@@ -211,7 +212,8 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                   ? 'Choose audio file(s) to add!'
                   : `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
-              <p className="dialog-hint">Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus.</p>
+              {/* The picker's own filter, read out loud — both come from the shared catalogue. */}
+              <p className="dialog-hint">Supported: {AUDIO_FORMAT_LABELS.join(', ')}.</p>
             </div>
           ) : (
             <div className="field">

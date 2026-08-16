@@ -220,7 +220,7 @@ function AppShell(): ReactElement {
   }
 
   return (
-    <div className="app" onDragOver={(event) => event.preventDefault()}>
+    <div className="app">
       <Sidebar />
       <section className="library">
         <TopNav />

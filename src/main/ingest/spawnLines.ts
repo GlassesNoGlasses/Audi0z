@@ -36,13 +36,53 @@ export type RunLines = (opts: RunLinesOptions) => Promise<RunLinesResult>
 export const STDERR_TAIL_LINES = 20
 
 /**
- * How long a cancelled child has to honour SIGTERM before SIGKILL settles it.
+ * How long a cancelled process group has to honour SIGTERM before SIGKILL settles it.
  *
  * Without the escalation a child that ignores SIGTERM never fires `close`, so this promise never
  * settles — and `downloader`'s `finally` never clears `running`, leaving every later download
  * rejecting with BUSY for the life of the main process, with nothing in the UI able to clear it.
  */
 export const KILL_GRACE_MS = 5000
+
+/** The slice of a `ChildProcess` {@link killProcessTree} needs — which is what makes it unit-testable. */
+export interface KillableChild {
+  pid?: number | undefined
+  kill(signal?: NodeJS.Signals): boolean
+}
+
+/**
+ * Signals a child *and everything it spawned*.
+ *
+ * `child.kill()` signals exactly one pid, so yt-dlp's ffmpeg — a grandchild — survives a cancel and
+ * keeps burning CPU and writing into a temp directory the downloader has already deleted. Because
+ * the spawn below is `detached` on POSIX, the child leads a process group of its own; signalling
+ * the *negative* pid delivers to every member of that group, ffmpeg included.
+ *
+ * Windows keeps today's exact single-process behaviour: there `detached` means "outlive the
+ * parent", not "new process group", and negative pids aren't a thing. The app doesn't ship there.
+ *
+ * The `try` is load-bearing, not defensive garnish. `process.kill` throws ESRCH once the group is
+ * gone — the ordinary race where the child exited on its own between `exit` and `close` — and this
+ * runs inside an abort listener, where a throw surfaces as an `uncaughtException` that kills the
+ * main process rather than as a rejected download.
+ */
+export function killProcessTree(
+  child: KillableChild,
+  signal: NodeJS.Signals,
+  platform: NodeJS.Platform = process.platform
+): void {
+  const { pid } = child
+  if (pid !== undefined && platform !== 'win32') {
+    try {
+      process.kill(-pid, signal)
+      return
+    } catch {
+      // The group is gone (ESRCH) or not ours to signal (EPERM). Fall through to the direct kill,
+      // which is a no-op on a child that has already exited.
+    }
+  }
+  child.kill(signal)
+}
 
 function abortError(bin: string): Error {
   const error = new Error(`aborted: ${bin}`)
@@ -102,7 +142,14 @@ export const runLines: RunLines = ({
     })
 
     // stdin is ignored on purpose: a child that waits on input would otherwise hang forever.
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+    // `detached` on POSIX buys a process *group*, not a detached process — it is what makes the
+    // group kill in `killProcessTree` reach yt-dlp's ffmpeg. Deliberately no `child.unref()`: the
+    // promise settles on `close`, which needs the child still attached and its pipes still ours.
+    const child = spawn(bin, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+      detached: process.platform !== 'win32'
+    })
 
     child.stdout?.setEncoding('utf8')
     child.stdout?.on('data', (chunk: string) => stdout.push(chunk))
@@ -113,8 +160,8 @@ export const runLines: RunLines = ({
     // neither this timer nor a missed clear may be what keeps the process alive.
     let killTimer: NodeJS.Timeout | null = null
     const onAbort = (): void => {
-      child.kill()
-      killTimer = setTimeout(() => child.kill('SIGKILL'), killGraceMs)
+      killProcessTree(child, 'SIGTERM')
+      killTimer = setTimeout(() => killProcessTree(child, 'SIGKILL'), killGraceMs)
       killTimer.unref?.()
     }
     signal?.addEventListener('abort', onAbort, { once: true })

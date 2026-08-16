@@ -10,8 +10,12 @@ import type { CreateTagStore } from './storeTypes'
  *
  * The registry is an *index* over the tag strings songs already carry: it owns a tag's identity,
  * display name and colour, and nothing else. Keeping `library.json` in step when a tag is renamed
- * or deleted is the IPC layer's job (`registerLibraryIpc` calls `libraryStore.renameTag` /
- * `removeTag` straight after), which keeps this store from knowing songs exist at all.
+ * or deleted is the IPC layer's job, which keeps this store from knowing songs exist at all — and
+ * it runs that pass *before* it calls in here, because two files cannot be replaced in one commit
+ * and this is the file the app treats as the truth about which tags exist. A write here is
+ * therefore the last step of a rename or a delete rather than the first, which is what makes an
+ * interrupted one look to the user like it simply did not happen. `resolveRename` is how the caller
+ * still refuses a clashing name before a single song moves.
  *
  * Structurally identical to `playlistStore`: `loadOnce` over an atomically written file, validators
  * that let a corrupt document degrade to "no tags" rather than to a broken app, and clones on the
@@ -121,6 +125,19 @@ export const createTagStore: CreateTagStore = (dir, rng = Math.random) => {
       return cloneTag(tag)
     },
 
+    /**
+     * What `rename` would store, without storing it — so the caller can cascade onto the songs
+     * first and still refuse a clash before anything moves.
+     */
+    async resolveRename(id, name) {
+      const current = await load()
+      if (!current.some((tag) => tag.id === id)) {
+        throw new NotFoundError(`No tag with id "${id}"`)
+      }
+      return validateName(current, name, id)
+    },
+
+    /** Re-validates rather than trusting `resolveRename`: any other caller gets the same rules. */
     async rename(id, name) {
       const current = await load()
       const index = current.findIndex((tag) => tag.id === id)

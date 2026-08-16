@@ -23,7 +23,7 @@ export interface Toast {
 export type ConfirmIntent =
   { kind: 'deleteSong'; songId: string } | { kind: 'deletePlaylist'; playlistId: string }
 
-/** Where an add is coming from: files already chosen (picker or drop), or a URL to fetch. */
+/** Where an add is coming from: files already chosen with the picker, or a URL to fetch. */
 export type AddSource = { kind: 'files'; paths: string[] } | { kind: 'url' }
 
 /** How the view is ordered. Null is the stored order — the library's insertion order, a playlist's own. */

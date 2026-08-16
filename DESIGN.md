@@ -6,9 +6,9 @@ A lightweight, **local-only** Electron desktop music library (macOS / Windows / 
 remixes, mashups and slowed+reverb edits — the kind of tracks that do not live in a streaming
 service.
 
-Songs are added three ways: a file picker, drag-and-drop, or a URL handed to `yt-dlp`. Every song
-carries free-form tags. Songs are grouped into playlists. Playback has played/shuffle/repeat
-semantics (see _Playback engine_ below).
+Songs are added two ways: a file picker, or a URL handed to `yt-dlp`. Every song carries free-form
+tags. Songs are grouped into playlists. Playback has played/shuffle/repeat semantics (see
+_Playback engine_ below).
 
 ## Architecture
 
@@ -37,9 +37,11 @@ Three processes, one direction of trust: the renderer asks, the main process doe
 
 A single typed `Api` object (`src/shared/api.ts`) exposed through `contextBridge` as `window.api`.
 Every method is a thin `ipcRenderer.invoke` / `ipcRenderer.on` passthrough — no logic lives here.
-`contextIsolation` is on, `nodeIntegration` is off, `sandbox` is off (the preload needs
-`webUtils.getPathForFile`, which is how drag-and-drop file paths are obtained now that Electron
-removed `File.path`).
+`contextIsolation` is on, `nodeIntegration` is off, and `sandbox` is off. The reason it was ever
+off — the preload's `webUtils.getPathForFile`, which is how drag-and-drop obtained file paths once
+Electron removed `File.path` — went with that member when drag-and-drop-to-add was removed.
+`sandbox` stays off regardless: turning it on is a runtime posture change with its own testing
+burden, deliberately deferred to its own piece of work.
 
 ### Renderer — React 18 + TypeScript
 

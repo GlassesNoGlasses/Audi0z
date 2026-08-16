@@ -14,9 +14,8 @@ import type {
 /**
  * The frozen renderer <-> main contract, exposed by the preload as `window.api`.
  *
- * Every member is either a promise-returning `ipcRenderer.invoke` passthrough, a synchronous
- * preload-local helper (`files.getPathForFile`), or a subscription that returns its own
- * unsubscribe function.
+ * Every member is either a promise-returning `ipcRenderer.invoke` passthrough or a subscription
+ * that returns its own unsubscribe function.
  */
 export interface Api {
   library: {
@@ -65,8 +64,6 @@ export interface Api {
   }
   files: {
     pickAudioFiles(): Promise<string[]>
-    /** Synchronous: Electron removed `File.path`, so drag-and-drop paths come from `webUtils`. */
-    getPathForFile(file: File): string
   }
   download: {
     probe(url: string): Promise<ProbeResult>

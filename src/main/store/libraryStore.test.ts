@@ -363,6 +363,94 @@ describe('removeTag', () => {
   })
 })
 
+/**
+ * Not the crash case — a crash takes the cache with it. This is the write that *rejects* (ENOSPC,
+ * EIO) in a process that carries on: a cache holding contents the file does not have would be
+ * flushed out whole by the next unrelated write, silently committing half a tag cascade nobody
+ * asked for. So the two cascade passes build into a copy and only adopt it once the disk has it.
+ */
+describe('a cascade whose write is refused', () => {
+  function enospc(): Error {
+    return Object.assign(new Error('no space left on device'), { code: 'ENOSPC' })
+  }
+
+  it('leaves renameTag reading back what is actually on disk', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['slowed', 'edit'] }))
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(enospc())
+
+    await expect(store.renameTag('slowed', 'slow')).rejects.toThrow('no space left on device')
+
+    expect(await store.list()).toEqual([added])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([added])
+  })
+
+  it('leaves removeTag reading back what is actually on disk', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['slowed', 'edit'] }))
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(enospc())
+
+    await expect(store.removeTag('slowed')).rejects.toThrow('no space left on device')
+
+    expect(await store.list()).toEqual([added])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([added])
+  })
+})
+
+/**
+ * `persist` is an await, and nothing serialises the store's methods against each other — an import
+ * or the startup duration backfill can land in the cache while a cascade's write is still in the
+ * air. Adoption is therefore the same per-song rewrite applied in place, never a swap for the
+ * snapshot the cascade set out with: that would erase whatever arrived in the meantime from the
+ * cache, and then from disk, since the next write stringifies the cache as it finds it.
+ */
+describe('a cascade whose write is still in flight', () => {
+  /** Parks the next `writeJsonFile` call until it is released, and says when it got there. */
+  function parkNextWrite(): { started: Promise<void>; release: () => void } {
+    let announce!: () => void
+    let release!: () => void
+    const started = new Promise<void>((resolve) => {
+      announce = resolve
+    })
+    const parked = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    vi.mocked(writeJsonFile).mockImplementationOnce(() => {
+      announce()
+      return parked
+    })
+    return { started, release }
+  }
+
+  it('keeps a song added while the renameTag write is in flight', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed'] }))
+    const write = parkNextWrite()
+
+    const renaming = store.renameTag('slowed', 'slow')
+    await write.started
+    const added = await store.add(draft({ title: 'arrived mid-write', tags: [] }))
+    write.release()
+    await renaming
+
+    expect(await store.list()).toEqual([{ ...first, tags: ['slow'] }, added])
+  })
+
+  it('keeps a song added while the removeTag write is in flight', async () => {
+    const store = createLibraryStore(lib.root)
+    const first = await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
+    const write = parkNextWrite()
+
+    const removing = store.removeTag('slowed')
+    await write.started
+    const added = await store.add(draft({ title: 'arrived mid-write', tags: [] }))
+    write.release()
+    await removing
+
+    expect(await store.list()).toEqual([{ ...first, tags: ['edit'] }, added])
+  })
+})
+
 describe('replaceFile', () => {
   it('repoints the song at a new file, persists, and hands back a copy', async () => {
     const store = createLibraryStore(lib.root)
