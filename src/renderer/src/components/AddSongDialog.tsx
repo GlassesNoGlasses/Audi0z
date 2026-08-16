@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react'
+import { AUDIO_FORMAT_LABELS } from '../../../shared/audioFormats'
 import type { DownloadProgress } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
@@ -211,7 +212,8 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                   ? 'Choose audio file(s) to add!'
                   : `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
-              <p className="dialog-hint">Supported: MP3, M4A, AAC, FLAC, WAV, OGG, Opus.</p>
+              {/* The picker's own filter, read out loud — both come from the shared catalogue. */}
+              <p className="dialog-hint">Supported: {AUDIO_FORMAT_LABELS.join(', ')}.</p>
             </div>
           ) : (
             <div className="field">

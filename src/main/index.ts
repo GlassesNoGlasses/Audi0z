@@ -13,6 +13,7 @@ import { download, probe, removeSelfUpdatedYtDlp, resolveYtDlpPath } from './ing
 import { registerIngestIpc } from './ipc/registerIngestIpc'
 import { registerLibraryIpc } from './ipc/registerLibraryIpc'
 import { createMediaHandler } from './media/mediaProtocol'
+import { AUDIO_FILE_FILTERS } from './media/mimeTypes'
 import { audioDir, ensureDirs, resolveLibraryRoot } from './paths'
 import { createLibraryStore } from './store/libraryStore'
 import { createPlaylistStore } from './store/playlistStore'
@@ -220,13 +221,7 @@ function startup(): void {
       const result = await dialog.showOpenDialog({
         title: 'Add songs',
         properties: ['openFile', 'multiSelections'],
-        filters: [
-          {
-            name: 'Audio',
-            extensions: ['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus', 'aiff', 'wma']
-          },
-          { name: 'All files', extensions: ['*'] }
-        ]
+        filters: [...AUDIO_FILE_FILTERS]
       })
       return result.canceled ? [] : result.filePaths
     },
