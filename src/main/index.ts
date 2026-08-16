@@ -208,6 +208,15 @@ function startup(): void {
     probe: (url) => probe({ url, run: runLines, binPath: ytDlpPath })
   })
 
+  // Quitting mid-download would otherwise orphan yt-dlp and its ffmpeg: nothing else in the app
+  // ever signals them, so they outlive the window that started them. One cancel takes the whole
+  // process group with it (see `killProcessTree`). Nothing is awaited — the rejected `start` is a
+  // `Cancelled`, which `withErrorReport` already declines to toast, and blocking a quit on the
+  // temp-directory cleanup isn't worth the delay.
+  app.on('before-quit', () => {
+    downloader.cancel()
+  })
+
   // The returned unsubscribe is dropped on purpose: the progress subscription lives as long as
   // the process does, and `sendToWindow` already copes with the window coming and going.
   registerIngestIpc(ipcMain, {
