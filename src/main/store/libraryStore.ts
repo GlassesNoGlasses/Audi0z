@@ -124,8 +124,10 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       const byId = new Map(entries.map((entry) => [entry.id, entry.durationSec]))
       const current = await load()
       const updated: Song[] = []
-      // In place, like the tag passes: `current` IS the cache every read is served from, so a
-      // rebuilt array would reach the disk while `list` kept answering with the old durations.
+      // In place: `current` IS the cache every read is served from, so a rebuilt array would reach
+      // the disk while `list` kept answering with the old durations. (The tag passes below build
+      // into a copy and splice it back after the write — a stricter shape this one does not yet
+      // share; see the backlog line covering the rest of the mutators.)
       for (let index = 0; index < current.length; index++) {
         const durationSec = byId.get(current[index].id)
         if (durationSec === undefined) continue
@@ -156,31 +158,42 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       if (oldName === newName) return
 
       const current = await load()
+      // Built into a copy and adopted only once the disk has taken it. A write that rejects
+      // (ENOSPC, EIO) in a process that carries on must not leave the cache holding contents the
+      // file does not have: the next unrelated write flushes the whole cache, which would silently
+      // commit half of a tag cascade nobody asked for. The splice keeps `current`'s identity —
+      // it IS the array every read is served from.
+      const next = [...current]
       let changed = false
-      for (let index = 0; index < current.length; index++) {
-        const song = current[index]
+      for (let index = 0; index < next.length; index++) {
+        const song = next[index]
         if (!song.tags.includes(oldName)) continue
         // A song that already carries the new name merges the two rather than listing it twice.
         const tags = song.tags.includes(newName)
           ? song.tags.filter((tag) => tag !== oldName)
           : song.tags.map((tag) => (tag === oldName ? newName : tag))
-        current[index] = { ...song, tags }
+        next[index] = { ...song, tags }
         changed = true
       }
-      if (changed) await persist(current)
+      if (!changed) return
+      await persist(next)
+      current.splice(0, current.length, ...next)
     },
 
-    /** Drops one tag from every song. Same single-write rule as `renameTag`. */
+    /** Drops one tag from every song. Same single-write and disk-first rules as `renameTag`. */
     async removeTag(name) {
       const current = await load()
+      const next = [...current]
       let changed = false
-      for (let index = 0; index < current.length; index++) {
-        const song = current[index]
+      for (let index = 0; index < next.length; index++) {
+        const song = next[index]
         if (!song.tags.includes(name)) continue
-        current[index] = { ...song, tags: song.tags.filter((tag) => tag !== name) }
+        next[index] = { ...song, tags: song.tags.filter((tag) => tag !== name) }
         changed = true
       }
-      if (changed) await persist(current)
+      if (!changed) return
+      await persist(next)
+      current.splice(0, current.length, ...next)
     },
 
     /**

@@ -363,6 +363,40 @@ describe('removeTag', () => {
   })
 })
 
+/**
+ * Not the crash case — a crash takes the cache with it. This is the write that *rejects* (ENOSPC,
+ * EIO) in a process that carries on: a cache holding contents the file does not have would be
+ * flushed out whole by the next unrelated write, silently committing half a tag cascade nobody
+ * asked for. So the two cascade passes build into a copy and only adopt it once the disk has it.
+ */
+describe('a cascade whose write is refused', () => {
+  function enospc(): Error {
+    return Object.assign(new Error('no space left on device'), { code: 'ENOSPC' })
+  }
+
+  it('leaves renameTag reading back what is actually on disk', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['slowed', 'edit'] }))
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(enospc())
+
+    await expect(store.renameTag('slowed', 'slow')).rejects.toThrow('no space left on device')
+
+    expect(await store.list()).toEqual([added])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([added])
+  })
+
+  it('leaves removeTag reading back what is actually on disk', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['slowed', 'edit'] }))
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(enospc())
+
+    await expect(store.removeTag('slowed')).rejects.toThrow('no space left on device')
+
+    expect(await store.list()).toEqual([added])
+    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([added])
+  })
+})
+
 describe('replaceFile', () => {
   it('repoints the song at a new file, persists, and hands back a copy', async () => {
     const store = createLibraryStore(lib.root)
