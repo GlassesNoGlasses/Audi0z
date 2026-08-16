@@ -39,7 +39,7 @@ function bytesLabel(progress: DownloadProgress): string | null {
  * real title and tags before yt-dlp starts pulling bytes — and stays open when it fails, because
  * the usual fix (a different URL) is right there in the form.
  *
- * Several dropped files are imported one after another: the form re-arms with the next file's name
+ * Several picked files are imported one after another: the form re-arms with the next file's name
  * instead of silently ignoring everything past the first.
  */
 export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
@@ -133,7 +133,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
           close()
           return
         }
-        // More files were dropped or picked: re-arm the form for the next one.
+        // More files were picked: re-arm the form for the next one.
         setPaths(rest)
         setTitle(titleFromPath(rest[0]))
         setPicked(new Set())

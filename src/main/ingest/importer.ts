@@ -5,8 +5,8 @@ import type { Song } from '../../shared/types'
 import type { LibraryStore } from '../store/storeTypes'
 
 /**
- * The one place a file becomes a library song — file picker, drag-and-drop and URL download all
- * funnel through here, so "copy or transcode, then record, and never leave a half-import behind"
+ * The one place a file becomes a library song — the file picker and URL downloads both funnel
+ * through here, so "copy or transcode, then record, and never leave a half-import behind"
  * is written once.
  *
  * `compress: true` is a request, not a promise: the re-encode is staged and measured, and a source

@@ -61,7 +61,10 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // The preload needs `webUtils.getPathForFile`, which is unavailable in a sandboxed preload.
+      // Left off deliberately, not by need: the reason it was ever off — the preload's
+      // `webUtils.getPathForFile`, unavailable in a sandboxed preload — went with that member.
+      // Turning it back on is a runtime posture change with its own testing burden, so it is
+      // evaluated as its own piece of work rather than as a side effect of deleting dead code.
       sandbox: false
     }
   })
@@ -135,8 +138,8 @@ function startup(): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ffmpegStaticPath = require('ffmpeg-static') as string | null
   const ffmpegPath = resolveFfmpegPath({ ffmpegStaticPath, isPackaged: app.isPackaged })
-  // Both ways into the library — the picker/drop handler and the downloader — import through the
-  // same deps, and therefore through the same `libraryStore` instance.
+  // Both ways into the library — the file picker and the downloader — import through the same
+  // deps, and therefore through the same `libraryStore` instance.
   const importDeps: ImportDeps = {
     audioDir: audio,
     libraryStore,

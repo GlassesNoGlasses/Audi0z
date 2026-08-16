@@ -427,10 +427,9 @@ downloader.ts (+ test)  createDownloader: orchestrates probe → download →
 === src/preload/ ===
 
 index.ts                Builds window.api with contextBridge: an invoke
-                        wrapper per channel, subscribe/unsubscribe pairs for
-                        the push events, and files.getPathForFile (Electron
-                        43's webUtils path lookup — File.path does not exist
-                        anymore), used by drag-and-drop.
+                        wrapper per channel and subscribe/unsubscribe pairs
+                        for the push events — every member a passthrough,
+                        nothing preload-local.
 index.d.ts              Ambient typing that gives the renderer a typed
                         window.api.
 
@@ -440,13 +439,13 @@ index.html              Shell page with the strict CSP (default-src 'self';
                         media-src 'self' media:).
 src/main.tsx            React entry: mounts <App/> inside the state provider.
 src/App.tsx             Layout + orchestration: sidebar / TopNav / song list /
-                        player bar composition, drag-and-drop handling, dialog
-                        routing (one dialog slot — Add/Edit/Settings/Confirm/
-                        Tags/AddToPlaylist), confirm-intent execution (delete
-                        song → trash → cascade; delete playlist — deleting one
-                        you are only VIEWING no longer touches the queue,
-                        while v2.1 makes deleting the one that IS the queue
-                        take the queue down with it), the
+                        player bar composition, dialog routing (one dialog
+                        slot — Add/Edit/Settings/Confirm/Tags/AddToPlaylist),
+                        confirm-intent execution (delete song → trash →
+                        cascade; delete playlist — deleting one you are only
+                        VIEWING no longer touches the queue, while v2.1 makes
+                        deleting the one that IS the queue take the queue down
+                        with it), the
                         audio-error auto-skip policy (dispatch transport/next,
                         or pause when nothing playable remains), keyboard-
                         shortcut wiring (gated off while any dialog is open)
@@ -713,9 +712,9 @@ Sidebar.tsx (+ test)    "Library" + playlist list: selecting changes the VIEW
                         answer rather than the drag's guess. No drag while
                         the filter narrows the list (a partial list cannot
                         say where the hidden ones go) or while a rename is
-                        open; OS file-drags fall through untouched to the app
-                        root's add-drop (the dragId guards — a drag is ours
-                        only between our own dragStart and dragEnd). Entries
+                        open; OS file-drags are left alone — the dragId guards
+                        keep a drag ours only between our own dragStart and
+                        dragEnd, and nothing takes a dropped file. Entries
                         also carry is-playing-source, the accent mark for
                         where the sound is coming from: gated on
                         playback.currentId (boot cues a silent library queue
@@ -779,7 +778,7 @@ PlayerBar.tsx (+ test)  Transport controls: play/pause (fixed equal-size
                         immediately, which is what the fill()-driven e2e
                         exercises), volume slider (debounced persist),
                         current-title display.
-AddSongDialog.tsx       The add flow. File source: picker or drag-drop
+AddSongDialog.tsx       The add flow. File source: a file-picker
 (+ test)                pre-fill, title from basename, and (v3) a static
                         hint naming the playable types — "Supported: MP3,
                         M4A, AAC, FLAC, WAV, OGG, Opus." (deliberately the
@@ -914,7 +913,7 @@ e2e/smoke.spec.ts       Nine Playwright tests driving the BUILT app with an
 --------------------------------------------------------------------------------
 4. THE KEY DATA FLOWS
 --------------------------------------------------------------------------------
-LOCAL IMPORT   picker/drop → AddSongDialog → api.library.add(AddSongRequest)
+LOCAL IMPORT   picker → AddSongDialog → api.library.add(AddSongRequest)
                → LIBRARY_ADD handler → importFile → (optional ffmpeg
                transcode) → copy into audio/<uuid><ext> → libraryStore.add
                → SongDto back to the renderer → list refresh.
@@ -997,7 +996,7 @@ ERRORS         Main wraps import/trash/ytdlp work in withErrorReport: pushes
   crosses playlists:reorder as one whole-order payload, refused outright
   unless it names every playlist exactly once; create still appends; no
   drag while the sidebar filter narrows the list or a rename is open; OS
-  file-drags fall through to the app root's add-drop untouched.
+  file-drags are left alone — nothing takes a dropped file.
 - Mouse clicks never park focus on a control (v3.1, useClickFocusReset):
   focus returns to the body after every pointer click on a button or
   slider, so the global shortcuts always work. Keyboard-activated clicks

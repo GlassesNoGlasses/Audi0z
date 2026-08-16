@@ -34,8 +34,8 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
   /**
    * Registered only while the menu is up, exactly as the row menu's is, and deliberately without
-   * `preventDefault`: this menu is not modal, a dialog can be open behind it (a file dropped on
-   * the window while it was up), and swallowing the key would cost two presses to leave one menu.
+   * `preventDefault`: a modal's Escape is a claim on the whole app, a menu's reaches no further
+   * than closing itself, and swallowing it would cost a second press to whatever sits behind.
    */
   useEffect(() => {
     if (!sortOpen) return

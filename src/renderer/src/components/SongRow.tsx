@@ -97,9 +97,9 @@ function SongRowView({
   useEffect(() => {
     if (!menuOpen) return
 
-    // Deliberately does NOT `preventDefault`, unlike the dialogs': this menu is not modal, and a
-    // dialog can legitimately be open behind it (a file dropped on the window while it was up).
-    // Swallowing the key there would take two presses to get out of one Escape's worth of trouble.
+    // Deliberately does NOT `preventDefault`, unlike the dialogs': a modal's Escape is a claim on
+    // the whole app, a menu's reaches no further than closing itself, and swallowing it would cost
+    // a second press to anything that ever sits behind this menu.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       setMenuOpen(false)
