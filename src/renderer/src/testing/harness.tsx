@@ -82,13 +82,6 @@ export function audioElement(): HTMLAudioElement {
   return audio
 }
 
-/** The element drag-and-drop is wired to. */
-export function appRoot(): HTMLElement {
-  const root = document.querySelector<HTMLElement>('.app')
-  if (!root) throw new Error('harness: the app rendered no root element')
-  return root
-}
-
 export function sidebar(): HTMLElement {
   return screen.getByRole('complementary')
 }
