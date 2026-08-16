@@ -19,7 +19,8 @@ export interface PlaybackState {
   /** Current queue's song ids, in queue order. */
   order: readonly string[]
   currentId: string | null
-  playedByQueue: Readonly<Record<QueueId, Readonly<Record<string, true>>>>
+  /** Played ids in the CURRENT queue only — cleared on every queue switch. Never persisted. */
+  played: Readonly<Record<string, true>>
   /** Actually-played ids, oldest→newest, capped at 100, cleared on queue switch. */
   history: readonly string[]
   shuffle: boolean

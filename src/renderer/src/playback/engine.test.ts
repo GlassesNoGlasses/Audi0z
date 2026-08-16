@@ -21,9 +21,9 @@ function makeState(overrides: Partial<PlaybackState> = {}): PlaybackState {
   return { ...initialPlaybackState(), queueId: LIBRARY_QUEUE_ID, ...overrides }
 }
 
-/** Played-flag map for the library queue. */
-function played(...songIds: string[]): PlaybackState['playedByQueue'] {
-  return { [LIBRARY_QUEUE_ID]: Object.fromEntries(songIds.map((id) => [id, true])) }
+/** Played-flag set for the current queue. */
+function played(...songIds: string[]): PlaybackState['played'] {
+  return Object.fromEntries(songIds.map((id) => [id, true]))
 }
 
 /** Reduces with an rng that must not be consulted — the sequential paths never need one. */
@@ -41,7 +41,7 @@ describe('initialPlaybackState', () => {
       queueId: null,
       order: [],
       currentId: null,
-      playedByQueue: {},
+      played: {},
       history: [],
       shuffle: false,
       repeat: false,
@@ -102,26 +102,26 @@ describe('chooseNext — shuffle', () => {
 
   it('returns the only unplayed song without consulting the rng', () => {
     const rng = vi.fn<Rng>(() => 0)
-    const state = shuffled({ currentId: 'a', playedByQueue: played('a', 'b', 'd') })
+    const state = shuffled({ currentId: 'a', played: played('a', 'b', 'd') })
     expect(chooseNext(state, rng)).toEqual({ songId: 'c', resetPlayed: false })
     expect(rng).not.toHaveBeenCalled()
   })
 
   it('picks the first unplayed song in queue order when the rng returns 0', () => {
     const rng = vi.fn<Rng>(() => 0)
-    const state = shuffled({ currentId: 'a', playedByQueue: played('a') })
+    const state = shuffled({ currentId: 'a', played: played('a') })
     expect(chooseNext(state, rng)).toEqual({ songId: 'b', resetPlayed: false })
     expect(rng).toHaveBeenCalledWith(3)
   })
 
   it('picks the last unplayed song when the rng returns the top of the range', () => {
     const rng: Rng = (upperExclusive) => upperExclusive - 1
-    const state = shuffled({ currentId: 'a', playedByQueue: played('a') })
+    const state = shuffled({ currentId: 'a', played: played('a') })
     expect(chooseNext(state, rng)).toEqual({ songId: 'd', resetPlayed: false })
   })
 
   it('resets when everything is played, and never picks the current song again', () => {
-    const state = shuffled({ currentId: 'd', playedByQueue: played('a', 'b', 'c', 'd') })
+    const state = shuffled({ currentId: 'd', played: played('a', 'b', 'c', 'd') })
     for (let value = 0; value <= state.order.length - 2; value++) {
       const selection = chooseNext(state, () => value)
       expect(selection.resetPlayed).toBe(true)
@@ -131,12 +131,12 @@ describe('chooseNext — shuffle', () => {
   })
 
   it('returns the same song when a single-song queue is exhausted', () => {
-    const state = shuffled({ order: ['a'], currentId: 'a', playedByQueue: played('a') })
+    const state = shuffled({ order: ['a'], currentId: 'a', played: played('a') })
     expect(chooseNext(state, forbiddenRng)).toEqual({ songId: 'a', resetPlayed: true })
   })
 
   it('never returns the current song while unplayed candidates remain', () => {
-    const state = shuffled({ currentId: 'a', playedByQueue: played('a') })
+    const state = shuffled({ currentId: 'a', played: played('a') })
     for (let seed = 0; seed < 100; seed++) {
       const rng: Rng = (upperExclusive) => (seed * 7 + 3) % upperExclusive
       const { songId, resetPlayed } = chooseNext(state, rng)
@@ -154,7 +154,7 @@ describe('playbackReducer — song/selected', () => {
       currentId: 'a',
       isPlaying: false,
       playToken: 3,
-      playedByQueue: played('a', 'b'),
+      played: played('a', 'b'),
       history: ['a']
     })
 
@@ -163,20 +163,8 @@ describe('playbackReducer — song/selected', () => {
     expect(next.currentId).toBe('c')
     expect(next.isPlaying).toBe(true)
     expect(next.playToken).toBe(4)
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ c: true })
+    expect(next.played).toEqual({ c: true })
     expect(next.history).toEqual(['a', 'c'])
-  })
-
-  it("leaves other queues' played flags untouched", () => {
-    const state = makeState({
-      order: ['a', 'b'],
-      playedByQueue: { [LIBRARY_QUEUE_ID]: { a: true }, [PLAYLIST_QUEUE_ID]: { a: true, b: true } }
-    })
-
-    const next = reduce(state, { type: 'song/selected', songId: 'b' })
-
-    expect(next.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({ a: true, b: true })
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ b: true })
   })
 
   it('is ignored when no queue is selected, since nothing could be marked played', () => {
@@ -193,7 +181,7 @@ describe('playbackReducer — song/ended', () => {
       repeat: true,
       isPlaying: true,
       playToken: 2,
-      playedByQueue: { [LIBRARY_QUEUE_ID]: { a: true }, [PLAYLIST_QUEUE_ID]: { b: true } },
+      played: { a: true },
       history: ['a']
     })
 
@@ -202,7 +190,7 @@ describe('playbackReducer — song/ended', () => {
     expect(next.currentId).toBe('a')
     expect(next.playToken).toBe(3)
     expect(next.isPlaying).toBe(true)
-    expect(next.playedByQueue).toEqual(state.playedByQueue)
+    expect(next.played).toEqual(state.played)
     expect(next.history).toEqual(['a'])
   })
 
@@ -229,14 +217,14 @@ describe('playbackReducer — song/ended', () => {
     const state = makeState({
       order: ['a', 'b', 'c'],
       currentId: 'c',
-      playedByQueue: played('a', 'b'),
+      played: played('a', 'b'),
       history: ['a', 'b', 'c']
     })
 
     const next = reduce(state, { type: 'song/ended' })
 
     expect(next.currentId).toBe('a')
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true })
+    expect(next.played).toEqual({ a: true })
     expect(next.history).toEqual(['a', 'b', 'c', 'a'])
   })
 
@@ -255,14 +243,14 @@ describe('playbackReducer — song/ended', () => {
       shuffle: true,
       order: ['a', 'b', 'c'],
       currentId: 'c',
-      playedByQueue: played('a', 'b')
+      played: played('a', 'b')
     })
 
     const next = playbackReducer(state, { type: 'song/ended' }, () => 1)
 
     expect(next.currentId).toBe('b')
     expect(next.currentId).not.toBe(state.currentId)
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ b: true })
+    expect(next.played).toEqual({ b: true })
   })
 
   it('stops when the queue is empty', () => {
@@ -301,7 +289,7 @@ describe('playbackReducer — transport/prev', () => {
       order: ['a', 'b', 'c'],
       currentId: 'c',
       history: ['a', 'b', 'c'],
-      playedByQueue: played('a', 'c'),
+      played: played('a', 'c'),
       playToken: 5
     })
 
@@ -311,7 +299,7 @@ describe('playbackReducer — transport/prev', () => {
     expect(first.history).toEqual(['a', 'b'])
     expect(first.playToken).toBe(6)
     expect(first.isPlaying).toBe(true)
-    expect(first.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true, b: true, c: true })
+    expect(first.played).toEqual({ a: true, b: true, c: true })
 
     const second = reduce(first, { type: 'transport/prev' })
 
@@ -325,7 +313,7 @@ describe('playbackReducer — transport/prev', () => {
       order: ['a', 'b'],
       currentId: 'a',
       history: ['a'],
-      playedByQueue: played('a'),
+      played: played('a'),
       playToken: 2
     })
 
@@ -349,7 +337,7 @@ describe('playbackReducer — play, pause and togglePlay', () => {
     currentId: 'a',
     isPlaying: true,
     playToken: 2,
-    playedByQueue: played('a'),
+    played: played('a'),
     history: ['a']
   })
 
@@ -371,14 +359,14 @@ describe('playbackReducer — play, pause and togglePlay', () => {
   })
 
   it('starts the first song like a manual click when nothing is current', () => {
-    const state = makeState({ order: ['a', 'b'], playedByQueue: played('b') })
+    const state = makeState({ order: ['a', 'b'], played: played('b') })
 
     const next = reduce(state, { type: 'transport/togglePlay' })
 
     expect(next.currentId).toBe('a')
     expect(next.isPlaying).toBe(true)
     expect(next.playToken).toBe(1)
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true })
+    expect(next.played).toEqual({ a: true })
     expect(next.history).toEqual(['a'])
   })
 
@@ -394,7 +382,7 @@ describe('playbackReducer — shuffle and repeat flags', () => {
     currentId: 'a',
     isPlaying: true,
     playToken: 7,
-    playedByQueue: played('a'),
+    played: played('a'),
     history: ['a']
   })
 
@@ -419,7 +407,7 @@ describe('playbackReducer — queue/selected', () => {
     currentId: 'a',
     isPlaying: true,
     playToken: 4,
-    playedByQueue: played('a'),
+    played: played('a'),
     history: ['a']
   })
 
@@ -441,7 +429,7 @@ describe('playbackReducer — queue/selected', () => {
     expect(next.playToken).toBe(4)
     expect(next.history).toEqual([])
     expect(playedCount(next)).toBe(0)
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true })
+    expect(next.played).toEqual({})
   })
 
   it('starts the given song in the new queue instead of stopping', () => {
@@ -462,10 +450,9 @@ describe('playbackReducer — queue/selected', () => {
     expect(next.isPlaying).toBe(true)
     expect(next.playToken).toBe(5)
     // `resetPlayed: true`, exactly as a manual click: only the started song counts as played.
-    expect(next.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({ y: true })
+    expect(next.played).toEqual({ y: true })
     expect(next.history).toEqual(['y'])
-    // The outgoing queue keeps its own flags, and the state it was given is untouched.
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ a: true })
+    // The state it was given is untouched.
     expect(frozen).toEqual(state)
   })
 
@@ -488,11 +475,11 @@ describe('playbackReducer — queue/selected', () => {
       startSongId: 'y'
     })
 
-    expect(back.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({ y: true })
+    expect(back.played).toEqual({ y: true })
     expect(back.history).toEqual(['y'])
   })
 
-  it('restores the played flags of a queue that is selected again', () => {
+  it('clears the played set on every switch — flags never follow a queue', () => {
     const playlist = reduce(state, {
       type: 'queue/selected',
       queueId: PLAYLIST_QUEUE_ID,
@@ -510,8 +497,10 @@ describe('playbackReducer — queue/selected', () => {
       repeat: false
     })
 
-    expect(isPlayed(back, 'a')).toBe(true)
-    expect(back.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({ x: true })
+    // 'a' was played before the round trip (see `state`); the switch back does not resurrect it.
+    expect(isPlayed(back, 'a')).toBe(false)
+    expect(playedCount(back)).toBe(0)
+    expect(back.played).toEqual({})
   })
 })
 
@@ -521,7 +510,7 @@ describe('playbackReducer — queue/orderChanged', () => {
       order: ['a', 'b', 'c'],
       currentId: 'b',
       isPlaying: true,
-      playedByQueue: played('a', 'b', 'c'),
+      played: played('a', 'b', 'c'),
       history: ['a', 'b']
     })
 
@@ -530,7 +519,7 @@ describe('playbackReducer — queue/orderChanged', () => {
     expect(next.order).toEqual(['b', 'c', 'd'])
     expect(next.currentId).toBe('b')
     expect(next.isPlaying).toBe(true)
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ b: true, c: true })
+    expect(next.played).toEqual({ b: true, c: true })
   })
 
   it('clears the current song when it left the queue', () => {
@@ -538,7 +527,7 @@ describe('playbackReducer — queue/orderChanged', () => {
       order: ['a', 'b'],
       currentId: 'a',
       isPlaying: true,
-      playedByQueue: played('a')
+      played: played('a')
     })
 
     const next = reduce(state, { type: 'queue/orderChanged', order: ['b'] })
@@ -552,29 +541,25 @@ describe('playbackReducer — queue/orderChanged', () => {
 
     expect(next.order).toEqual(['a', 'b'])
     expect(next.currentId).toBeNull()
-    expect(next.playedByQueue).toEqual({})
+    expect(next.played).toEqual({})
   })
 })
 
 describe('playbackReducer — library/songsRemoved', () => {
-  it('strips the ids from the order, every queue and history', () => {
+  it('strips the ids from the order, the played set and history', () => {
     const state = makeState({
       order: ['a', 'b', 'c'],
       currentId: 'c',
       isPlaying: true,
       history: ['a', 'b', 'c'],
-      playedByQueue: {
-        [LIBRARY_QUEUE_ID]: { a: true, b: true, c: true },
-        [PLAYLIST_QUEUE_ID]: { a: true }
-      }
+      played: { a: true, b: true, c: true }
     })
 
     const next = reduce(state, { type: 'library/songsRemoved', songIds: ['a'] })
 
     expect(next.order).toEqual(['b', 'c'])
     expect(next.history).toEqual(['b', 'c'])
-    expect(next.playedByQueue[LIBRARY_QUEUE_ID]).toEqual({ b: true, c: true })
-    expect(next.playedByQueue[PLAYLIST_QUEUE_ID]).toEqual({})
+    expect(next.played).toEqual({ b: true, c: true })
     expect(next.currentId).toBe('c')
     expect(next.isPlaying).toBe(true)
   })
@@ -584,7 +569,7 @@ describe('playbackReducer — library/songsRemoved', () => {
       order: ['a', 'b'],
       currentId: 'a',
       isPlaying: true,
-      playedByQueue: played('a')
+      played: played('a')
     })
 
     const next = reduce(state, { type: 'library/songsRemoved', songIds: ['a'] })
@@ -607,7 +592,7 @@ describe('playbackReducer — playlists/removed', () => {
       currentId: 'a',
       isPlaying: true,
       history: ['a'],
-      playedByQueue: { [PLAYLIST_QUEUE_ID]: { a: true } }
+      played: { a: true }
     })
 
     const next = reduce(state, { type: 'playlists/removed', playlistId: PLAYLIST_QUEUE_ID })
@@ -617,26 +602,20 @@ describe('playbackReducer — playlists/removed', () => {
     expect(next.currentId).toBeNull()
     expect(next.isPlaying).toBe(false)
     expect(next.history).toEqual([])
-    expect(next.playedByQueue).toEqual({})
+    expect(next.played).toEqual({})
   })
 
-  /** The flags are keyed by queue id, so an id nobody can select again is dead weight. */
-  it('leaves the queue alone when some other playlist is deleted, but drops its played flags', () => {
+  /** Another playlist's deletion is none of playback's business now that flags are current-queue only. */
+  it('ignores the deletion of a playlist that is not the queue', () => {
     const state = makeState({
       queueId: PLAYLIST_QUEUE_ID,
       order: ['a'],
       currentId: 'a',
       isPlaying: true,
-      playedByQueue: { [PLAYLIST_QUEUE_ID]: { a: true }, other: { z: true } }
+      played: { a: true }
     })
 
-    const next = reduce(state, { type: 'playlists/removed', playlistId: 'other' })
-
-    expect(next.queueId).toBe(PLAYLIST_QUEUE_ID)
-    expect(next.order).toEqual(['a'])
-    expect(next.currentId).toBe('a')
-    expect(next.isPlaying).toBe(true)
-    expect(next.playedByQueue).toEqual({ [PLAYLIST_QUEUE_ID]: { a: true } })
+    expect(reduce(state, { type: 'playlists/removed', playlistId: 'other' })).toBe(state)
   })
 })
 
@@ -657,7 +636,7 @@ describe('playbackReducer — history', () => {
       order: ['a'],
       currentId: 'a',
       history: ['a'],
-      playedByQueue: played('a')
+      played: played('a')
     })
 
     const next = reduce(state, { type: 'transport/next' })
@@ -673,7 +652,7 @@ describe('createPlaybackReducer', () => {
     shuffle: true,
     order: ['a', 'b', 'c'],
     currentId: 'a',
-    playedByQueue: played('a')
+    played: played('a')
   })
 
   it('binds the injected rng', () => {
@@ -723,7 +702,7 @@ const INVARIANT_BASES: readonly [string, PlaybackState][] = [
       currentId: 'b',
       isPlaying: true,
       playToken: 3,
-      playedByQueue: played('a', 'b'),
+      played: played('a', 'b'),
       history: ['a', 'b']
     })
   ],
@@ -735,14 +714,11 @@ const INVARIANT_BASES: readonly [string, PlaybackState][] = [
       order: ['a', 'b', 'c'],
       currentId: 'c',
       isPlaying: true,
-      playedByQueue: played('a', 'b', 'c'),
+      played: played('a', 'b', 'c'),
       history: ['a', 'b', 'c']
     })
   ],
-  [
-    'repeating',
-    makeState({ order: ['a'], currentId: 'a', repeat: true, playedByQueue: played('a') })
-  ],
+  ['repeating', makeState({ order: ['a'], currentId: 'a', repeat: true, played: played('a') })],
   // A playlist queue, so the actions keyed by queue id are exercised against the queue they name.
   [
     'playlist queue',
@@ -751,7 +727,7 @@ const INVARIANT_BASES: readonly [string, PlaybackState][] = [
       order: ['a', 'b', 'c'],
       currentId: 'b',
       isPlaying: true,
-      playedByQueue: { [PLAYLIST_QUEUE_ID]: { a: true, b: true } },
+      played: { a: true, b: true },
       history: ['a', 'b']
     })
   ]

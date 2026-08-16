@@ -2,13 +2,12 @@
  * The playback rulebook, as pure functions: state in, state out. No React, no DOM, no timers, and
  * no randomness beyond the injected `Rng`.
  */
-import { isPlayed, playedInCurrentQueue } from './selectors'
+import { isPlayed } from './selectors'
 import type { NextSelection, PlaybackAction, PlaybackState, Rng } from './types'
 
 /** How many played ids `history` keeps for `transport/prev`; the oldest fall off the front. */
 const HISTORY_LIMIT = 100
 
-type PlayedByQueue = PlaybackState['playedByQueue']
 type PlayedMap = Readonly<Record<string, true>>
 
 /** The only place `Math.random` may appear. */
@@ -19,7 +18,7 @@ export function initialPlaybackState(): PlaybackState {
     queueId: null,
     order: [],
     currentId: null,
-    playedByQueue: {},
+    played: {},
     history: [],
     shuffle: false,
     repeat: false,
@@ -62,9 +61,8 @@ function chooseShuffled(state: PlaybackState, rng: Rng): NextSelection {
 /**
  * The rulebook. Every action returns a fresh state; the input is never mutated.
  *
- * INVARIANT: whenever the result has a `currentId`, that id is marked played in the current
- * queue. Transitions that pick a new song on wrap or exhaustion clear the queue's map FIRST and
- * then mark the new pick.
+ * INVARIANT: whenever the result has a `currentId`, that id is marked played. Transitions that
+ * pick a new song on wrap or exhaustion clear the played set FIRST and then mark the new pick.
  */
 export function playbackReducer(
   state: PlaybackState,
@@ -74,8 +72,10 @@ export function playbackReducer(
   switch (action.type) {
     case 'queue/selected': {
       // Switching context on its own stops playback outright — no surprise cross-fade between
-      // queues. The outgoing queue's played flags stay in `playedByQueue`, ready for when it is
-      // selected again.
+      // queues. Played flags belong to the queue being left, so they leave with it: the set
+      // starts empty in the new queue. (v3.3 — the old per-queue retention was unreachable
+      // after boot: every user-caused switch carries a startSongId, which started the target
+      // queue fresh anyway.)
       const switched: PlaybackState = {
         ...state,
         queueId: action.queueId,
@@ -84,6 +84,7 @@ export function playbackReducer(
         repeat: action.repeat,
         currentId: null,
         isPlaying: false,
+        played: {},
         history: []
       }
       // A switch the user caused by playing something carries the song straight over, on the same
@@ -129,20 +130,19 @@ export function createPlaybackReducer(
 
 /**
  * Starts `songId`: marks it played (the invariant), bumps the play token, appends to history.
- * `resetPlayed` drops the current queue's other flags first, so the map ends up as
- * `{ songId: true }`.
+ * `resetPlayed` drops the other flags first, so the set ends up as `{ songId: true }`.
  */
 function startSong(state: PlaybackState, songId: string, resetPlayed: boolean): PlaybackState {
   // With no queue selected nothing can be marked played, so nothing may become current either.
   if (state.queueId === null) return state
 
-  const kept = resetPlayed ? {} : playedInCurrentQueue(state)
+  const kept = resetPlayed ? {} : state.played
   return {
     ...state,
     currentId: songId,
     isPlaying: true,
     playToken: state.playToken + 1,
-    playedByQueue: withCurrentPlayed(state, { ...kept, [songId]: true }),
+    played: { ...kept, [songId]: true },
     // Restarting the song that is already current is not a new entry.
     history: songId === state.currentId ? state.history : pushHistory(state.history, songId)
   }
@@ -178,7 +178,7 @@ function goToPrevious(state: PlaybackState): PlaybackState {
     isPlaying: true,
     playToken: state.playToken + 1,
     history: state.history.slice(0, at),
-    playedByQueue: withCurrentPlayed(state, { ...playedInCurrentQueue(state), [previousId]: true })
+    played: { ...state.played, [previousId]: true }
   }
 }
 
@@ -198,10 +198,7 @@ function changeOrder(state: PlaybackState, order: readonly string[]): PlaybackSt
   return {
     ...state,
     order: next,
-    playedByQueue: withCurrentPlayed(
-      state,
-      filterPlayed(playedInCurrentQueue(state), (id) => kept.has(id))
-    ),
+    played: filterPlayed(state.played, (id) => kept.has(id)),
     currentId: currentSurvives ? state.currentId : null,
     isPlaying: currentSurvives && state.isPlaying
   }
@@ -213,39 +210,31 @@ function removeSongs(state: PlaybackState, songIds: readonly string[]): Playback
   const survives = (id: string): boolean => !removed.has(id)
   const currentRemoved = state.currentId !== null && removed.has(state.currentId)
 
-  const playedByQueue: Record<string, PlayedMap> = {}
-  for (const [queueId, map] of Object.entries(state.playedByQueue)) {
-    playedByQueue[queueId] = filterPlayed(map, survives)
-  }
-
   return {
     ...state,
     order: state.order.filter(survives),
     history: state.history.filter(survives),
-    playedByQueue,
+    played: filterPlayed(state.played, survives),
     currentId: currentRemoved ? null : state.currentId,
     isPlaying: currentRemoved ? false : state.isPlaying
   }
 }
 
 /**
- * A playlist was deleted: its played flags go with it, and if it was the queue then so does the
- * queue. Stopping outright is `queue/selected` with nothing to start — there is no next queue to
- * hand over to, and a `queueId` nobody can select again is the bug this exists to prevent.
+ * A playlist was deleted: if it owned the queue, the queue dies with it. Stopping outright is
+ * `queue/selected` with nothing to start — there is no next queue to hand over to, and a
+ * `queueId` nobody can select again is the bug this exists to prevent. Any other playlist's
+ * deletion is none of playback's business: played flags only ever describe the current queue.
  */
 function removePlaylist(state: PlaybackState, playlistId: string): PlaybackState {
-  const playedByQueue: Record<string, PlayedMap> = {}
-  for (const [queueId, map] of Object.entries(state.playedByQueue)) {
-    if (queueId !== playlistId) playedByQueue[queueId] = map
-  }
-  if (state.queueId !== playlistId) return { ...state, playedByQueue }
+  if (state.queueId !== playlistId) return state
 
   return {
     ...state,
-    playedByQueue,
     queueId: null,
     order: [],
     currentId: null,
+    played: {},
     history: [],
     isPlaying: false
   }
@@ -256,17 +245,8 @@ function markCurrentPlayed(state: PlaybackState): PlaybackState {
   if (state.currentId === null) return state
   return {
     ...state,
-    playedByQueue: withCurrentPlayed(state, {
-      ...playedInCurrentQueue(state),
-      [state.currentId]: true
-    })
+    played: { ...state.played, [state.currentId]: true }
   }
-}
-
-/** `playedByQueue` with the current queue's map replaced. Without a queue there is nowhere to put it. */
-function withCurrentPlayed(state: PlaybackState, map: PlayedMap): PlayedByQueue {
-  if (state.queueId === null) return state.playedByQueue
-  return { ...state.playedByQueue, [state.queueId]: map }
 }
 
 /** A copy of `map` holding only the ids `keep` accepts. */
