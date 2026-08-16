@@ -242,6 +242,80 @@ describe('Sidebar', () => {
     )
   })
 
+  /**
+   * The filter was chosen before the new name existed, so re-filtering the whole list by it is what
+   * makes a successful create look like a no-op: the row is appended to the store and immediately
+   * excluded from the render. When the filter would hide the very thing the user just made, the
+   * filter is the thing that gives way.
+   */
+  it('clears the filter when the new playlist would not match it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    const search = within(sidebar()).getByRole('searchbox', { name: 'Search playlists' })
+    await user.type(search, 'mix')
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'New playlist' }))
+    await user.type(screen.getByRole('textbox', { name: 'New playlist name' }), 'Late night')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(within(sidebar()).getByRole('button', { name: 'Late night' })).toBeInTheDocument()
+    )
+    // The box is visibly empty and the rest of the list came back with it: the row is on screen
+    // because the filter went, not because it was smuggled past a filter that still says `mix`.
+    expect(search).toHaveValue('')
+    expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).toBeInTheDocument()
+  })
+
+  /**
+   * The other half of that rule: the filter is spent only when it is the thing in the way. A filter
+   * the new name matches is doing its job — the row appears underneath it and the narrowing, which
+   * the user typed on purpose, survives the create.
+   */
+  it('keeps the filter when the new playlist matches it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes] })
+    await renderApp()
+
+    const search = within(sidebar()).getByRole('searchbox', { name: 'Search playlists' })
+    await user.type(search, 'late')
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'New playlist' }))
+    await user.type(screen.getByRole('textbox', { name: 'New playlist name' }), 'Late night')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    await waitFor(() =>
+      expect(within(sidebar()).getByRole('button', { name: 'Late night' })).toBeInTheDocument()
+    )
+    expect(search).toHaveValue('late')
+    expect(within(sidebar()).queryByRole('button', { name: 'Mixes' })).not.toBeInTheDocument()
+  })
+
+  /**
+   * And it is spent on the way back from a create that worked, not on the way out: a store that
+   * refused to write has produced nothing to make room for, so taking the filter as well would
+   * charge the user twice for one failure.
+   */
+  it('keeps the filter when the playlist will not save', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs, playlists: [mixes] })
+    vi.mocked(api.playlists.create).mockRejectedValue(new Error('playlists.json is read-only'))
+    await renderApp()
+
+    const search = within(sidebar()).getByRole('searchbox', { name: 'Search playlists' })
+    await user.type(search, 'mix')
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'New playlist' }))
+    await user.type(screen.getByRole('textbox', { name: 'New playlist name' }), 'Late night')
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('playlists.json is read-only')
+    expect(search).toHaveValue('mix')
+    expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).toBeInTheDocument()
+  })
+
   it('deletes a playlist after confirmation and leaves its songs in the library', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs, playlists: [mixes] })
@@ -428,5 +502,32 @@ describe('Sidebar', () => {
     await waitFor(() =>
       expect(within(sidebar()).getByRole('button', { name: 'Mashups' })).toBeInTheDocument()
     )
+  })
+
+  /**
+   * The rule generalises: a write whose result the filter would hide spends the filter. Renaming a
+   * playlist out of the filter it was found under would otherwise make the row vanish on commit,
+   * which reads as a delete rather than as the rename the user just asked for.
+   */
+  it('clears the filter when a rename moves a playlist out of it', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [mixes, playlist('p2', 'Late night', [])] })
+    await renderApp()
+
+    const search = within(sidebar()).getByRole('searchbox', { name: 'Search playlists' })
+    await user.type(search, 'mix')
+    expect(within(sidebar()).queryByRole('button', { name: 'Late night' })).not.toBeInTheDocument()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Rename Mixes' }))
+    const input = screen.getByRole('textbox', { name: 'Playlist name' })
+    await user.clear(input)
+    await user.type(input, 'Mashups')
+    await user.click(screen.getByRole('button', { name: 'Save name' }))
+
+    await waitFor(() =>
+      expect(within(sidebar()).getByRole('button', { name: 'Mashups' })).toBeInTheDocument()
+    )
+    expect(search).toHaveValue('')
+    expect(within(sidebar()).getByRole('button', { name: 'Late night' })).toBeInTheDocument()
   })
 })

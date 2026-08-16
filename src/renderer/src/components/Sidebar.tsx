@@ -5,6 +5,18 @@ import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
 /**
+ * The sidebar's playlist match, in one place so the list that is drawn and the checks made against
+ * a just-written name cannot drift apart.
+ *
+ * `lib/search` exports only the songs filter, which searches tags as well — a playlist has none, so
+ * this is the plain case-insensitive substring match instead. The trim lives in here for the same
+ * reason `canDrag` trims: a box holding nothing but spaces is not a filter.
+ */
+function matchesFilter(name: string, filter: string): boolean {
+  return name.toLowerCase().includes(filter.trim().toLowerCase())
+}
+
+/**
  * Library + playlists, and the only place the VIEW is chosen.
  *
  * Selecting an entry changes what is listed and nothing else — the queue and the music carry on
@@ -30,11 +42,7 @@ export function Sidebar(): ReactElement {
   const [dragId, setDragId] = useState<string | null>(null)
   const [dropMark, setDropMark] = useState<{ id: string; edge: 'before' | 'after' } | null>(null)
 
-  // `lib/search` exports only the songs filter, which searches tags as well — a playlist has none,
-  // so this is the plain case-insensitive substring match instead.
-  const shown = playlists.filter((playlist) =>
-    playlist.name.toLowerCase().includes(filter.trim().toLowerCase())
-  )
+  const shown = playlists.filter((playlist) => matchesFilter(playlist.name, filter))
 
   // Dragging rearranges the stored order, so it is only offered when the rows on screen ARE that
   // order: a filtered list says nothing about where the hidden playlists go, and a row that is
@@ -68,7 +76,16 @@ export function Sidebar(): ReactElement {
     setNewName('')
     void window.api.playlists
       .create(name)
-      .then((playlist) => dispatch({ type: 'playlists/upserted', playlist }))
+      .then((playlist) => {
+        dispatch({ type: 'playlists/upserted', playlist })
+        // The filter was chosen before this name existed, so leaving it up would hide the row the
+        // user just made and the create would read as a no-op. The filter is only spent when it is
+        // the thing in the way — a filter the new name matches goes on narrowing. The updater is
+        // functional so it reads the filter as it stands when the create RESOLVES, honouring one
+        // retyped mid-flight; and it lives in `.then` so a create that failed does not also cost
+        // the user their filter.
+        setFilter((current) => (matchesFilter(playlist.name, current) ? current : ''))
+      })
       .catch(fail)
   }
 
@@ -79,7 +96,12 @@ export function Sidebar(): ReactElement {
     if (name === '') return
     void window.api.playlists
       .rename(playlistId, name)
-      .then((playlist) => dispatch({ type: 'playlists/upserted', playlist }))
+      .then((playlist) => {
+        dispatch({ type: 'playlists/upserted', playlist })
+        // The same rule as `create`, and for the same reason: a write whose result the filter would
+        // hide spends the filter rather than making the row vanish on commit.
+        setFilter((current) => (matchesFilter(playlist.name, current) ? current : ''))
+      })
       .catch(fail)
   }
 
