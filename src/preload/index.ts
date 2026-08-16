@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { IPC, IPC_EVENTS } from '../shared/ipc'
 import type { Api } from '../shared/api'
@@ -54,9 +54,7 @@ export const api: Api = {
     setPlaybackOptions: (id, opts) => ipcRenderer.invoke(IPC.playlists.setPlaybackOptions, id, opts)
   },
   files: {
-    pickAudioFiles: () => ipcRenderer.invoke(IPC.files.pickAudioFiles),
-    // Synchronous by necessity: Electron removed `File.path`, and drop handlers need the path now.
-    getPathForFile: (file) => webUtils.getPathForFile(file)
+    pickAudioFiles: () => ipcRenderer.invoke(IPC.files.pickAudioFiles)
   },
   download: {
     probe: (url) => ipcRenderer.invoke(IPC.download.probe, url),

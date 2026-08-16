@@ -165,9 +165,10 @@ export function Sidebar(): ReactElement {
                   event.dataTransfer.setData('text/plain', playlist.id)
                   setDragId(playlist.id)
                 }}
-                // The `dragId === null` guards below are what keep a file dragged in from the OS
-                // falling through to the app root's add-dialog drop: a drag is ours only between
-                // our own dragStart and dragEnd, and anything else is left entirely alone.
+                // The `dragId === null` guards below leave a drag this list never started
+                // completely alone — no seam, no reorder, nothing cancelled on the way past. A drag
+                // is ours only between our own dragStart and dragEnd, and nothing downstream takes
+                // a dropped file any more, so the containment is the whole point.
                 onDragOver={(event) => {
                   if (dragId === null) return
                   event.preventDefault()

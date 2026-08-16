@@ -9,8 +9,7 @@ vi.mock('electron', () => ({
     invoke: vi.fn(async () => undefined),
     on: vi.fn(),
     removeListener: vi.fn()
-  },
-  webUtils: { getPathForFile: vi.fn(() => '/tmp/dropped.mp3') }
+  }
 }))
 
 const { api: preloadApi } = await import('../preload/index')

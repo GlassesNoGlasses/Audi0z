@@ -359,8 +359,7 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
       })
     },
     files: {
-      pickAudioFiles: vi.fn(async () => []),
-      getPathForFile: vi.fn((file: File) => `/mock/dropped/${file.name}`)
+      pickAudioFiles: vi.fn(async () => [])
     },
     download: {
       probe: vi.fn(async (url) => ({
