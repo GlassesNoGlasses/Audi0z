@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type DragEvent, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type ReactElement } from 'react'
 import { AddSongDialog } from './components/AddSongDialog'
 import { AddToPlaylistDialog } from './components/AddToPlaylistDialog'
 import { ConfirmDialog } from './components/ConfirmDialog'
