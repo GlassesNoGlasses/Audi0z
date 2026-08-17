@@ -12,11 +12,13 @@ import type {
 } from './types'
 
 /**
- * The frozen renderer <-> main contract, exposed by the preload as `window.api`.
+ * Main API used: ipcMain <-> ipcRenderer format for the app.
  *
- * Every member is either a promise-returning `ipcRenderer.invoke` passthrough or a subscription
- * that returns its own unsubscribe function.
+ * Member Types:
+ * - A promise-returning `ipcRenderer.invoke` endpoint
+ * - Subscription that returns its own unsubscribe function
  */
+
 export interface Api {
   library: {
     list(): Promise<SongDto[]>
@@ -25,23 +27,12 @@ export interface Api {
       id: string,
       patch: { title?: string; tags?: string[]; durationSec?: number }
     ): Promise<SongDto>
-    /** One write for a whole batch of measured durations; ids that vanished mid-flight are skipped. */
+    // backfills the duration of newly-added songs in batches
     updateDurations(entries: Array<{ id: string; durationSec: number }>): Promise<SongDto[]>
     remove(id: string): Promise<void>
-    /**
-     * Transcodes an already-imported song to Opus in place. Rejects if it is already compressed.
-     *
-     * Resolving is not the same as having compressed: a re-encode that came out no smaller is
-     * thrown away and the original kept, which resolves with `shrank: false` and an unchanged song.
-     */
     compress(id: string): Promise<CompressResult>
-    /** Opens the library's `audio/` directory itself, rather than a single song inside it. */
     showFolder(): Promise<void>
   }
-  /**
-   * The tag registry. Songs still carry tags as plain strings; this is the named/coloured index of
-   * them, so renaming a tag in one place renames it on every song.
-   */
   tags: {
     list(): Promise<Tag[]>
     create(name: string): Promise<Tag>
@@ -53,11 +44,7 @@ export interface Api {
     create(name: string): Promise<Playlist>
     remove(id: string): Promise<void>
     rename(id: string, name: string): Promise<Playlist>
-    /**
-     * Rearranges the sidebar, which is the stored order. The whole order goes at once and
-     * `orderedIds` must name every playlist exactly once; the answer is the list as it now stands.
-     */
-    reorder(orderedIds: string[]): Promise<Playlist[]>
+    reorder(orderedIds: string[]): Promise<Playlist[]> // drag+drop reorder on sidebar
     addSong(playlistId: string, songId: string): Promise<Playlist>
     removeSong(playlistId: string, songId: string): Promise<Playlist>
     setPlaybackOptions(id: string, opts: { shuffle?: boolean; repeat?: boolean }): Promise<Playlist>

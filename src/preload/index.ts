@@ -4,10 +4,7 @@ import { IPC, IPC_EVENTS } from '../shared/ipc'
 import type { Api } from '../shared/api'
 import type { AppError, DownloadProgress } from '../shared/types'
 
-/**
- * Subscribes to a main -> renderer push channel and hands back an unsubscribe function.
- * (contextBridge proxies returned functions, so the renderer can call it.)
- */
+// IPC main -> renderer push channel, returning unsubscribe function via contextBridge
 function subscribe<Args extends unknown[]>(
   channel: string,
   cb: (...args: Args) => void
@@ -21,11 +18,7 @@ function subscribe<Args extends unknown[]>(
   }
 }
 
-/**
- * The whole renderer-facing surface. Every member is a passthrough — no logic, no caching, no
- * validation lives in the preload. Main-process handlers land in a later work package; invoking a
- * channel that has no handler yet simply rejects.
- */
+// Main IPC API
 export const api: Api = {
   library: {
     list: () => ipcRenderer.invoke(IPC.library.list),

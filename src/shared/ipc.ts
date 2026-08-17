@@ -1,6 +1,13 @@
 /**
- * IPC channel names. One constant per `Api` method that crosses the process boundary, so the
- * preload and the main-process handlers can never drift apart on a string literal.
+ * Main IPC structure for app `API` wiring.
+ * 
+ * Parts:
+ * - library: main to interact with audio files.
+ * - tags: tags and cascading edits.
+ * - playlists: playlist + playlist settings (shuffle, repeat).
+ * - files: fs `audi0z` path to audio file.
+ * - download: main downloader.
+ * - settings: settings & user prefs.
  */
 
 /** Request/response channels — `ipcRenderer.invoke` / `ipcMain.handle`. */
@@ -44,12 +51,12 @@ export const IPC = {
   }
 } as const
 
-/** Main -> renderer push channels — `webContents.send` / `ipcRenderer.on`. */
+// IPC subscription events
 export const IPC_EVENTS = {
   downloadProgress: 'event:downloadProgress',
   libraryChanged: 'event:libraryChanged',
   error: 'event:error'
 } as const
 
-/** The custom protocol audio is served over: `media://audio/<id>`. */
+// App scheme `media://audio/<id>`
 export const MEDIA_SCHEME = 'media'

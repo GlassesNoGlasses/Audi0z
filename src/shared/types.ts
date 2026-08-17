@@ -1,78 +1,55 @@
-/**
- * Frozen domain contracts. Shared by main, preload and renderer.
- *
- * These shapes are also the on-disk JSON schema, so changing one is a migration.
- */
 
-/** A song as persisted in `library.json`. */
 export interface Song {
   id: string
-  /** File name inside the library's `audio/` directory — never an absolute path. */
-  fileName: string
+  fileName: string // hashed file name in `audi0z` directory
   title: string
   tags: string[]
-  /** ISO 8601 timestamp. */
   addedAt: string
-  /** Set when the song came from a URL download. */
   sourceUrl?: string
-  /** True when the audio was transcoded to Opus on the way in. */
   compressed: boolean
-  /**
-   * Playing time in whole seconds. Absent until something has measured it — the renderer probes it
-   * lazily off the `<audio>` element and writes it back, because reading it in the main process
-   * would mean an ffprobe run per song at startup.
-   */
-  durationSec?: number
+  durationSec?: number // updated lazily via `updateDurations` by renderer once
 }
 
-/** A song as handed to the renderer: enriched with playback/presence info. */
+// Song DTO for message passing via renderer
 export interface SongDto extends Song {
-  /** False when the backing file is missing from disk. */
   exists: boolean
-  /** `media://audio/<id>` */
-  url: string
-  /** On-disk size in bytes; `null` exactly when `exists` is false. */
-  sizeBytes: number | null
+  url: string // protocol `media://audio/<id>`
+  sizeBytes: number | null // null when !exists
 }
 
-/** What `library.compress` did: the song as it now stands, and whether the re-encode was kept. */
 export interface CompressResult {
   song: SongDto
-  /** False when the Opus output came out no smaller — the original file was kept untouched. */
-  shrank: boolean
+  shrank: boolean // false when compression fails/more than original
 }
 
-/** A tag in the registry — the named, coloured thing the UI filters by. */
 export interface Tag {
   id: string
   name: string
-  /** '#rrggbb', assigned randomly at creation. */
-  color: string
+  color: string // #rrggbb
 }
 
 export interface Playlist {
   id: string
   name: string
-  /** Ordered song ids. May reference songs that were since removed only transiently. */
   songIds: string[]
   shuffle: boolean
   repeat: boolean
-  /** ISO 8601 timestamp. */
   createdAt: string
 }
+
+// `version: 1` as compatability insurance
 
 export interface Settings {
   version: 1
   compressByDefault: boolean
-  /** 0..1 */
-  volume: number
-  /** Shuffle/repeat for the Library view (playlists carry their own). */
+  volume: number // [0, 1]
+  // shuffle/repeat for main Library (playlists have their own)
   libraryShuffle: boolean
   libraryRepeat: boolean
 }
 
 export interface LibraryFile {
-  version: 1
+  version: 1 
   songs: Song[]
 }
 
@@ -87,8 +64,7 @@ export interface TagsFile {
 }
 
 export interface AddSongRequest {
-  /** Absolute path of the source file on disk. */
-  sourcePath: string
+  sourcePath: string // absolute on disk
   title: string
   tags: string[]
   compress: boolean
@@ -101,11 +77,7 @@ export interface DownloadRequest {
   compress: boolean
 }
 
-/**
- * What a URL probe learned before the user confirms the download. The title is all of it: duration
- * is measured later by the renderer off the `<audio>` element (see `Song.durationSec`), so carrying
- * yt-dlp's number here only gave two sources for one field.
- */
+// yt-dlp URL download probe result before download
 export interface ProbeResult {
   title: string
   sourceUrl: string
@@ -113,7 +85,6 @@ export interface ProbeResult {
 
 export interface DownloadProgress {
   stage: 'downloading' | 'transcoding' | 'saving'
-  /** 0..100, or null when the stage cannot report a percentage. */
   percent: number | null
   bytes?: number
   totalBytes?: number

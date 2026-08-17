@@ -1,23 +1,21 @@
 #!/usr/bin/env node
 /**
- * Downloads the pinned standalone yt-dlp binaries into `resources/bin/<platform>/`.
- *
- * Every asset is verified against the SHA2-256SUMS file published with the same release before it
- * is moved into place; a mismatch aborts with a non-zero exit code and leaves nothing behind.
+ * Downloads yt-dlp (URL downloader) binaries into `resources/bin/<platform>/`.
  *
  * Usage:
  *   node scripts/fetch-ytdlp.mjs                # all platforms
  *   node scripts/fetch-ytdlp.mjs darwin linux   # a subset
  */
+
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-/** Pinned yt-dlp release. Bumping this is a deliberate, reviewed change. */
+// Pinned yt-dlp release. Change as needed.
 const YTDLP_VERSION = '2026.07.04'
 
-/** Electron `process.platform` -> release asset name. */
+// Electron `process.platform` -> release asset name.
 const ASSETS = {
   darwin: 'yt-dlp_macos',
   win32: 'yt-dlp.exe',
@@ -42,7 +40,7 @@ async function download(url) {
   return Buffer.from(await res.arrayBuffer())
 }
 
-/** Parses the `<sha256>  <filename>` lines of a SHA2-256SUMS file into a Map. */
+// Parses `<sha256>  <filename>` lines SHA2-256SUMS
 function parseChecksums(text) {
   const sums = new Map()
   for (const line of text.split('\n')) {
@@ -52,6 +50,7 @@ function parseChecksums(text) {
   return sums
 }
 
+// Already valid, no need to to redownloaded
 async function alreadyValid(target, expected) {
   try {
     return sha256(await readFile(target)) === expected

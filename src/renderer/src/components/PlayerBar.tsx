@@ -179,7 +179,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
           aria-pressed={playback.shuffle}
           onClick={() => setShuffle(!playback.shuffle)}
         >
-          🔀
+          ⇆
         </button>
         <button
           type="button"
@@ -187,7 +187,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
           aria-pressed={playback.repeat}
           onClick={() => setRepeat(!playback.repeat)}
         >
-          🔁
+          ᦠ
         </button>
         <input
           type="range"

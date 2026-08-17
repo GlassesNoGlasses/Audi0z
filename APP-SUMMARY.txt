@@ -182,14 +182,24 @@ ipc.ts                  The channel-name constants: library channels
                         playlist CRUD + (v3.1) reorder +
                         addSong/removeSong/setPlaybackOptions,
                         tags CRUD (list/create/rename/remove), settings
-                        get/set, 5 ingest channels (probe/start/cancel/
-                        update-ytdlp/pick-files) + push events
+                        get/set, 4 ingest channels (probe/start/cancel/
+                        pick-files — v3.2 retired update-ytdlp with the
+                        self-update feature) + push events
                         (downloadProgress, error, libraryChanged — note the
                         last has NO main-process emitter; components refresh
                         explicitly after mutations).
 api.ts (+ test)         The typed shape of window.api — the renderer-facing
                         API surface built from those channels; the mock in
                         tests implements exactly this interface.
+audioFormats.ts         v3.4: THE audio-format catalogue — the MIME_TYPES
+                        map plus AUDIO_EXTENSIONS and AUDIO_FORMAT_LABELS
+                        derived from it. Imports nothing, on purpose, so the
+                        renderer can bundle it (the app's first value import
+                        from src/shared). The picker filter, the media://
+                        Content-Type map and the add dialog's Supported hint
+                        all derive from this one list — it used to be
+                        spelled out in four places at three lengths, which
+                        is how aiff/wma stayed pickable but unplayable.
 
 === src/main/ — the main process ===
 
@@ -201,7 +211,10 @@ index.ts                COMPOSITION ROOT. Wires everything exactly once:
                         over the same dir would serve stale data and clobber
                         writes); registers the media:// protocol handler;
                         registers library + ingest IPC with those instances;
-                        builds the downloader (yt-dlp + ffmpeg + importer);
+                        builds the downloader (yt-dlp + ffmpeg + importer)
+                        and cancels it from before-quit (v3.4 — quitting
+                        mid-download used to orphan yt-dlp AND its ffmpeg,
+                        with nothing left alive to kill them);
                         forwards download progress and AppErrors to the window
                         lazily and destruction-safely; creates the
                         BrowserWindow; catches any startup failure into a
@@ -248,6 +261,13 @@ libraryStore.ts (+test) Songs: list/get/add/update/remove, plus the v2
                         skipped — a song can be deleted between probe and
                         flush), mutating the cached array in place so
                         list/getSong stay coherent with disk.
+                        v3.4: the two cascade passes went disk-first —
+                        renameTag/removeTag build the new document in a
+                        copy, persist it, and only then adopt() it into the
+                        cache, per song and in place, so a rejected write
+                        (ENOSPC/EIO) cannot be silently committed by a later
+                        flush and a song added while the write was in flight
+                        survives in cache and on disk.
                         Keeps caller-supplied ids verbatim BY DESIGN (the
                         importer derives the audio filename from the same
                         uuid — regenerating ids would orphan files).
@@ -267,6 +287,11 @@ tagStore.ts (+ test)    The v2 tag registry (`tags.json`): create/rename/
                         (ConflictError, name 'Conflict'), and a random colour
                         per tag minted at creation — hslToHex over an injected
                         rng (hue 0-359, 65%/55%), so tests pin exact hexes.
+                        v3.4: resolveRename answers the trimmed,
+                        uniqueness-checked name WITHOUT writing — the IPC
+                        cascade runs the library pass first and commits this
+                        registry last, so a clashing name is still refused
+                        before a single song moves.
 
 --- src/main/media/ — the streaming protocol ---
 
@@ -284,19 +309,31 @@ mediaProtocol.ts (+test) Handles media://audio/<id>: resolves the id through
                         mid-stream. v3: the dep answers undefined when
                         nothing is in flight and the handler skips the await
                         entirely — the idle path costs not even a microtask.
-mimeTypes.ts (+ test)   Extension → Content-Type map with octet-stream
-                        fallback. v3 added .aac (raw ADTS decodes in
+mimeTypes.ts (+ test)   Main's half of the format catalogue: contentTypeFor
+                        with the octet-stream fallback, isPlayableFile
+                        (v3.4 — the fallback IS the definition: a file
+                        served as octet-stream is one <audio> refuses), and
+                        the picker's AUDIO_FILE_FILTERS, all derived from
+                        shared/audioFormats (node:path is why this half
+                        stays in main). v3 added .aac (raw ADTS decodes in
                         Chromium, but only if it isn't served as
-                        octet-stream); .aiff/.wma stay absent — the picker
-                        accepts them but Chromium can't play them, which is
-                        why the add dialog's hint no longer lists them.
+                        octet-stream); v3.4 dropped aiff/wma from the picker
+                        — they were offered but unplayable, minting silent
+                        songs the app then branded "File missing".
 
 --- src/main/ipc/ — the request/response surface ---
 
 registerLibraryIpc.ts   The library/playlist/tags/settings handlers. Every
 (+ test)                handler validates its payload at the trust boundary.
-                        v2 additions: tags CRUD (rename/remove cascade through
-                        libraryStore after the registry write), library:compress
+                        v2 additions: tags CRUD (v3.4 reversed the cascade
+                        order: the pass over libraryStore runs FIRST and the
+                        registry commits last — two files cannot be replaced
+                        in one commit, so the order decides which half a
+                        crash strands, and now every residue is benign: the
+                        tag still listed under its old name, or an unused
+                        tag with a Delete button, and repeating the gesture
+                        converges; tagStore.resolveRename keeps the clash
+                        check ahead of any song moving), library:compress
                         (delegates to the injected compressSong; v3 — answers
                         CompressResult, converting the Song to a DTO and
                         passing shrank through), and
@@ -320,7 +357,11 @@ registerLibraryIpc.ts   The library/playlist/tags/settings handlers. Every
                         they are the RIGHT ids is the store's call.
                         Notable: LIBRARY_ADD delegates to the injected
                         importSong (the importer records the song itself —
-                        the handler must NOT double-add); LIBRARY_REMOVE
+                        the handler must NOT double-add) and since v3.4
+                        refuses a source isPlayableFile rejects, before any
+                        copy happens — the picker's All-files hatch cannot
+                        mint a silent song, and the downloader never comes
+                        through this handler; LIBRARY_REMOVE
                         trashes the file FIRST and only then removes the row +
                         cascades playlists (a trash refusal can't orphan
                         anything), skipping the trash step when the file is
@@ -329,10 +370,11 @@ registerLibraryIpc.ts   The library/playlist/tags/settings handlers. Every
                         `exists` flag, relying on fileExists never rejecting.
                         DTO mapping (media:// URL construction, URL-encoded
                         ids) lives here.
-registerIngestIpc.ts    The 5 ingest handlers: probe (title lookup), start
-(+ test)                (download), cancel, updateYtDlp (downloads latest into
-                        userData/bin, used in preference to the bundled binary
-                        afterward), pickAudioFiles (native dialog). Its DTO
+registerIngestIpc.ts    The 4 ingest handlers (v3.2 retired updateYtDlp with
+(+ test)                the self-update feature): probe (title lookup), start
+                        (download), cancel, pickAudioFiles (native dialog —
+                        v3.4: its filters are AUDIO_FILE_FILTERS from the
+                        shared catalogue, not a hand-written list). Its DTO
                         builder measures the just-imported file (same audioDir
                         + fileSize seam as the library module) so a fresh
                         download honours the sizeBytes/exists invariant. Subscribes
@@ -348,9 +390,17 @@ spawnLines.ts (+ test)  The child-process primitive: spawn with argv arrays
                         (never shell strings), line-buffered stdout/stderr
                         callbacks, abort → SIGTERM then SIGKILL after a 5s
                         grace timer (cleared on settle, unref'd), stderr tail
-                        kept for error messages.
-ytdlp.ts (+ test)       Everything yt-dlp: binary resolution (userData copy
-                        first, then bundled resources/bin — names are
+                        kept for error messages. v3.4: POSIX children spawn
+                        detached so each leads its own process group, and
+                        both kill sites go through killProcessTree —
+                        process.kill(-pid) reaches the ffmpeg yt-dlp spawns
+                        underneath (a cancel used to orphan it, still
+                        transcoding into a deleted temp dir), with a dead
+                        group's ESRCH swallowed because a throw inside an
+                        abort listener downs the main process. Windows keeps
+                        the single-pid kill unchanged.
+ytdlp.ts (+ test)       Everything yt-dlp: binary resolution (the bundled
+                        resources/bin binary, always, since v3.2 — names are
                         yt-dlp_macos / yt-dlp.exe / yt-dlp_linux), the frozen
                         download arg template (--no-playlist, bestaudio,
                         --progress-template machine-readable lines, --print
@@ -417,8 +467,10 @@ compressionJobs.ts      v2.1: the main process's memory of which songs are
 downloader.ts (+ test)  createDownloader: orchestrates probe → download →
                         importFile with a single-flight BUSY latch (one
                         download at a time; a second start throws), an
-                        AbortController per job (cancel kills the child and
-                        cleans the temp job dir), and an onProgress
+                        AbortController per job (cancel kills the child's
+                        whole process group — v3.4, the ffmpeg under yt-dlp
+                        included — and cleans the temp job dir), and an
+                        onProgress
                         subscription seam whose listeners must not throw
                         (guarded). Custom error names (BUSY/Cancelled) do NOT
                         survive IPC serialization — the renderer matches
@@ -721,7 +773,14 @@ Sidebar.tsx (+ test)    "Library" + playlist list: selecting changes the VIEW
                         that must NOT light up), self-clearing when the
                         playing playlist is deleted, and independent of
                         aria-current — the browsed view — so the two marks
-                        part company exactly when the split matters.
+                        part company exactly when the split matters. v3.4: a
+                        successful create or rename whose name the filter box
+                        would hide clears the filter — one matchesFilter
+                        shared with the list render so the two cannot drift,
+                        a functional updater so a filter retyped mid-flight
+                        is honoured, and failures never touch it. A create
+                        that landed filtered-out used to read as a silent
+                        no-op (not even the no-match hint fired).
 SongList.tsx (+ test)   The visible, search-filtered song list for the current
                         view. Row click on the queue's own view is a plain
                         song/selected; on a DIFFERENT view it dispatches
@@ -917,7 +976,9 @@ e2e/smoke.spec.ts       Nine Playwright tests driving the BUILT app with an
 4. THE KEY DATA FLOWS
 --------------------------------------------------------------------------------
 LOCAL IMPORT   picker → AddSongDialog → api.library.add(AddSongRequest)
-               → LIBRARY_ADD handler → importFile → (optional ffmpeg
+               → LIBRARY_ADD handler (v3.4: a source the media:// map
+               cannot label is refused here, before any copy) → importFile
+               → (optional ffmpeg
                transcode) → copy into audio/<uuid><ext> → libraryStore.add
                → SongDto back to the renderer → list refresh.
 
@@ -926,7 +987,8 @@ URL DOWNLOAD   AddSongDialog URL step → api.download.probe (title) → start �
                lines → onProgress seam → DOWNLOAD_PROGRESS channel → dialog
                progress bar → downloaded file → importFile (same path as
                local import) → row appears. Cancel → AbortController →
-               SIGTERM/SIGKILL → temp job dir cleaned → latch released.
+               group SIGTERM/SIGKILL (v3.4 — yt-dlp's ffmpeg dies too) →
+               temp job dir cleaned → latch released.
 
 PLAYBACK       row click → song/selected (same queue) or queue/selected +
                startSongId (playing from a view that is not the queue —
@@ -941,10 +1003,13 @@ PLAYBACK       row click → song/selected (same queue) or queue/selected +
                in place around the playing song (queue/orderChanged — no
                restart, no playToken bump).
 
-TAG CASCADE    TagsDialog rename/delete → tags:rename/remove → tagStore
-               (registry write) → libraryStore.renameTag/removeTag (every
-               song, one persist) → dialog refetches tags + library → chips
-               and rows update everywhere at once.
+TAG CASCADE    TagsDialog rename/delete → tags:rename/remove →
+               libraryStore.renameTag/removeTag (every song, one persist)
+               → tagStore commits LAST (v3.4 — the registry is the commit
+               record: a crash between the two writes strands only a
+               benign half, and repeating the gesture is the repair) →
+               dialog refetches tags + library → chips and rows update
+               everywhere at once.
 
 COMPRESS LATER Settings row "Compress" → library:compress → compressExisting
                (transcode to <id>.opus.staged, compare sizes; a win renames
@@ -1034,6 +1099,16 @@ ERRORS         Main wraps import/trash/ytdlp work in withErrorReport: pushes
   and the add dialog only pick from the registry. Registry mutations
   cascade through the library in one persist — and a same-name rename must
   stay a no-op (the unguarded version deleted the tag from every song).
+  Since v3.4 the cascade is songs-first, registry-LAST: tags.json is the
+  commit record, so an interrupted rename/delete strands only a benign
+  half (the tag still listed, or an unused tag) and retrying converges —
+  and the two cascade passes adopt into the cache only after the disk
+  write lands, per song and in place, so concurrent adds survive.
+- The format list lives ONCE (shared/audioFormats, v3.4): the picker
+  filter, the media:// Content-Type map and the add dialog's Supported
+  hint all derive from it, and library:add refuses a file the map cannot
+  label — the picker's All-files hatch cannot mint a silent song. The
+  downloader calls importFile directly and never meets the guard.
 - The importer is the ONLY writer of new songs; ids and audio filenames
   derive from the same uuid.
 - Custom error names don't survive IPC — message-text matching in
@@ -1044,7 +1119,9 @@ ERRORS         Main wraps import/trash/ytdlp work in withErrorReport: pushes
 - All JSON writes are atomic (temp+fsync+rename); corrupt files quarantine
   to .bak and the app keeps running.
 - One download at a time (BUSY latch); cancel must always release the latch
-  (SIGKILL escalation guarantees the child dies).
+  (SIGKILL escalation guarantees the child dies — and since v3.4 the whole
+  process group with it, ffmpeg included; before-quit cancels a running
+  download so quitting orphans nothing).
 - yt-dlp arg list: --print implies --quiet, so --progress must stay paired
   with it or the progress bar dies silently.
 - Renderer code never imports Node builtins (enforced by the split
@@ -1057,7 +1134,7 @@ ERRORS         Main wraps import/trash/ytdlp work in withErrorReport: pushes
 --------------------------------------------------------------------------------
 6. TEST STRATEGY AT A GLANCE
 --------------------------------------------------------------------------------
-804 unit/component tests across 51 files in two vitest projects (node:
+869 unit/component tests across 53 files in two vitest projects (node:
 stores, media protocol, ingest, IPC, wiring, build assets + both packaging
 hooks; web/jsdom: reducer, engine, hooks, every component against the real
 <App/> + mock api — whose media stub tracks paused per element since v3,
@@ -1066,11 +1143,16 @@ against the real built app with real files, real IPC, and the real media://
 protocol. The v1 release process additionally ran live gates: packaged-app
 launch, dmg mount + signature verification, and three real YouTube
 downloads (plain, compressed, cancel) through the built UI. The v2 batch
-(PR #9), the v2.1 polish batch (PR #10), the v3 batch (PR #11) and the
-v3.1 batch (PR #12) were each built with a per-task independent review
-loop plus a whole-branch final review, one fix wave, and a clean scoped
-re-review; the remaining deferrals live in PR #12's body (v3.1) and
-PR #11's body (v3). v3 and v3.1 each additionally verified a real dmg end
+(PR #9), the v2.1 polish batch (PR #10), the v3 batch (PR #11), the
+v3.1 batch (PR #12), the v3.2 controls batch (PR #13) and the v3.4
+correctness batch (PR #17 — Tier 1 items 1-4 + the Tier 2 drop-removal
+finish, every task's plan user-approved before implementation) were each
+built with a per-task independent review loop plus a whole-branch final
+review, one fix wave, and a clean scoped re-review; v3.3's engine rework
+(PR #14) took the same per-task loop. The remaining deferrals live in
+PR #12's body (v3.1), PR #11's body (v3) and PR #17's body (v3.4 — incl.
+the playlistStore splice pattern and the sandbox re-evaluation). v3 and
+v3.1 each additionally verified a real dmg end
 to end: sha256-identical copies in dist/ and on ~/Desktop and codesign
 --deep --strict clean — v3.1's Audi0z-0.1.0-arm64.dmg built from a tree
 byte-identical to merged main.

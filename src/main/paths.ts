@@ -1,13 +1,10 @@
+/**
+ * `audi0z` paths on disk.
+ *
+ */
+
 import { mkdirSync } from 'node:fs'
 import path from 'node:path'
-
-/**
- * Where the library lives on disk, and nothing else.
- *
- * `electron` is never imported at module scope: the `app` dependency is injected (or lazily
- * required only when the default is actually needed), so these functions can be unit-tested in a
- * plain node process.
- */
 
 // Deliberately still the pre-rename folder: the app became Audi0z in v3.1, but every existing
 // library lives under ~/Music/my-music-library and must keep working. Renaming this constant

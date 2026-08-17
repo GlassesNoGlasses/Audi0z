@@ -61,10 +61,6 @@ function createWindow(): BrowserWindow {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // Left off deliberately, not by need: the reason it was ever off — the preload's
-      // `webUtils.getPathForFile`, unavailable in a sandboxed preload — went with that member.
-      // Turning it back on is a runtime posture change with its own testing burden, so it is
-      // evaluated as its own piece of work rather than as a side effect of deleting dead code.
       sandbox: false
     }
   })
