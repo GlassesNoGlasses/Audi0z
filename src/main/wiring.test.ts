@@ -211,14 +211,14 @@ describe('runStartup', () => {
 
   /**
    * Everything that can fail before the first window exists — an unwritable library root, a
-   * bogus `MML_LIBRARY_DIR`, an unsupported platform's ffmpeg — used to surface as an unhandled
+   * bogus `AUDI0Z_LIBRARY_DIR`, an unsupported platform's ffmpeg — used to surface as an unhandled
    * rejection: no window, no message, an app that simply never appeared.
    */
   it('shows what went wrong and quits when startup throws', async () => {
     const shell = fakeShell()
 
     await runStartup(() => {
-      throw new Error('EACCES: permission denied, mkdir /read-only/my-music-library')
+      throw new Error('EACCES: permission denied, mkdir /read-only/audi0z')
     }, shell)
 
     expect(shell.showErrorBox).toHaveBeenCalledExactlyOnceWith(

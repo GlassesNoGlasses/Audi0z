@@ -14,8 +14,8 @@ import { makeWav } from '../support/makeWav'
 /**
  * The real thing: the built main process, the real `media://` protocol, real files on disk.
  *
- * Every test gets its OWN `MML_LIBRARY_DIR` and its own app instance — without that the suite
- * would write into the developer's actual `~/Music/my-music-library`.
+ * Every test gets its OWN `AUDI0Z_LIBRARY_DIR` and its own app instance — without that the suite
+ * would write into the developer's actual `~/Music/audi0z`.
  */
 
 /** Long enough that a seek to the middle still has seconds of audio left to play. */
@@ -92,7 +92,7 @@ test.beforeEach(async () => {
   fixture = await seedLibrary()
   app = await electron.launch({
     args: ['out/main/index.js'],
-    env: { ...(process.env as Record<string, string>), MML_LIBRARY_DIR: fixture.root }
+    env: { ...(process.env as Record<string, string>), AUDI0Z_LIBRARY_DIR: fixture.root }
   })
   page = await app.firstWindow()
   await page.waitForSelector('.app')

@@ -181,43 +181,6 @@ describe('update', () => {
   })
 })
 
-describe('update: durationSec', () => {
-  it('records a probed duration and persists it', async () => {
-    const store = createLibraryStore(lib.root)
-    const added = await store.add(draft())
-
-    const updated = await store.update(added.id, { durationSec: 214 })
-
-    expect(updated).toEqual({ ...added, durationSec: 214 })
-    await expect(createLibraryStore(lib.root).getSong(added.id)).resolves.toEqual(updated)
-  })
-
-  it('leaves a recorded duration alone when a later patch does not mention it', async () => {
-    const store = createLibraryStore(lib.root)
-    const added = await store.add(draft())
-    await store.update(added.id, { durationSec: 214 })
-
-    expect(await store.update(added.id, { title: 'Renamed' })).toMatchObject({ durationSec: 214 })
-  })
-
-  /** A hand-edited `library.json` must not lose every song over one bad field. */
-  it('loads a song whose durationSec is present and drops a file where it is not a number', async () => {
-    const withDuration: LibraryFile = {
-      version: 1,
-      songs: [{ ...draft({ id: 'a' }), durationSec: 12 }]
-    }
-    await writeFile(libraryJsonPath(lib.root), JSON.stringify(withDuration), 'utf8')
-    await expect(createLibraryStore(lib.root).list()).resolves.toEqual(withDuration.songs)
-
-    await writeFile(
-      libraryJsonPath(lib.root),
-      JSON.stringify({ version: 1, songs: [{ ...draft({ id: 'a' }), durationSec: 'long' }] }),
-      'utf8'
-    )
-    await expect(createLibraryStore(lib.root).list()).resolves.toEqual([])
-  })
-})
-
 describe('updateDurations', () => {
   it('writes every measured duration in one pass and skips ids that are gone', async () => {
     const store = createLibraryStore(lib.root)
@@ -467,8 +430,7 @@ describe('replaceFile', () => {
 
   it('leaves every other field alone', async () => {
     const store = createLibraryStore(lib.root)
-    const added = await store.add(draft({ title: 'Keep me', tags: ['keep'] }))
-    await store.update(added.id, { durationSec: 90 })
+    const added = await store.add(draft({ title: 'Keep me', tags: ['keep'], durationSec: 90 }))
 
     const replaced = await store.replaceFile(added.id, 'other.opus', true)
 

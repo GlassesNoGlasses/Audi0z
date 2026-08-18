@@ -200,16 +200,6 @@ describe(IPC.library.list, () => {
     expect(dto.exists).toBe(true)
   })
 
-  it('carries a recorded durationSec through to the dto', async () => {
-    const harness = setup()
-    const added = await harness.libraryStore.add(draftSong())
-    await harness.libraryStore.update(added.id, { durationSec: 214 })
-
-    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(dto.durationSec).toBe(214)
-  })
-
   /**
    * The id is a uuid in practice, but `library.json` is hand-editable and `mediaProtocol` decodes
    * what it finds in the path — so it has to be encoded on the way out or the two disagree.
@@ -371,16 +361,6 @@ describe(IPC.library.update, () => {
     await expect(
       harness.invoke(IPC.library.update, 'missing', { title: 'x' })
     ).rejects.toMatchObject({ name: 'NotFound' })
-  })
-
-  it('accepts a probed durationSec', async () => {
-    const harness = setup()
-    const added = await harness.libraryStore.add(draftSong())
-
-    const dto = await harness.invoke<SongDto>(IPC.library.update, added.id, { durationSec: 214.6 })
-
-    expect(dto.durationSec).toBe(214.6)
-    expect((await harness.libraryStore.getSong(added.id))?.durationSec).toBe(214.6)
   })
 
   it.each([

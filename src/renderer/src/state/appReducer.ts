@@ -2,16 +2,6 @@ import type { Playlist, Settings, SongDto, Tag } from '../../../shared/types'
 import { createPlaybackReducer, defaultRng, initialPlaybackState } from '../playback/engine'
 import type { PlaybackAction, PlaybackState, Rng } from '../playback/types'
 
-/**
- * The renderer's single state tree: library data, view state, and the playback engine's state
- * nested under `playback`.
- *
- * Playback actions are forwarded to the (frozen, pure) engine untouched — this reducer only adds
- * the things the engine has no business knowing about: the songs themselves, dialogs and toasts.
- * `library/songsRemoved` and `playlists/removed` are the two actions both halves care about: a
- * deletion has to reach the engine as well, or playback would go on pointing at what is gone.
- */
-
 export type View = { kind: 'library' } | { kind: 'playlist'; id: string }
 
 export interface Toast {
@@ -19,14 +9,13 @@ export interface Toast {
   message: string
 }
 
-/** What a confirmation dialog will do once confirmed. Data, not a callback, so state stays plain. */
 export type ConfirmIntent =
   { kind: 'deleteSong'; songId: string } | { kind: 'deletePlaylist'; playlistId: string }
 
 /** Where an add is coming from: files already chosen with the picker, or a URL to fetch. */
 export type AddSource = { kind: 'files'; paths: string[] } | { kind: 'url' }
 
-/** How the view is ordered. Null is the stored order — the library's insertion order, a playlist's own. */
+/** How the view is ordered; null for original order */
 export type SortMode = { field: 'addedAt' | 'durationSec'; direction: 'asc' | 'desc' } | null
 
 export type Dialog =
@@ -40,7 +29,6 @@ export type Dialog =
 export interface AppState {
   songs: SongDto[]
   playlists: Playlist[]
-  /** The tag registry: every tag that exists, with the colour it is drawn in. */
   tags: Tag[]
   settings: Settings
   view: View

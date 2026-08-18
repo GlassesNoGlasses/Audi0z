@@ -29,8 +29,8 @@ import {
 } from './wiring'
 
 /**
- * Must run before `app.whenReady()`: the renderer streams audio from `media://audio/<id>` and the
- * scheme needs standard/secure/stream/fetch privileges for `<audio>` and Range requests to work.
+ * Custom protocol for renderer to stream audio from `media://audio/<id>`.
+ * Required for Chromium <audio> stream fetch requests + security.
  */
 protocol.registerSchemesAsPrivileged([
   {
@@ -45,7 +45,7 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-/** The one window, tracked so the push channels can find it (or find that it is gone). */
+// the window; left out for channel push requests
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): BrowserWindow {
@@ -73,9 +73,7 @@ function createWindow(): BrowserWindow {
     if (mainWindow === window) mainWindow = null
   })
 
-  // Local-only app: never open new windows, never navigate away from the bundled renderer.
-  // Reloading the current URL stays allowed — cancelling it would also kill vite's HMR
-  // `full-reload`, which is implemented as `location.reload()`.
+  // local-app only; don't allow opening/navigating outside
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event, url) => {
     if (url !== window.webContents.getURL()) event.preventDefault()
@@ -90,12 +88,6 @@ function createWindow(): BrowserWindow {
   return window
 }
 
-/**
- * Composition, and nothing else — every decision in here lives in `wiring.ts` or in a module with
- * its own tests. It runs inside `runStartup`, so a failure on the way to the first window (a
- * read-only library root, a bad `MML_LIBRARY_DIR`, no ffmpeg for this platform) is shown rather
- * than lost as an unhandled rejection.
- */
 function startup(): void {
   electronApp.setAppUserModelId('com.gng.audi0z')
 
@@ -103,25 +95,23 @@ function startup(): void {
     optimizer.watchWindowShortcuts(window)
   })
 
+  // set-up paths + in-memory stores
   const libraryRoot = resolveLibraryRoot()
   ensureDirs(libraryRoot)
   const audio = audioDir(libraryRoot)
 
-  // ONE instance of each store for the whole process. Every store keeps a lifetime in-memory copy
-  // of its file and never re-reads it, so a second instance over the same directory would serve
-  // stale data and overwrite the first one's writes.
   const libraryStore = createLibraryStore(libraryRoot)
   const playlistStore = createPlaylistStore(libraryRoot)
   const settingsStore = createSettingsStore(libraryRoot)
   const tagStore = createTagStore(libraryRoot)
 
-  const sendToWindow = createWindowSender(() => mainWindow)
+  const sendToWindow = createWindowSender(() => mainWindow) // window channel
   const reportError = (error: AppError): void => sendToWindow(IPC_EVENTS.error, error)
 
-  // Shared by the compress action and the media protocol: the one tells it a song is moving, the
-  // other asks before serving that song's bytes.
+  // song compression write jobs
   const compressionJobs = createCompressionJobs()
 
+  // register `media://*` scheme
   protocol.handle(
     MEDIA_SCHEME,
     createMediaHandler({
@@ -131,22 +121,21 @@ function startup(): void {
     })
   )
 
+  // ffmpeg binary check
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ffmpegStaticPath = require('ffmpeg-static') as string | null
   const ffmpegPath = resolveFfmpegPath({ ffmpegStaticPath, isPackaged: app.isPackaged })
-  // Both ways into the library — the file picker and the downloader — import through the same
-  // deps, and therefore through the same `libraryStore` instance.
+
   const importDeps: ImportDeps = {
     audioDir: audio,
     libraryStore,
     transcode: ({ src, dst }) => transcode({ src, dst, ffmpegPath })
   }
+
+  // error wrapping
   const importSong = withErrorReport('import', reportError, (request: ImportRequest) =>
     importFile(request, importDeps)
   )
-  // Compressing an existing song is the same ffmpeg run as an import, against the same store —
-  // tracked, so a media request for that song waits for the swap instead of streaming a file that
-  // is about to be replaced.
   const compressSong = withErrorReport('ffmpeg', reportError, (id: string) =>
     compressionJobs.run(id, () =>
       compressExisting(id, {
@@ -163,11 +152,8 @@ function startup(): void {
     settingsStore,
     tagStore,
     audioDir: audio,
-    // The importer records the song itself, so the handler must not add it a second time.
     importSong,
     compressSong,
-    // Same tracker, same reason as the media protocol above: a dto measured mid-swap would report
-    // the song being compressed as a file gone missing.
     awaitCompression: (id) => compressionJobs.waitFor(id),
     trashItem: withErrorReport('trash', reportError, (absPath: string) => shell.trashItem(absPath)),
     fileExists,
@@ -182,13 +168,12 @@ function startup(): void {
     mainDir: __dirname,
     platform: process.platform
   })
-  // One resolution for the process lifetime: with the self-update gone, the answer never changes.
+
   const ytDlpPath = resolveYtDlpPath({
     resourcesBinDir,
     platform: process.platform
   })
-  // Older builds could self-update yt-dlp into userData, and that copy used to shadow the bundled
-  // one — delete it so the pinned binary is what actually runs. Fire-and-forget by design.
+  // remove older versions of yt-delp
   void removeSelfUpdatedYtDlp({ userDataBinDir, platform: process.platform })
 
   const downloader = createDownloader({
@@ -207,20 +192,11 @@ function startup(): void {
     probe: (url) => probe({ url, run: runLines, binPath: ytDlpPath })
   })
 
-  // Quitting mid-download would otherwise orphan yt-dlp and its ffmpeg: nothing else in the app
-  // ever signals them, so they outlive the window that started them. One cancel takes the whole
-  // process group with it (see `killProcessTree`). Nothing is awaited — the rejected `start` is a
-  // `Cancelled`, which `withErrorReport` already declines to toast, and blocking a quit on the
-  // temp-directory cleanup isn't worth the delay.
   app.on('before-quit', () => {
     downloader.cancel()
   })
 
-  // The returned unsubscribe is dropped on purpose: the progress subscription lives as long as
-  // the process does, and `sendToWindow` already copes with the window coming and going.
   registerIngestIpc(ipcMain, {
-    // Spread rather than mutated: the downloader's methods close over its own state, so a copy
-    // with a reporting `start` drives exactly the same download.
     downloader: {
       ...downloader,
       start: withErrorReport('ytdlp', reportError, (request) => downloader.start(request))
@@ -234,8 +210,6 @@ function startup(): void {
       return result.canceled ? [] : result.filePaths
     },
     sendProgress: sendToWindow,
-    // The download DTO measures the file it just wrote, so `exists`/`sizeBytes` mean the same
-    // thing here as they do in `library:list`.
     audioDir: audio,
     fileSize
   })

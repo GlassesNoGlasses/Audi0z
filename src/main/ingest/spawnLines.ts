@@ -1,70 +1,41 @@
 import { spawn } from 'node:child_process'
 
 /**
- * The single seam between this app and the outside world's binaries.
+ * Runs child processes and pipelines. Every external call must go through here.
  *
  * **This is the only module in the repo allowed to import `node:child_process`.** Everything else
- * (ffmpeg, yt-dlp) takes a `RunLines` function as a dependency, which is what lets the whole
- * ingest pipeline be unit-tested without a single external process.
+ * (ffmpeg, yt-dlp) takes a `RunLines` function as a dependency.
  */
 
 export interface RunLinesOptions {
-  /** Absolute path to the binary. Never a shell string — args are passed as an array. */
-  bin: string
+  bin: string // binary absolute path
   args: string[]
   onStdout?: (line: string) => void
   onStderr?: (line: string) => void
-  /** Aborting kills the child and rejects the promise with an `AbortError`. */
   signal?: AbortSignal
-  /**
-   * How long an aborted child gets to exit on SIGTERM before it is sent SIGKILL. Defaults to
-   * `KILL_GRACE_MS`; production has no reason to change it, and the escalation test would
-   * otherwise have to sit through the real wait.
-   */
   killGraceMs?: number
 }
 
 export interface RunLinesResult {
-  /** The child's exit code (`-1` when it died without one). Callers decide what nonzero means. */
-  code: number
-  /** The last `STDERR_TAIL_LINES` stderr lines — enough context for an error message. */
-  stderrTail: string[]
+  code: number // exite code (-1 if dies)
+  stderrTail: string[] // stderr last line for error
 }
 
 export type RunLines = (opts: RunLinesOptions) => Promise<RunLinesResult>
-
 export const STDERR_TAIL_LINES = 20
 
-/**
- * How long a cancelled process group has to honour SIGTERM before SIGKILL settles it.
- *
- * Without the escalation a child that ignores SIGTERM never fires `close`, so this promise never
- * settles — and `downloader`'s `finally` never clears `running`, leaving every later download
- * rejecting with BUSY for the life of the main process, with nothing in the UI able to clear it.
- */
+// How long a cancelled process group has to honour SIGTERM before SIGKILL settles it
 export const KILL_GRACE_MS = 5000
 
-/** The slice of a `ChildProcess` {@link killProcessTree} needs — which is what makes it unit-testable. */
+/** Subset interface of actual node child process interface; used in {@link killProcessTree} */
 export interface KillableChild {
   pid?: number | undefined
   kill(signal?: NodeJS.Signals): boolean
 }
 
 /**
- * Signals a child *and everything it spawned*.
- *
- * `child.kill()` signals exactly one pid, so yt-dlp's ffmpeg — a grandchild — survives a cancel and
- * keeps burning CPU and writing into a temp directory the downloader has already deleted. Because
- * the spawn below is `detached` on POSIX, the child leads a process group of its own; signalling
- * the *negative* pid delivers to every member of that group, ffmpeg included.
- *
- * Windows keeps today's exact single-process behaviour: there `detached` means "outlive the
- * parent", not "new process group", and negative pids aren't a thing. The app doesn't ship there.
- *
- * The `try` is load-bearing, not defensive garnish. `process.kill` throws ESRCH once the group is
- * gone — the ordinary race where the child exited on its own between `exit` and `close` — and this
- * runs inside an abort listener, where a throw surfaces as an `uncaughtException` that kills the
- * main process rather than as a rejected download.
+ * Signals a child and every *grandchild* SIGKILL (with grace period).
+ * Here because yt-dlp spawns child processes for ffmpeg.
  */
 export function killProcessTree(
   child: KillableChild,
@@ -74,14 +45,12 @@ export function killProcessTree(
   const { pid } = child
   if (pid !== undefined && platform !== 'win32') {
     try {
-      process.kill(-pid, signal)
+      process.kill(-pid, signal) // POSIX Unix systems
       return
     } catch {
-      // The group is gone (ESRCH) or not ours to signal (EPERM). Fall through to the direct kill,
-      // which is a no-op on a child that has already exited.
     }
   }
-  child.kill(signal)
+  child.kill(signal) // Windows
 }
 
 function abortError(bin: string): Error {
@@ -90,13 +59,8 @@ function abortError(bin: string): Error {
   return error
 }
 
-/**
- * Turns arbitrary chunks into whole lines.
- *
- * Splits on LF, CRLF *and* lone CR — ffmpeg and yt-dlp both use bare carriage returns for their
- * progress redraws, and treating those as line breaks keeps a single "line" from growing without
- * bound. Empty segments are dropped, so a CRLF straddling two chunks cannot produce a blank line.
- */
+/** Turns arbitrary chunks into whole lines by subprocesses. Maintains buffer with flush.
+ *  Used to process yt-dlp and ffmpeg output. */
 function lineSplitter(onLine: (line: string) => void): {
   push(chunk: string): void
   flush(): void
@@ -119,6 +83,10 @@ function lineSplitter(onLine: (line: string) => void): {
   }
 }
 
+/** 
+ * Main process function. Spawns a child process on binary `bin` and calls stdout and stderr
+ * on each outputed line by process.
+*/
 export const runLines: RunLines = ({
   bin,
   args,
@@ -141,14 +109,10 @@ export const runLines: RunLines = ({
       onStderr?.(line)
     })
 
-    // stdin is ignored on purpose: a child that waits on input would otherwise hang forever.
-    // `detached` on POSIX buys a process *group*, not a detached process — it is what makes the
-    // group kill in `killProcessTree` reach yt-dlp's ffmpeg. Deliberately no `child.unref()`: the
-    // promise settles on `close`, which needs the child still attached and its pipes still ours.
     const child = spawn(bin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      detached: process.platform !== 'win32'
+      detached: process.platform !== 'win32' // orphan child handling
     })
 
     child.stdout?.setEncoding('utf8')

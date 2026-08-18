@@ -21,7 +21,7 @@ import { errorMessage, trashFailureMessage } from './lib/errors'
 import { songsInView, sortSongs } from './lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
-import type { ConfirmIntent } from './state/appReducer'
+import type { ConfirmIntent, Dialog } from './state/appReducer'
 
 function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index])
@@ -45,9 +45,6 @@ function AppShell(): ReactElement {
   const { songs, playlists, settings, sort, playback, dialog } = state
 
   useApiEvents(dispatch)
-  // Songs are listed long before anything has decoded their headers; this measures them behind the
-  // list and persists what it finds, so the times only ever have to be read once. It only reads
-  // while nothing is playing — the probes go through the same `media://` handler the player does.
   useDurationBackfill(songs, dispatch, !playback.isPlaying)
 
   // Start-up: load everything, then make the Library the queue.
@@ -82,9 +79,6 @@ function AppShell(): ReactElement {
     }
   }, [dispatch])
 
-  // The queue follows its source: adding to the library, or to the playlist being played, extends
-  // the queue in place rather than restarting it — and it follows the sort the same way, so what
-  // plays next is what the list shows.
   const queueOrder = useMemo(() => {
     const queueId = playback.queueId
     if (queueId === null) return null
@@ -109,13 +103,6 @@ function AppShell(): ReactElement {
   const current = songs.find((song) => song.id === playback.currentId) ?? null
 
   const handleEnded = useCallback(() => dispatch({ type: 'song/ended' }), [dispatch])
-
-  /**
-   * The file behind the current song will not play. Say so, remember that it is gone, and move on
-   * — but only while something else in the queue still can, otherwise a queue of broken files
-   * would error its way round in a loop. (`song/ended` is deliberately not used here: it honours
-   * repeat, which would restart the unplayable song forever.)
-   */
   const handleError = useCallback(
     (songId: string) => {
       const failed = songs.find((song) => song.id === songId)
@@ -152,7 +139,7 @@ function AppShell(): ReactElement {
   const mediaPause = useCallback(() => dispatch({ type: 'transport/pause' }), [dispatch])
   const mediaNext = useCallback(() => dispatch({ type: 'transport/next' }), [dispatch])
 
-  // AirPods taps, keyboard media keys, the macOS Now Playing widget — same four commands.
+  // AirPods taps, keyboard media keys, the macOS Now Playing widget
   useMediaSession({
     title: current?.title ?? null,
     isPlaying: playback.isPlaying,
@@ -171,8 +158,6 @@ function AppShell(): ReactElement {
 
   const togglePlay = useCallback(() => dispatch({ type: 'transport/togglePlay' }), [dispatch])
 
-  // Applied to the store first so the audio and the slider react on the keystroke, then persisted
-  // — the same order the volume slider itself uses.
   const toggleMute = useCallback(() => {
     const next = settings.volume === 0 ? lastAudibleVolume.current || 1 : 0
     dispatch({ type: 'settings/updated', settings: { ...settings, volume: next } })
@@ -219,6 +204,32 @@ function AppShell(): ReactElement {
       .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
   }
 
+  const dialogSwitch = (dialog: Dialog | null): ReactElement => {
+    if (dialog === null) return <></>
+
+    switch (dialog.kind) {
+      case 'add':
+        return <AddSongDialog source={dialog.source} />
+      case 'edit':
+        return <EditSongDialog songId={dialog.songId} />
+      case 'settings':
+        return <SettingsDialog />
+      case 'tags':
+        return <TagsDialog />
+      case 'addToPlaylist':
+        return <AddToPlaylistDialog playlistId={dialog.playlistId} />
+      case 'confirm':
+        return <ConfirmDialog
+          message={dialog.message}
+          confirmLabel={dialog.confirmLabel}
+          onConfirm={() => confirmIntent(dialog.intent)}
+          onCancel={() => dispatch({ type: 'dialog/closed' })}
+          />
+      default:
+        return <></>
+    }
+  } 
+
   return (
     <div className="app">
       <Sidebar />
@@ -228,23 +239,7 @@ function AppShell(): ReactElement {
       </section>
       <PlayerBar audioRef={audioRef} beginScrub={beginScrub} endScrub={endScrub} />
       <ToastHost />
-
-      {dialog?.kind === 'add' ? <AddSongDialog source={dialog.source} /> : null}
-      {dialog?.kind === 'edit' ? <EditSongDialog songId={dialog.songId} /> : null}
-      {dialog?.kind === 'settings' ? <SettingsDialog /> : null}
-      {dialog?.kind === 'tags' ? <TagsDialog /> : null}
-      {dialog?.kind === 'addToPlaylist' ? (
-        <AddToPlaylistDialog playlistId={dialog.playlistId} />
-      ) : null}
-      {dialog?.kind === 'confirm' ? (
-        <ConfirmDialog
-          message={dialog.message}
-          confirmLabel={dialog.confirmLabel}
-          onConfirm={() => confirmIntent(dialog.intent)}
-          onCancel={() => dispatch({ type: 'dialog/closed' })}
-        />
-      ) : null}
-
+      {dialogSwitch(dialog)}
       <audio ref={audioRef} className="app-audio" />
     </div>
   )

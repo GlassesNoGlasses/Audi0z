@@ -16,21 +16,6 @@ import { isPlayableFile } from '../media/mimeTypes'
 import { NotFoundError } from '../store/errors'
 import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
 
-/**
- * Every request/response channel the library UI needs, wired to the stores.
- *
- * Two rules shape this module:
- *
- *  - **Nothing from the renderer is trusted.** Each handler validates its arguments before a store
- *    sees them; `ipcRenderer.invoke` can be called with anything.
- *  - **Orchestration lives here, not in the stores.** Deleting a song has to trash a file, drop a
- *    library row and cascade into playlists, in that order — putting that sequence in a store
- *    would make the store know about the filesystem and about playlists.
- *
- * No `electron` value import: `trashItem`, `revealInFolder`, `fileExists` and the importer are
- * injected, so the whole surface is testable with fakes in a plain node process.
- */
-
 /** Thrown when the renderer sends something that does not match the `Api` contract. */
 export class InvalidPayloadError extends Error {
   constructor(message: string) {
@@ -43,31 +28,9 @@ export interface LibraryIpcDeps {
   libraryStore: LibraryStore
   playlistStore: PlaylistStore
   settingsStore: SettingsStore
-  /**
-   * The tag registry. It knows nothing about songs, so this module owns the cascade — and runs the
-   * pass over `libraryStore` *first*, committing here last (the `tags:rename` handler explains
-   * why).
-   */
   tagStore: TagStore
-  /** Absolute path of the library's `audio/` directory. */
-  audioDir: string
-  /**
-   * Copies/transcodes a source file into the library and records it (WP3's importer) — the
-   * importer calls `libraryStore.add` itself, which is why this handler does not.
-   *
-   * **The importer MUST be wired with the exact same `LibraryStore` instance passed above.** A
-   * store keeps a process-lifetime in-memory copy of `library.json` and never reloads it, so a
-   * second `createLibraryStore(dir)` over the same directory would write the import to disk while
-   * `library:list` keeps serving its own stale copy for the rest of the session.
-   */
+  audioDir: string // absolute
   importSong(request: AddSongRequest): Promise<Song>
-  /**
-   * Transcodes an already-imported song to Opus and records the swap (`compressExisting`), wired
-   * with the same `LibraryStore` instance for the same reason `importSong` is.
-   *
-   * `shrank: false` means the re-encode was no smaller and was discarded: nothing was recorded and
-   * `song` is the row exactly as it already stood.
-   */
   compressSong(id: string): Promise<{ song: Song; shrank: boolean }>
   /**
    * Usually `compressionJobs.waitFor` — the same seam the media protocol takes. Absent means
@@ -76,17 +39,8 @@ export interface LibraryIpcDeps {
   awaitCompression?(id: string): Promise<void> | undefined
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
-  /**
-   * **Must not reject** — an unreadable path is `false`, never a rejection. `library:remove` reads
-   * it to decide whether there is anything left to trash. The wired implementation
-   * (`wiring.fileExists`) catches everything for exactly this reason.
-   */
   fileExists(absPath: string): Promise<boolean>
-  /**
-   * **Must not reject** — `null` means "could not measure" (missing, unreadable, not a file).
-   * `library:list` runs one of these per song inside a `Promise.all`, so a single rejection would
-   * fail the whole listing. `0` is a real size and must stay distinct from `null`.
-   */
+  /** **Must not reject** — `null` means "could not measure" (missing, unreadable, not a file).*/
   fileSize(absPath: string): Promise<number | null>
   revealInFolder(absPath: string): void
 }
@@ -127,15 +81,7 @@ function parseAddSongRequest(value: unknown): AddSongRequest {
   }
 }
 
-/**
- * The picker keeps an "All files" escape hatch — a correctly encoded file with an odd name is the
- * user's to add — so this is where a file the app could never play is turned away. Importing one
- * costs a copy of the whole file and mints a song that is silent forever and reported as missing;
- * refusing costs a sentence the renderer already knows how to show.
- *
- * The downloader calls `importFile` directly and never comes through this handler, so URL ingest
- * is untouched by this check.
- */
+// file extension check
 function assertPlayableSource(sourcePath: string): void {
   if (!isPlayableFile(sourcePath)) {
     throw new InvalidPayloadError(
@@ -146,7 +92,7 @@ function assertPlayableSource(sourcePath: string): void {
   }
 }
 
-/** A playing time has to be a real, positive number of seconds — 0, NaN and Infinity are bugs. */
+// > 0 seconds
 function assertDuration(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new InvalidPayloadError(`${field} must be a positive finite number`)
@@ -154,14 +100,11 @@ function assertDuration(value: unknown, field: string): number {
   return value
 }
 
-function parseSongPatch(value: unknown): Partial<Pick<Song, 'title' | 'tags' | 'durationSec'>> {
+function parseSongPatch(value: unknown): Partial<Pick<Song, 'title' | 'tags'>> {
   const raw = assertRecord(value, 'patch')
   return {
     ...(raw.title !== undefined ? { title: assertNonEmptyString(raw.title, 'patch.title') } : {}),
-    ...(raw.tags !== undefined ? { tags: assertStringArray(raw.tags, 'patch.tags') } : {}),
-    ...(raw.durationSec !== undefined
-      ? { durationSec: assertDuration(raw.durationSec, 'patch.durationSec') }
-      : {})
+    ...(raw.tags !== undefined ? { tags: assertStringArray(raw.tags, 'patch.tags') } : {})
   }
 }
 
@@ -175,10 +118,6 @@ function parsePlaybackOptions(value: unknown): { shuffle?: boolean; repeat?: boo
   }
 }
 
-/**
- * A whole playlist order in one payload. Only the shape is checked here — whether these are the
- * right ids is the store's call, and it refuses anything that does not name every playlist once.
- */
 function parsePlaylistOrder(value: unknown): string[] {
   const ids = assertStringArray(value, 'orderedIds')
   for (const id of ids) assertNonEmptyString(id, 'orderedIds entry')
@@ -207,10 +146,6 @@ function parseSettingsPatch(value: unknown): Partial<Settings> {
 }
 
 export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIpcDeps): void {
-  /**
-   * A `fileName` that resolves outside `audio/` means a hand-edited or corrupted `library.json`;
-   * it must never reach `trashItem` or `shell.showItemInFolder`.
-   */
   function audioPathOf(song: Song): string {
     const resolved = resolveAudioPath(deps.audioDir, song.fileName)
     if (resolved === null) {
@@ -226,16 +161,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return song
   }
 
-  /**
-   * The id is encoded because `mediaProtocol` decodes it: ids are uuids in practice, but
-   * `library.json` is hand-editable, and the two halves have to agree whatever is in there.
-   */
   async function toDto(song: Song): Promise<SongDto> {
-    // The same courtesy the media protocol pays. A dto built while this song's file is mid-swap
-    // would measure the path the compressor is about to remove and report a freshly compressed
-    // song as missing — and the renderer keeps that verdict for the whole session, since nothing
-    // re-derives `exists` on its own. Wait the swap out and read the record fresh; when nothing is
-    // in flight this is not even a microtask.
     const settled = deps.awaitCompression?.(song.id)
     if (settled) {
       await settled
@@ -243,9 +169,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
       if (fresh) song = fresh
     }
     const resolved = resolveAudioPath(deps.audioDir, song.fileName)
-    // One measurement answers both questions: a size that came back *is* the proof of existence,
-    // so there is no second filesystem call and no way for the two fields to disagree. A 0-byte
-    // file therefore reads as present, which is what it is.
     const size = resolved === null ? null : await deps.fileSize(resolved)
     return {
       ...song,
@@ -272,7 +195,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return toDto(await deps.libraryStore.update(songId, parsed))
   })
 
-  /** The backfill's flush: every entry validated up front, then one store pass, one persist. */
+  /** The backfill's flush: update songs with their durations periodically in the back */
   ipc.handle(IPC.library.updateDurations, async (_event, entries: unknown): Promise<SongDto[]> => {
     if (!Array.isArray(entries)) throw new InvalidPayloadError('entries must be an array')
     const parsed = entries.map((entry) => {
@@ -289,16 +212,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return Promise.all(updated.map((song) => toDto(song)))
   })
 
-  /**
-   * Delete is trash-first: the library row and the playlist references only go once the file has
-   * actually reached the OS trash. If trashing fails (user cancelled, permission denied) the error
-   * propagates untouched and the library is exactly as it was.
-   *
-   * A file that is already gone is skipped rather than trashed. `shell.trashItem` rejects for a
-   * path that does not exist, so trashing unconditionally would make the rows the UI marks
-   * "File missing" the only ones the user can never remove — leaving `library.json` as the sole
-   * way out. The row still goes: that is what the user asked for.
-   */
+  // attempts to remove a song from the libray. If OS rejects, song remains
   ipc.handle(IPC.library.remove, async (_event, id: unknown): Promise<void> => {
     const song = await requireSong(id)
     const absPath = audioPathOf(song)
@@ -307,21 +221,13 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     await deps.playlistStore.cascadeRemoveSong(song.id)
   })
 
-  /**
-   * The compressor records the swap itself (`replaceFile`), so this handler only re-derives the
-   * DTO — and it re-measures the file, which is the point: the new size is what the UI shows.
-   *
-   * `shrank` rides along untouched. A re-encode that was no smaller is not an error — there is
-   * simply nothing to report but a song that did not change — and only the renderer can say that
-   * out loud.
-   */
   ipc.handle(IPC.library.compress, async (_event, id: unknown): Promise<CompressResult> => {
     const songId = assertNonEmptyString(id, 'id')
     const { song, shrank } = await deps.compressSong(songId)
     return { song: await toDto(song), shrank }
   })
 
-  /** The folder itself, not a song inside it — so there is nothing to look up and nothing to trust. */
+  /** The library audio folder itself; for settings & transparency */
   ipc.handle(IPC.library.showFolder, async (): Promise<void> => {
     deps.revealInFolder(deps.audioDir)
   })
@@ -331,27 +237,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
   ipc.handle(IPC.tags.create, (_event, name: unknown): Promise<Tag> =>
     deps.tagStore.create(assertNonEmptyString(name, 'name'))
   )
-
-  /**
-   * Songs first, registry last.
-   *
-   * `library.json` and `tags.json` are two separate atomic writes, and no filesystem lands two
-   * renames as one commit — so the window between them cannot be closed by any amount of write
-   * plumbing, only pointed somewhere harmless. The order is what decides *which* half a crash
-   * strands, and only one of the two halves is benign.
-   *
-   * The tags dialog draws the registry and nothing else, so committing it first would leave the
-   * app reporting a rename that succeeded while every song still carried the dead string — a grey,
-   * unreachable chip, and no reason for the user to retry. Committing it last leaves the tag under
-   * its old name: the operation plainly did not take, which is what the user will believe, and
-   * repeating the identical gesture *is* the repair — the library pass is a no-op once the songs
-   * have already moved.
-   *
-   * `resolveRename` writes nothing. It is what still refuses a clashing name before a single song
-   * moves, and it answers with the *trimmed* name, so the songs and the registry can only agree on
-   * spelling. The cascade matches on the name the tag had before the rename, which is why the old
-   * tag is read up front.
-   */
   ipc.handle(IPC.tags.rename, async (_event, id: unknown, name: unknown): Promise<Tag> => {
     const tagId = assertNonEmptyString(id, 'id')
     const newName = assertNonEmptyString(name, 'name')
@@ -363,15 +248,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return deps.tagStore.rename(tagId, resolved)
   })
 
-  /**
-   * Songs first, registry last, for the reason `tags:rename` spells out. What an interrupted delete
-   * leaves behind is an ordinary unused registry tag — indistinguishable from one just created, and
-   * with a Delete button next to it — rather than an orphan string on every song that no dialog in
-   * the app can reach.
-   *
-   * Removing a tag that is not in the registry is still a no-op: the end state is what was asked
-   * for.
-   */
   ipc.handle(IPC.tags.remove, async (_event, id: unknown): Promise<void> => {
     const tagId = assertNonEmptyString(id, 'id')
     const existing = await deps.tagStore.getTag(tagId)

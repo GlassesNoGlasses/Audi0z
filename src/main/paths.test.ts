@@ -20,31 +20,31 @@ afterEach(() => {
 })
 
 describe('resolveLibraryRoot', () => {
-  it('honours MML_LIBRARY_DIR above everything else', () => {
+  it('honours AUDI0Z_LIBRARY_DIR above everything else', () => {
     const override = path.join(path.sep, 'tmp', 'isolated-library')
-    expect(resolveLibraryRoot({ env: { MML_LIBRARY_DIR: override }, getMusicDir })).toBe(override)
+    expect(resolveLibraryRoot({ env: { AUDI0Z_LIBRARY_DIR: override }, getMusicDir })).toBe(override)
   })
 
-  it('reads MML_LIBRARY_DIR from process.env when no env is passed', () => {
+  it('reads AUDI0Z_LIBRARY_DIR from process.env when no env is passed', () => {
     const override = path.join(path.sep, 'tmp', 'from-process-env')
-    vi.stubEnv('MML_LIBRARY_DIR', override)
+    vi.stubEnv('AUDI0Z_LIBRARY_DIR', override)
     expect(resolveLibraryRoot({ getMusicDir })).toBe(override)
   })
 
-  it('defaults to <music>/my-music-library', () => {
+  it('defaults to <music>/audi0z', () => {
     expect(resolveLibraryRoot({ env: {}, getMusicDir })).toBe(
-      path.join(MUSIC_DIR, 'my-music-library')
+      path.join(MUSIC_DIR, 'audi0z')
     )
   })
 
-  it('ignores an empty MML_LIBRARY_DIR', () => {
-    expect(resolveLibraryRoot({ env: { MML_LIBRARY_DIR: '   ' }, getMusicDir })).toBe(
-      path.join(MUSIC_DIR, 'my-music-library')
+  it('ignores an empty AUDI0Z_LIBRARY_DIR', () => {
+    expect(resolveLibraryRoot({ env: { AUDI0Z_LIBRARY_DIR: '   ' }, getMusicDir })).toBe(
+      path.join(MUSIC_DIR, 'audi0z')
     )
   })
 
-  it('resolves a relative MML_LIBRARY_DIR to an absolute path', () => {
-    const root = resolveLibraryRoot({ env: { MML_LIBRARY_DIR: 'relative-library' }, getMusicDir })
+  it('resolves a relative AUDI0Z_LIBRARY_DIR to an absolute path', () => {
+    const root = resolveLibraryRoot({ env: { AUDI0Z_LIBRARY_DIR: 'relative-library' }, getMusicDir })
     expect(path.isAbsolute(root)).toBe(true)
     expect(path.basename(root)).toBe('relative-library')
   })

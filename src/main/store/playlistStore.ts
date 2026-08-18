@@ -5,13 +5,6 @@ import { ConflictError, NotFoundError } from './errors'
 import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreatePlaylistStore } from './storeTypes'
 
-/**
- * `playlists.json` behind the `PlaylistStore` interface.
- *
- * A playlist owns nothing but an ordered list of song ids plus its own shuffle/repeat flags — it
- * never touches `library.json`. The one link back is `cascadeRemoveSong`, which the delete flow
- * calls after a song has actually been trashed.
- */
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
@@ -102,14 +95,6 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
       await persist(current)
     },
 
-    /**
-     * The stored order is the sidebar's order, so rearranging the sidebar is a write to this array.
-     *
-     * The whole order arrives at once and is validated before anything moves: a call that names
-     * fewer, more, or unknown playlists is refused outright rather than half-applied. The cached
-     * array is rearranged in place — `loadOnce` hands the same one out for the process lifetime,
-     * the same reason `remove` splices rather than reassigns.
-     */
     async reorder(orderedIds) {
       const current = await load()
       if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
@@ -121,7 +106,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
         if (found === undefined) throw new NotFoundError(`No playlist with id "${id}"`)
         return found
       })
-      current.splice(0, current.length, ...next)
+      current.splice(0, current.length, ...next) // in-memory edit
       await persist(current)
       return current.map(clonePlaylist)
     },
@@ -129,7 +114,6 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
     async addSong(playlistId, songId) {
       const { current, index } = await mustFind(playlistId)
       const playlist = current[index]
-      // A song can sit in a playlist exactly once; adding it again keeps its original position.
       if (playlist.songIds.includes(songId)) return clonePlaylist(playlist)
       return replace(current, index, { ...playlist, songIds: [...playlist.songIds, songId] })
     },
@@ -153,7 +137,6 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
       })
     },
 
-    /** Called after a song has been trashed, so no playlist keeps pointing at a dead id. */
     async cascadeRemoveSong(songId) {
       const current = await load()
       let changed = false

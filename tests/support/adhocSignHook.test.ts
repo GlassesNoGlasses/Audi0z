@@ -37,7 +37,7 @@ beforeAll(async () => {
 const context = (electronPlatformName: string): PackContext => ({
   electronPlatformName,
   appOutDir: '/tmp/dist/mac-arm64',
-  packager: { appInfo: { productFilename: 'my-music-library' } }
+  packager: { appInfo: { productFilename: 'audi0z' } }
 })
 
 describe('adhocSign afterPack hook', () => {
@@ -51,7 +51,7 @@ describe('adhocSign afterPack hook', () => {
     expect(execFileSync).toHaveBeenCalledTimes(1)
     expect(execFileSync).toHaveBeenCalledWith(
       'codesign',
-      ['--force', '--deep', '--sign', '-', '/tmp/dist/mac-arm64/my-music-library.app'],
+      ['--force', '--deep', '--sign', '-', '/tmp/dist/mac-arm64/audi0z.app'],
       { stdio: 'inherit' }
     )
   })

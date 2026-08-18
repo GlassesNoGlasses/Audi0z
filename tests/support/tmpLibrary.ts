@@ -8,7 +8,7 @@ import { audioDir, ensureDirs } from '../../src/main/paths'
  * production one (`ensureDirs` is reused so the layout can never drift).
  */
 export interface TmpLibrary {
-  /** Library root — pass it as `MML_LIBRARY_DIR` or straight to a store factory. */
+  /** Library root — pass it as `AUDI0Z_LIBRARY_DIR` or straight to a store factory. */
   root: string
   /** `<root>/audio` */
   audio: string

@@ -3,21 +3,6 @@ import { open, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout as delayMs } from 'node:timers/promises'
 
-/**
- * Crash-safe JSON persistence: the one place in the app that touches `library.json`,
- * `playlists.json` and `settings.json`.
- *
- * Two guarantees the stores rely on:
- *   - a read never throws on a corrupt file — the bad bytes are quarantined to `<file>.bak` and
- *     the caller gets its default, so a hand-edited library cannot brick the app;
- *   - a write is atomic (temp file -> fsync -> rename) and writes to the same path are serialised,
- *     so a reader always sees either the previous or the next complete document, never a torn one.
- *
- * No `electron` import: the stores are constructed with an explicit directory and unit-tested in a
- * plain node process.
- */
-
-/** How long to wait before the single rename retry (Windows AV briefly locks the target). */
 export const RENAME_RETRY_DELAY_MS = 50
 
 export interface RenameOps {
@@ -36,10 +21,7 @@ function errorCode(error: unknown): string | undefined {
   return (error as NodeJS.ErrnoException | null)?.code
 }
 
-/**
- * Exported for its own test: `rename` over an existing file can fail with `EPERM` on Windows when
- * an antivirus scanner holds the target open for a moment. One retry clears it in practice.
- */
+// Because Windows AV is a pain.
 export async function renameWithRetry(
   from: string,
   to: string,
@@ -55,12 +37,8 @@ export async function renameWithRetry(
 }
 
 /**
- * Reads and validates a JSON document.
- *
- * Missing file -> `makeDefault()` and nothing is written (an empty library is not worth a file
- * until something is actually added). Unparsable or structurally wrong -> the original bytes are
- * copied to `<filePath>.bak` and `makeDefault()` is returned; the original is left in place too,
- * so nothing is ever lost silently.
+ * Reads, validates and returns a JSON document. Errors are quarantined in a `<filePath>.bak` file,
+ * with `makeDefault()` being returned.
  */
 export async function readJsonFile<T>(
   filePath: string,
@@ -91,25 +69,14 @@ export async function readJsonFile<T>(
 }
 
 /**
- * Puts the unreadable bytes aside before the caller carries on with a default.
- *
- * There is exactly one `.bak` slot, and this deliberately overwrites whatever was in it. The
- * alternative — `.bak.1`, `.bak.2`, … — accumulates copies of a file that is already broken, in a
- * directory the user browses, and the *newest* corruption is the one that explains what just
- * happened. A quarantined copy worth keeping is worth moving somewhere else before the next
- * corruption, which is a thing a person can do and a thing this function should not guess at.
+ * Puts the unreadable bytes aside from a failed read. File is stored as `<filePath>.bak`, and
+ * is overwritten in each failed read to the same file path. Use for potential restore and backup.
  */
 async function quarantine(filePath: string, raw: Buffer): Promise<void> {
   await writeFile(`${filePath}.bak`, raw)
 }
 
-/**
- * Reads once, then hands back the same value forever — how the stores keep an in-memory copy of
- * their document without paying for the disk on every call.
- *
- * Concurrent first calls share one read. A failed read is not cached, so a transient disk error
- * does not poison the store for the rest of the session.
- */
+/** Reads a file and loads the content into memory. Call using await on the promise. */
 export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
   let value: T | null = null
   let pending: Promise<T> | null = null
@@ -128,9 +95,11 @@ export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
   }
 }
 
+/** One promise chain per resolved path used in `writeJsonFile`. Last caller wins.  */
+const chains = new Map<string, Promise<void>>()
+
 /**
  * Serialises `data` and replaces `filePath` atomically.
- *
  * Concurrent calls for the same path queue behind each other (last caller wins) so two stores
  * flushing at once cannot interleave; different paths proceed in parallel.
  */
@@ -147,9 +116,10 @@ export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   return queued
 }
 
-/** One promise chain per resolved path — three entries in practice, so it is never pruned. */
-const chains = new Map<string, Promise<void>>()
-
+/** 
+ * Writes to `filePath` JSON data `data`. A temp file is used first, with syncing and renaming 
+ * performed on success; temp file is always removed.
+*/
 async function writeNow(filePath: string, data: unknown): Promise<void> {
   const tmpPath = `${filePath}.tmp-${randomUUID()}`
   try {
@@ -157,15 +127,13 @@ async function writeNow(filePath: string, data: unknown): Promise<void> {
     const handle = await open(tmpPath, 'w')
     try {
       await handle.writeFile(json, 'utf8')
-      // fsync before the rename: a rename of an unflushed file can survive a crash as a
-      // zero-length library.
       await handle.sync()
     } finally {
       await handle.close()
     }
     await renameWithRetry(tmpPath, filePath)
   } catch (error) {
-    await rm(tmpPath, { force: true })
+    await rm(tmpPath, { force: true }) // remove temp file
     throw error
   }
 }

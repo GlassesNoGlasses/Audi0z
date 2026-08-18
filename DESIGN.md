@@ -16,7 +16,7 @@ Three processes, one direction of trust: the renderer asks, the main process doe
 
 ### Main process — owns all disk I/O and child processes
 
-- **Library root**: `~/Music/my-music-library/` (overridable with `MML_LIBRARY_DIR`, which exists
+- **Library root**: `~/Music/audi0z/` (overridable with `AUDI0Z_LIBRARY_DIR`, which exists
   so unit tests and e2e runs get an isolated directory) — kept under the pre-rename folder name
   for data continuity.
   - `library.json` — `{ version: 1, songs: Song[] }`

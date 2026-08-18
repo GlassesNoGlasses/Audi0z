@@ -79,7 +79,7 @@ Everything is stored in one folder:
 
 | Platform | Default location            |
 | -------- | --------------------------- |
-| all      | `~/Music/my-music-library/` |
+| all      | `~/Music/audi0z/` |
 
 The folder deliberately keeps the app's original name: libraries created before the rename to Audi0z keep working untouched, and nothing about your data moves.
 

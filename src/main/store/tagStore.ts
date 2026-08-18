@@ -5,24 +5,6 @@ import { ConflictError, NotFoundError } from './errors'
 import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreateTagStore } from './storeTypes'
 
-/**
- * `tags.json` behind the `TagStore` interface.
- *
- * The registry is an *index* over the tag strings songs already carry: it owns a tag's identity,
- * display name and colour, and nothing else. Keeping `library.json` in step when a tag is renamed
- * or deleted is the IPC layer's job, which keeps this store from knowing songs exist at all — and
- * it runs that pass *before* it calls in here, because two files cannot be replaced in one commit
- * and this is the file the app treats as the truth about which tags exist. A write here is
- * therefore the last step of a rename or a delete rather than the first, which is what makes an
- * interrupted one look to the user like it simply did not happen. `resolveRename` is how the caller
- * still refuses a clashing name before a single song moves.
- *
- * Structurally identical to `playlistStore`: `loadOnce` over an atomically written file, validators
- * that let a corrupt document degrade to "no tags" rather than to a broken app, and clones on the
- * way out so the cached array stays the single source of truth.
- */
-
-/** Saturation and lightness are fixed so every generated colour sits in the same readable band. */
 const TAG_SATURATION = 0.65
 const TAG_LIGHTNESS = 0.55
 
@@ -44,10 +26,7 @@ function cloneTag(tag: Tag): Tag {
   return { ...tag }
 }
 
-/**
- * HSL -> `#rrggbb`, per CSS Color 4. Local because this is the only colour arithmetic in the app
- * and a dependency for six lines of maths would not pay for itself.
- */
+// HSL -> `#rrggbb`, per CSS Color 4.
 function hslToHex(hue: number, saturation: number, lightness: number): string {
   const chroma = (1 - Math.abs(2 * lightness - 1)) * saturation
   const second = chroma * (1 - Math.abs(((hue / 60) % 2) - 1))
@@ -75,8 +54,6 @@ function hslToHex(hue: number, saturation: number, lightness: number): string {
 
 export const createTagStore: CreateTagStore = (dir, rng = Math.random) => {
   const filePath = tagsJsonPath(dir)
-  // Loaded once and kept for the life of the process — see `libraryStore` for why that forces ONE
-  // instance per library directory.
   const load = loadOnce(async () => {
     const file = await readJsonFile(filePath, isTagsFile, emptyTags)
     return file.tags
@@ -87,12 +64,6 @@ export const createTagStore: CreateTagStore = (dir, rng = Math.random) => {
     await writeJsonFile(filePath, file)
   }
 
-  /**
-   * Trims, refuses empty, and refuses a name another tag already holds — case-insensitively,
-   * because "Slowed" and "slowed" being two different tags is never what anyone meant.
-   *
-   * `exceptId` is the tag doing the renaming, so it can change its own name's case.
-   */
   function validateName(current: Tag[], raw: string, exceptId?: string): string {
     const name = raw.trim()
     if (name === '') throw new Error('A tag name must not be empty')
@@ -125,10 +96,6 @@ export const createTagStore: CreateTagStore = (dir, rng = Math.random) => {
       return cloneTag(tag)
     },
 
-    /**
-     * What `rename` would store, without storing it — so the caller can cascade onto the songs
-     * first and still refuse a clash before anything moves.
-     */
     async resolveRename(id, name) {
       const current = await load()
       if (!current.some((tag) => tag.id === id)) {
@@ -137,7 +104,6 @@ export const createTagStore: CreateTagStore = (dir, rng = Math.random) => {
       return validateName(current, name, id)
     },
 
-    /** Re-validates rather than trusting `resolveRename`: any other caller gets the same rules. */
     async rename(id, name) {
       const current = await load()
       const index = current.findIndex((tag) => tag.id === id)
@@ -149,7 +115,6 @@ export const createTagStore: CreateTagStore = (dir, rng = Math.random) => {
       return cloneTag(renamed)
     },
 
-    /** Removing an id that is already gone is a no-op, not an error. */
     async remove(id) {
       const current = await load()
       const index = current.findIndex((tag) => tag.id === id)

@@ -5,7 +5,7 @@ import { defineConfig } from '@playwright/test'
  * are deliberately no browser projects here and `npx playwright install` is never needed.
  *
  * The suite runs single-worker: every test owns the same on-disk library (isolated per test via
- * `MML_LIBRARY_DIR`) and a single app instance.
+ * `AUDI0Z_LIBRARY_DIR`) and a single app instance.
  */
 export default defineConfig({
   testDir: './tests/e2e',

@@ -3,13 +3,6 @@ import { settingsJsonPath } from '../paths'
 import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreateSettingsStore } from './storeTypes'
 
-/**
- * `settings.json` behind the `SettingsStore` interface.
- *
- * Tiny and total: every field has a default, so a missing or unreadable file is never an error —
- * the app just starts with the documented defaults.
- */
-
 export const DEFAULT_SETTINGS: Settings = {
   version: 1,
   compressByDefault: false,
@@ -33,8 +26,7 @@ function isSettings(value: unknown): value is Settings {
   )
 }
 
-/** Merges known keys only, so a stray property from the renderer never reaches the disk. */
-function merge(current: Settings, patch: Partial<Settings>): Settings {
+function update(current: Settings, patch: Partial<Settings>): Settings {
   return {
     version: 1,
     compressByDefault: patch.compressByDefault ?? current.compressByDefault,
@@ -55,8 +47,7 @@ export const createSettingsStore: CreateSettingsStore = (dir) => {
 
     async set(patch) {
       const current = await load()
-      // Mutated in place so the cached object stays the one `load` hands out.
-      Object.assign(current, merge(current, patch))
+      Object.assign(current, update(current, patch))
       await writeJsonFile(filePath, current)
       return { ...current }
     }

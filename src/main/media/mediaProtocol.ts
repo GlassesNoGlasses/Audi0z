@@ -5,27 +5,13 @@ import { Readable } from 'node:stream'
 import type { Song } from '../../shared/types'
 import { contentTypeFor } from './mimeTypes'
 
-/**
- * The `media://audio/<id>` handler.
- *
- * Audio is served over a custom protocol rather than `file://` so the renderer never learns a real
- * path and cannot read anything outside the library. Range support is what makes `<audio>` seek
- * without downloading the whole file, so it is implemented properly: 206 with a `Content-Range`,
- * 416 for a start past the end, plain 200 when the client asks for everything.
- *
- * The factory is exported on its own — wiring it into `protocol.handle` needs electron, and this
- * module deliberately does not.
- */
-
-export interface RangeSpec {
+export interface RangeSpec { // 200 - 416 range
   start: number
   end: number
 }
 
-/** `null` means "no usable Range header" — the caller answers 200 with the whole file. */
 export type ParsedRange = RangeSpec | 'unsatisfiable' | null
 
-/** A single byte range. Multi-range requests are deliberately unsupported (Chromium never sends one). */
 const RANGE_PATTERN = /^bytes=(\d*)-(\d*)$/
 
 export function parseRangeHeader(header: string | null, size: number): ParsedRange {
@@ -46,17 +32,10 @@ export function parseRangeHeader(header: string | null, size: number): ParsedRan
   const start = Number(rawStart)
   if (size === 0 || start >= size) return 'unsatisfiable'
   const end = rawEnd === '' ? size - 1 : Math.min(Number(rawEnd), size - 1)
-  // A backwards range is malformed rather than unsatisfiable: RFC 9110 says ignore it.
   if (end < start) return null
   return { start, end }
 }
 
-/**
- * Joins `fileName` onto the audio directory and refuses anything that resolves outside it.
- *
- * `fileName` comes from `library.json`, which a user can hand-edit — `../../…` must never reach
- * the filesystem.
- */
 export function resolveAudioPath(audioDir: string, fileName: string): string | null {
   const base = path.resolve(audioDir)
   const resolved = path.resolve(base, fileName)
@@ -70,15 +49,9 @@ export interface MediaFs {
 }
 
 export interface MediaHandlerDeps {
-  /** Usually `libraryStore.getSong` — called on every Range request, so it must be cheap. */
-  getSong(id: string): Promise<Song | undefined>
+  getSong(id: string): Promise<Song | undefined> // librarystore.get(songID)
   audioDir: string
-  /**
-   * Usually `compressionJobs.waitFor`. Absent means nothing is tracking compressions; an undefined
-   * return means this song has none in flight.
-   */
-  awaitCompression?: (id: string) => Promise<void> | undefined
-  /** Injected by tests; defaults to the real filesystem. */
+  awaitCompression?: (id: string) => Promise<void> | undefined // check compression job for song + wait
   fs?: MediaFs
 }
 
@@ -112,8 +85,6 @@ export function createMediaHandler(
     const id = songIdFromUrl(request.url)
     if (id === null) return notFound()
 
-    // A compression in flight is about to swap this very file; wait it out and read the record
-    // fresh. When nothing is in flight this is not even a microtask.
     const compressing = deps.awaitCompression?.(id)
     if (compressing) await compressing
 

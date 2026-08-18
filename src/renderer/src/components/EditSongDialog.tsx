@@ -63,7 +63,7 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
           <label className="field">
             Title
             <input value={title} onChange={(event) => setTitle(event.target.value)} />
-            <p>{title.trim().length <= 0 ? "Title must be at least 1 character" : "What we cooking twin?"}</p>
+            <p>{title.trim().length <= 0 && "Title must be at least 1 character"}</p>
           </label>
           <div className="dialog-actions">
             <button type="button" onClick={close}>
