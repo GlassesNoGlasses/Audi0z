@@ -75,6 +75,12 @@ describe('buildProbeArgs', () => {
       'https://example.test/watch?v=1'
     ])
   })
+
+  it('names the JS runtime first when given one, leaving the URL last', () => {
+    const args = buildProbeArgs('https://example.test/watch?v=1', '/opt/app/Electron')
+    expect(args.slice(0, 2)).toEqual(['--js-runtimes', 'node:/opt/app/Electron'])
+    expect(args.at(-1)).toBe('https://example.test/watch?v=1')
+  })
 })
 
 describe('probe', () => {
@@ -89,6 +95,29 @@ describe('probe', () => {
       sourceUrl: url
     })
     expect(vi.mocked(run).mock.calls[0][0].args).toEqual(buildProbeArgs(url))
+  })
+
+  /**
+   * The flag and the env var only work as a pair: `--js-runtimes node:<path>` names the app's own
+   * Electron binary, and ELECTRON_RUN_AS_NODE — inherited by the runtime child yt-dlp spawns —
+   * is what makes that binary start as plain Node rather than opening a second app.
+   */
+  it('names the JS runtime in both args and env when given one', async () => {
+    const run = fakeRun([JSON.stringify({ title: 'Runtime' })])
+
+    await probe({ url, run, binPath: '/bin/yt-dlp', jsRuntimePath: '/opt/app/Electron' })
+
+    const call = vi.mocked(run).mock.calls[0][0]
+    expect(call.args).toEqual(buildProbeArgs(url, '/opt/app/Electron'))
+    expect(call.env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1' })
+  })
+
+  it('leaves the env inherited when no runtime is named', async () => {
+    const run = fakeRun([JSON.stringify({ title: 'Plain' })])
+
+    await probe({ url, run, binPath: '/bin/yt-dlp' })
+
+    expect(vi.mocked(run).mock.calls[0][0].env).toBeUndefined()
   })
 
   it('rejects descriptively when stdout is not JSON', async () => {
@@ -189,6 +218,17 @@ describe('buildDownloadArgs', () => {
     expect(args).toContain('--print')
     expect(args).toContain('--progress')
   })
+
+  it('names the JS runtime first when given one, leaving the URL last', () => {
+    const args = buildDownloadArgs({
+      url: 'https://example.test/v/1',
+      outTemplate: '/tmp/job/download.%(ext)s',
+      ffmpegDir: '/opt/ffmpeg',
+      jsRuntimePath: '/opt/app/Electron'
+    })
+    expect(args.slice(0, 2)).toEqual(['--js-runtimes', 'node:/opt/app/Electron'])
+    expect(args.at(-1)).toBe('https://example.test/v/1')
+  })
 })
 
 describe('parseProgressLine', () => {
@@ -265,5 +305,24 @@ describe('download', () => {
     await download({ ...base, run, signal: controller.signal })
 
     expect(vi.mocked(run).mock.calls[0][0].signal).toBe(controller.signal)
+  })
+
+  it('names the JS runtime in both args and env when given one', async () => {
+    const run = fakeRun(['/tmp/job/download.m4a'])
+
+    await download({ ...base, jsRuntimePath: '/opt/app/Electron', run })
+
+    const call = vi.mocked(run).mock.calls[0][0]
+    expect(call.args).toEqual(buildDownloadArgs({ ...base, jsRuntimePath: '/opt/app/Electron' }))
+    expect(call.args.slice(0, 2)).toEqual(['--js-runtimes', 'node:/opt/app/Electron'])
+    expect(call.env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1' })
+  })
+
+  it('leaves the env inherited when no runtime is named', async () => {
+    const run = fakeRun(['/tmp/job/download.m4a'])
+
+    await download({ ...base, run })
+
+    expect(vi.mocked(run).mock.calls[0][0].env).toBeUndefined()
   })
 })

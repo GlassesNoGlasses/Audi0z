@@ -14,6 +14,7 @@ export interface RunLinesOptions {
   onStderr?: (line: string) => void
   signal?: AbortSignal
   killGraceMs?: number
+  env?: NodeJS.ProcessEnv // child env; omitted = inherit this process's
 }
 
 export interface RunLinesResult {
@@ -47,8 +48,7 @@ export function killProcessTree(
     try {
       process.kill(-pid, signal) // POSIX Unix systems
       return
-    } catch {
-    }
+    } catch {}
   }
   child.kill(signal) // Windows
 }
@@ -83,17 +83,18 @@ function lineSplitter(onLine: (line: string) => void): {
   }
 }
 
-/** 
+/**
  * Main process function. Spawns a child process on binary `bin` and calls stdout and stderr
  * on each outputed line by process.
-*/
+ */
 export const runLines: RunLines = ({
   bin,
   args,
   onStdout,
   onStderr,
   signal,
-  killGraceMs = KILL_GRACE_MS
+  killGraceMs = KILL_GRACE_MS,
+  env
 }) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -112,7 +113,8 @@ export const runLines: RunLines = ({
     const child = spawn(bin, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
-      detached: process.platform !== 'win32' // orphan child handling
+      detached: process.platform !== 'win32', // orphan child handling
+      env
     })
 
     child.stdout?.setEncoding('utf8')

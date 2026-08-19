@@ -186,10 +186,13 @@ function startup(): void {
         ffmpegDir: path.dirname(ffmpegPath),
         run: runLines,
         binPath: ytDlpPath,
+        // The app's own binary, run as Node, is yt-dlp's JS runtime — see ytdlp.ts.
+        jsRuntimePath: process.execPath,
         ...(job.onProgress ? { onProgress: job.onProgress } : {}),
         signal: job.signal
       }),
-    probe: (url) => probe({ url, run: runLines, binPath: ytDlpPath })
+    probe: (url) =>
+      probe({ url, run: runLines, binPath: ytDlpPath, jsRuntimePath: process.execPath })
   })
 
   app.on('before-quit', () => {

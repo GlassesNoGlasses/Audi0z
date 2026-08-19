@@ -33,14 +33,28 @@ export function resolveYtDlpPath({ resourcesBinDir, platform }: ResolveYtDlpPath
   return path.join(resourcesBinDir, assetName(platform))
 }
 
-// Probe URL for info
-export function buildProbeArgs(url: string): string[] {
-  return ['--no-playlist', '--skip-download', '--dump-single-json', '--no-color', url]
+// yt-dlp requires JS runtime path -> fetch from Electron app itself
+function jsRuntimeArgs(jsRuntimePath: string | undefined): string[] {
+  return jsRuntimePath === undefined ? [] : ['--js-runtimes', `node:${jsRuntimePath}`]
 }
 
-/**
- * Handles `--dump-single-json` edge cases (sometimes it's not a single json...)
- */
+function jsRuntimeEnv(jsRuntimePath: string | undefined): NodeJS.ProcessEnv | undefined {
+  return jsRuntimePath === undefined ? undefined : { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+}
+
+// Probe URL for info
+export function buildProbeArgs(url: string, jsRuntimePath?: string): string[] {
+  return [
+    ...jsRuntimeArgs(jsRuntimePath),
+    '--no-playlist',
+    '--skip-download',
+    '--dump-single-json',
+    '--no-color',
+    url
+  ]
+}
+
+/** Handles `--dump-single-json` edge cases (sometimes it's not a single json...) */
 function parseDump(stdout: string[]): Record<string, unknown> {
   const candidates = [
     stdout.join('\n'),
@@ -61,13 +75,15 @@ export interface ProbeOptions {
   run: RunLines
   binPath: string
   timeoutMs?: number
+  jsRuntimePath?: string
 }
 
 export async function probe({
   url,
   run,
   binPath,
-  timeoutMs = PROBE_TIMEOUT_MS
+  timeoutMs = PROBE_TIMEOUT_MS,
+  jsRuntimePath
 }: ProbeOptions): Promise<ProbeResult> {
   const stdout: string[] = []
   const controller = new AbortController()
@@ -77,14 +93,16 @@ export async function probe({
   let code: number
   let stderrTail: string[]
   try {
-    ({ code, stderrTail } = await run({
+    ;({ code, stderrTail } = await run({
       bin: binPath,
-      args: buildProbeArgs(url),
+      args: buildProbeArgs(url, jsRuntimePath),
       onStdout: (line) => stdout.push(line),
-      signal: controller.signal
+      signal: controller.signal,
+      env: jsRuntimeEnv(jsRuntimePath)
     }))
   } catch (error) {
-    if (controller.signal.aborted) { // timeout called
+    if (controller.signal.aborted) {
+      // timeout called
       throw ytDlpError(`yt-dlp probe timed out after ${Math.round(timeoutMs / 1000)}s`, [])
     }
     throw error
@@ -105,14 +123,17 @@ export interface BuildDownloadArgsOptions {
   outTemplate: string
   // Directory holding the ffmpeg binary — yt-dlp needs it to merge/extract audio
   ffmpegDir: string
+  jsRuntimePath?: string
 }
 
 export function buildDownloadArgs({
   url,
   outTemplate,
-  ffmpegDir
+  ffmpegDir,
+  jsRuntimePath
 }: BuildDownloadArgsOptions): string[] {
   return [
+    ...jsRuntimeArgs(jsRuntimePath),
     '--no-playlist',
     '--no-color',
     '--newline',
@@ -170,12 +191,14 @@ export async function download({
   run,
   binPath,
   onProgress,
-  signal
+  signal,
+  jsRuntimePath
 }: DownloadOptions): Promise<string> {
   const printed: string[] = []
   const { code, stderrTail } = await run({
     bin: binPath,
-    args: buildDownloadArgs({ url, outTemplate, ffmpegDir }),
+    args: buildDownloadArgs({ url, outTemplate, ffmpegDir, jsRuntimePath }),
+    env: jsRuntimeEnv(jsRuntimePath),
     onStdout: (line) => {
       const progress = parseProgressLine(line)
       if (progress) {
