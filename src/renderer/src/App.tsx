@@ -17,14 +17,28 @@ import { useDurationBackfill } from './hooks/useDurationBackfill'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useMediaSession } from './hooks/useMediaSession'
 import { useSmartPrev } from './hooks/useSmartPrev'
-import { errorMessage, trashFailureMessage } from './lib/errors'
+import { toastError, trashFailureMessage } from './lib/errors'
 import { songsInView, sortSongs } from './lib/viewSongs'
+import { currentSong } from './playback/selectors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
-import type { ConfirmIntent, Dialog } from './state/appReducer'
+import type { ConfirmIntent, SortMode } from './state/appReducer'
 
 function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index])
+}
+
+/** The same songs, in any order — what separates a reorder from a song joining or leaving. */
+function sameMembers(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const members = new Set(b)
+  return a.every((id) => members.has(id))
+}
+
+/** By value, not identity: "the user just asked for this order" must not hang on allocation. */
+function sameSort(a: SortMode, b: SortMode): boolean {
+  if (a === null || b === null) return a === b
+  return a.field === b.field && a.direction === b.direction
 }
 
 export function App(): ReactElement {
@@ -71,7 +85,7 @@ function AppShell(): ReactElement {
           repeat: loadedSettings.libraryRepeat
         })
       } catch (error) {
-        if (!cancelled) dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+        if (!cancelled) toastError(dispatch, error)
       }
     })()
     return () => {
@@ -95,12 +109,39 @@ function AppShell(): ReactElement {
     return sortSongs(source, sort).map((song) => song.id)
   }, [playback.queueId, songs, playlists, sort])
 
-  useEffect(() => {
-    if (queueOrder === null || sameOrder(queueOrder, playback.order)) return
-    dispatch({ type: 'queue/orderChanged', order: queueOrder })
-  }, [queueOrder, playback.order, dispatch])
+  /** The sort the queue was last built with; a differing value means the user just asked. */
+  const lastAppliedSort = useRef(sort)
 
-  const current = songs.find((song) => song.id === playback.currentId) ?? null
+  /**
+   * Keeps the queue in step with the view — with one thing held back.
+   *
+   * INVARIANT: a MUTABLE sort key must not let a data change reorder a queue that is playing.
+   * `title` is one (the Edit dialog writes it), so renaming any song under a Title sort recomputes
+   * the memo above and moves the order out from under the engine mid-song: `chooseSequential`
+   * reads the current song's index against the new order, and a rename that lands the playing song
+   * last turns the next press into a wrap that resets the played set. Nobody asked for that — they
+   * asked to rename a song. It is the same fence `useDurationBackfill(…, !playback.isPlaying)`
+   * puts around the other mutable key, `durationSec`.
+   *
+   * So: a sort gesture applies at once, whatever is playing — the gate compares the sort by
+   * value, so it cannot be fooled by how the object was allocated. Songs joining or leaving apply
+   * at once too, since the queue must not hold ids the library no longer has — and that
+   * application carries the whole fresh order, any deferred rename included: the hold lasts only
+   * until membership changes or playback stops.
+   */
+  useEffect(() => {
+    if (queueOrder === null) return
+    if (sameOrder(queueOrder, playback.order)) {
+      lastAppliedSort.current = sort
+      return
+    }
+    const membershipChanged = !sameMembers(queueOrder, playback.order)
+    if (playback.isPlaying && !membershipChanged && sameSort(lastAppliedSort.current, sort)) return
+    lastAppliedSort.current = sort
+    dispatch({ type: 'queue/orderChanged', order: queueOrder })
+  }, [queueOrder, playback.order, playback.isPlaying, sort, dispatch])
+
+  const current = currentSong(songs, playback)
 
   const handleEnded = useCallback(() => dispatch({ type: 'song/ended' }), [dispatch])
   const handleError = useCallback(
@@ -164,7 +205,7 @@ function AppShell(): ReactElement {
     void window.api.settings
       .set({ volume: next })
       .then((updated) => dispatch({ type: 'settings/updated', settings: updated }))
-      .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
+      .catch((error: unknown) => toastError(dispatch, error))
   }, [dispatch, settings])
 
   // Every mouse click hands the keyboard back: without this the shortcuts below reach a focused
@@ -201,10 +242,15 @@ function AppShell(): ReactElement {
           dispatch({ type: 'view/selected', view: { kind: 'library' } })
         }
       })
-      .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
+      .catch((error: unknown) => toastError(dispatch, error))
   }
 
-  const dialogSwitch = (dialog: Dialog | null): ReactElement => {
+  /**
+   * The open dialog, if any. Closing over `dialog` rather than taking it as a parameter, and with
+   * no `default` arm: the switch is then exhaustive by construction, so a seventh `Dialog` kind
+   * fails to compile here instead of rendering nothing at all.
+   */
+  const dialogSwitch = (): ReactElement => {
     if (dialog === null) return <></>
 
     switch (dialog.kind) {
@@ -219,16 +265,16 @@ function AppShell(): ReactElement {
       case 'addToPlaylist':
         return <AddToPlaylistDialog playlistId={dialog.playlistId} />
       case 'confirm':
-        return <ConfirmDialog
-          message={dialog.message}
-          confirmLabel={dialog.confirmLabel}
-          onConfirm={() => confirmIntent(dialog.intent)}
-          onCancel={() => dispatch({ type: 'dialog/closed' })}
+        return (
+          <ConfirmDialog
+            message={dialog.message}
+            confirmLabel={dialog.confirmLabel}
+            onConfirm={() => confirmIntent(dialog.intent)}
+            onCancel={() => dispatch({ type: 'dialog/closed' })}
           />
-      default:
-        return <></>
+        )
     }
-  } 
+  }
 
   return (
     <div className="app">
@@ -239,7 +285,7 @@ function AppShell(): ReactElement {
       </section>
       <PlayerBar audioRef={audioRef} beginScrub={beginScrub} endScrub={endScrub} />
       <ToastHost />
-      {dialogSwitch(dialog)}
+      {dialogSwitch()}
       <audio ref={audioRef} className="app-audio" />
     </div>
   )

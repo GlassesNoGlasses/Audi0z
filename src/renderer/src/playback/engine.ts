@@ -2,7 +2,7 @@
  * The playback rulebook, as pure functions: state in, state out. No React, no DOM, no timers, and
  * no randomness beyond the injected `Rng`.
  */
-import { isPlayed } from './selectors'
+import { currentIndex, isPlayed } from './selectors'
 import type { NextSelection, PlaybackAction, PlaybackState, Rng } from './types'
 
 /** How many played ids `history` keeps for `transport/prev`; the oldest fall off the front. */
@@ -38,7 +38,7 @@ export function chooseNext(state: PlaybackState, rng: Rng): NextSelection {
 
 /** Next index in queue order; wrapping past the end resets the played flags. */
 function chooseSequential(state: PlaybackState): NextSelection {
-  const index = state.currentId === null ? -1 : state.order.indexOf(state.currentId)
+  const index = currentIndex(state)
   if (index === -1) return { songId: state.order[0], resetPlayed: false }
   if (index === state.order.length - 1) return { songId: state.order[0], resetPlayed: true }
   return { songId: state.order[index + 1], resetPlayed: false }

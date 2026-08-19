@@ -1,5 +1,5 @@
 import { rename, rm } from 'node:fs/promises'
-import { runLines, type RunLines } from './spawnLines'
+import { processError, runLines, type RunLines } from './spawnLines'
 
 export interface ResolveFfmpegPathOptions {
   ffmpegStaticPath: string | null
@@ -66,14 +66,7 @@ export async function transcode({
 
   if (result.code !== 0) {
     await rm(partPath, { force: true })
-    const tail = result.stderrTail.filter((line) => line.trim() !== '').join('\n')
-    const error = new Error(
-      tail === ''
-        ? `ffmpeg exited with code ${result.code}`
-        : `ffmpeg exited with code ${result.code}:\n${tail}`
-    )
-    error.name = 'FfmpegError'
-    throw error
+    throw processError('FfmpegError', `ffmpeg exited with code ${result.code}`, result.stderrTail)
   }
 
   try {

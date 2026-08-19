@@ -1,6 +1,6 @@
-import { useState, type FormEvent, type ReactElement } from 'react'
+import { useMemo, useState, type FormEvent, type ReactElement } from 'react'
 import type { Playlist } from '../../../shared/types'
-import { errorMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -54,11 +54,14 @@ export function Sidebar(): ReactElement {
   // Library up on a silent app. Deleting the playing playlist nulls `queueId`, so this self-clears.
   const playingQueueId = playback.currentId === null ? null : playback.queueId
 
-  const titleOf = (songId: string): string =>
-    songs.find((song) => song.id === songId)?.title ?? 'Unknown song'
+  // Indexed once per library change rather than scanned per row: this component re-renders on
+  // every state change, and a scan would walk the whole library for each song of each expanded
+  // playlist — the two multiply, and the library is the side that grows without bound.
+  const titleById = useMemo(() => new Map(songs.map((song) => [song.id, song.title])), [songs])
 
-  const fail = (error: unknown): void =>
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+  const titleOf = (songId: string): string => titleById.get(songId) ?? 'Unknown song'
+
+  const fail = useToastError()
 
   function selectLibrary(): void {
     dispatch({ type: 'view/selected', view: { kind: 'library' } })
@@ -68,25 +71,28 @@ export function Sidebar(): ReactElement {
     dispatch({ type: 'view/selected', view: { kind: 'playlist', id: playlist.id } })
   }
 
+  /**
+   * Lands a write that named a playlist — a create or a rename — in the store and in the filter.
+   *
+   * The filter was chosen before this name existed, so leaving it up would hide the row the user
+   * just wrote and the write would read as a no-op. The filter is only spent when it is the thing
+   * in the way — a filter the new name matches goes on narrowing. The updater is functional so it
+   * reads the filter as it stands when the write RESOLVES, honouring one retyped mid-flight; and
+   * this is only ever called from `.then`, so a write that failed does not also cost the user
+   * their filter.
+   */
+  function applyWrite(playlist: Playlist): void {
+    dispatch({ type: 'playlists/upserted', playlist })
+    setFilter((current) => (matchesFilter(playlist.name, current) ? current : ''))
+  }
+
   function create(event: FormEvent): void {
     event.preventDefault()
     const name = newName.trim()
     if (name === '') return
     setCreating(false)
     setNewName('')
-    void window.api.playlists
-      .create(name)
-      .then((playlist) => {
-        dispatch({ type: 'playlists/upserted', playlist })
-        // The filter was chosen before this name existed, so leaving it up would hide the row the
-        // user just made and the create would read as a no-op. The filter is only spent when it is
-        // the thing in the way — a filter the new name matches goes on narrowing. The updater is
-        // functional so it reads the filter as it stands when the create RESOLVES, honouring one
-        // retyped mid-flight; and it lives in `.then` so a create that failed does not also cost
-        // the user their filter.
-        setFilter((current) => (matchesFilter(playlist.name, current) ? current : ''))
-      })
-      .catch(fail)
+    void window.api.playlists.create(name).then(applyWrite).catch(fail)
   }
 
   function rename(event: FormEvent, playlistId: string): void {
@@ -94,15 +100,7 @@ export function Sidebar(): ReactElement {
     const name = renameValue.trim()
     setRenamingId(null)
     if (name === '') return
-    void window.api.playlists
-      .rename(playlistId, name)
-      .then((playlist) => {
-        dispatch({ type: 'playlists/upserted', playlist })
-        // The same rule as `create`, and for the same reason: a write whose result the filter would
-        // hide spends the filter rather than making the row vanish on commit.
-        setFilter((current) => (matchesFilter(playlist.name, current) ? current : ''))
-      })
-      .catch(fail)
+    void window.api.playlists.rename(playlistId, name).then(applyWrite).catch(fail)
   }
 
   /**

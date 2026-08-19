@@ -38,6 +38,18 @@ describe('formatDuration', () => {
     expect(formatDuration(-1)).toBe('–:––')
   })
 
+  /** The transport shows an unreported time as the start of the song, not as an unknown one. */
+  it('says the placeholder the caller hands over instead', () => {
+    expect(formatDuration(undefined, '0:00')).toBe('0:00')
+    expect(formatDuration(Number.NaN, '0:00')).toBe('0:00')
+    expect(formatDuration(-1, '0:00')).toBe('0:00')
+  })
+
+  it('leaves a real duration alone whatever the fallback is', () => {
+    expect(formatDuration(173, '0:00')).toBe('2:53')
+    expect(formatDuration(0, '0:00')).toBe('0:00')
+  })
+
   it('reads as minutes and zero-padded seconds', () => {
     expect(formatDuration(0)).toBe('0:00')
     expect(formatDuration(9)).toBe('0:09')

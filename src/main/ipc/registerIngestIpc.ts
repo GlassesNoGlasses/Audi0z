@@ -1,8 +1,8 @@
 import type { IpcMain } from 'electron'
-import { IPC, IPC_EVENTS, MEDIA_SCHEME } from '../../shared/ipc'
-import type { DownloadProgress, DownloadRequest, Song, SongDto } from '../../shared/types'
+import { IPC, IPC_EVENTS } from '../../shared/ipc'
+import type { DownloadProgress, DownloadRequest } from '../../shared/types'
 import type { Downloader } from '../ingest/downloader'
-import { resolveAudioPath } from '../media/mediaProtocol'
+import { toSongDto } from './songDto'
 
 export interface IngestIpcDeps {
   downloader: Downloader
@@ -40,17 +40,6 @@ function assertDownloadRequest(value: unknown): DownloadRequest {
   return { url, title: req.title, tags: req.tags as string[], compress: req.compress }
 }
 
-async function toSongDto(song: Song, deps: IngestIpcDeps): Promise<SongDto> {
-  const resolved = resolveAudioPath(deps.audioDir, song.fileName)
-  const size = resolved === null ? null : await deps.fileSize(resolved)
-  return {
-    ...song,
-    exists: size !== null,
-    url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}`,
-    sizeBytes: size
-  }
-}
-
 /** Returns the progress-forwarding unsubscribe, for teardown in tests and on window replacement. */
 export function registerIngestIpc(ipc: Pick<IpcMain, 'handle'>, deps: IngestIpcDeps): () => void {
   const unsubscribe = deps.downloader.onProgress((progress) => {
@@ -59,6 +48,8 @@ export function registerIngestIpc(ipc: Pick<IpcMain, 'handle'>, deps: IngestIpcD
 
   ipc.handle(IPC.download.probe, async (_event, url) => deps.downloader.probe(assertUrl(url)))
 
+  // The file is already in place when `start` resolves, so this projects directly — no in-flight
+  // compression to settle, unlike the library handlers.
   ipc.handle(IPC.download.start, async (_event, req) =>
     toSongDto(await deps.downloader.start(assertDownloadRequest(req)), deps)
   )

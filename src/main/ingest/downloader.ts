@@ -9,6 +9,7 @@ export interface DownloadJob {
   url: string
   outTemplate: string
   onProgress?: (progress: DownloadProgress) => void
+  onWarning?: (message: string) => void
   signal: AbortSignal
 }
 
@@ -16,7 +17,9 @@ export interface DownloaderDeps {
   tempDir: string
   importFile(req: ImportRequest): Promise<Song>
   download(job: DownloadJob): Promise<string>
-  probe(url: string): Promise<ProbeResult>
+  probe(url: string, signal: AbortSignal): Promise<ProbeResult>
+  // A download that finished, but not as intended — told to the user the way an error is.
+  onWarning?: (message: string) => void
 }
 
 export interface Downloader {
@@ -44,12 +47,12 @@ export function createDownloader(deps: DownloaderDeps): Downloader {
     for (const listener of [...listeners]) {
       try {
         listener(progress)
-      } catch {
-      }
+      } catch {}
     }
   }
 
   let running: AbortController | null = null
+  let probing: AbortController | null = null
 
   return {
     async start(req) {
@@ -67,6 +70,7 @@ export function createDownloader(deps: DownloaderDeps): Downloader {
           url: req.url,
           outTemplate: path.join(jobDir, 'download.%(ext)s'),
           onProgress: emit,
+          onWarning: deps.onWarning,
           signal: controller.signal
         })
         if (controller.signal.aborted) throw codedError('Cancelled', 'download cancelled')
@@ -91,12 +95,27 @@ export function createDownloader(deps: DownloaderDeps): Downloader {
       }
     },
 
-    probe(url) {
-      return deps.probe(url)
+    async probe(url) {
+      const controller = new AbortController()
+      probing = controller
+      try {
+        return await deps.probe(url, controller.signal)
+      } catch (error) {
+        // Same bargain as `start`: however the runner reports an abort, the caller only cares that
+        // the cancel was ours.
+        throw controller.signal.aborted ? codedError('Cancelled', 'probe cancelled') : error
+      } finally {
+        // The dialog serialises probes (Fetch disables while one runs), so one slot is enough;
+        // clearing only its own keeps a stale finally from wiping a successor's controller.
+        if (probing === controller) probing = null
+      }
     },
 
+    // `before-quit` calls this, and a probe's child is detached too — leaving one running outlives
+    // the app.
     cancel() {
       running?.abort()
+      probing?.abort()
     },
 
     onProgress(listener) {

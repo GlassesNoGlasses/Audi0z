@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DownloadProgress, DownloadRequest, Song } from '../../shared/types'
+import type { DownloadProgress, DownloadRequest, ProbeResult, Song } from '../../shared/types'
 import { createDownloader } from './downloader'
 import type { DownloadJob } from './downloader'
 
@@ -47,7 +47,10 @@ describe('createDownloader', () => {
       tempDir,
       importFile: vi.fn(async () => SONG),
       download: vi.fn(async ({ outTemplate }: DownloadJob) => writeDownloaded(outTemplate)),
-      probe: vi.fn(async (url: string) => ({ title: 'Probed', sourceUrl: url })),
+      probe: vi.fn(async (url: string, _signal?: AbortSignal) => ({
+        title: 'Probed',
+        sourceUrl: url
+      })),
       ...overrides
     }
   }
@@ -195,6 +198,23 @@ describe('createDownloader', () => {
     expect(d.importFile).toHaveBeenCalledTimes(1)
   })
 
+  // Once-per-run lives in `ytdlp.download`; here the seam only has to deliver the callback.
+  it('hands the warning callback to the download job', async () => {
+    const onWarning = vi.fn()
+    const d = deps({
+      onWarning,
+      download: vi.fn(async ({ outTemplate, onWarning: warn }: DownloadJob) => {
+        warn?.('the download may be slow or incomplete')
+        return writeDownloaded(outTemplate)
+      })
+    })
+
+    await createDownloader(d).start(REQUEST)
+
+    expect(onWarning).toHaveBeenCalledTimes(1)
+    expect(onWarning).toHaveBeenCalledWith('the download may be slow or incomplete')
+  })
+
   it('delegates probe to the injected prober', async () => {
     const d = deps()
     const downloader = createDownloader(d)
@@ -203,7 +223,37 @@ describe('createDownloader', () => {
       title: 'Probed',
       sourceUrl: 'https://example.test/v/2'
     })
-    expect(d.probe).toHaveBeenCalledWith('https://example.test/v/2')
+    expect(d.probe).toHaveBeenCalledWith('https://example.test/v/2', expect.any(AbortSignal))
+  })
+
+  /**
+   * `cancel` is wired to `before-quit`, and a probe is the one yt-dlp run with no cancel button of
+   * its own in front of it. Left unreachable, its detached child outlives the app.
+   */
+  it('cancels an in-flight probe, not just a running download', async () => {
+    let probeSignal: AbortSignal | undefined
+    const d = deps({
+      probe: vi.fn(
+        (_url: string, signal?: AbortSignal) =>
+          new Promise<ProbeResult>((_resolve, reject) => {
+            probeSignal = signal
+            signal?.addEventListener('abort', () => {
+              const error = new Error('aborted')
+              error.name = 'AbortError'
+              reject(error)
+            })
+          })
+      )
+    })
+    const downloader = createDownloader(d)
+
+    const pending = downloader.probe('https://example.test/v/2')
+    await vi.waitFor(() => expect(probeSignal).toBeDefined())
+
+    downloader.cancel()
+
+    await expect(pending).rejects.toMatchObject({ name: 'Cancelled', code: 'Cancelled' })
+    expect(probeSignal?.aborted).toBe(true)
   })
 
   it('ignores cancel when nothing is running', () => {

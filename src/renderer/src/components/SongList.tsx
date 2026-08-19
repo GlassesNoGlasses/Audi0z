@@ -1,5 +1,5 @@
 import { useCallback, useMemo, type ReactElement } from 'react'
-import { errorMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
 import { filterSongs } from '../lib/search'
 import { songsInView, viewedPlaylist } from '../lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
@@ -21,10 +21,7 @@ export function SongList(): ReactElement {
   // the full queue order.
   const visible = useMemo(() => filterSongs(inView, query), [inView, query])
 
-  const fail = useCallback(
-    (error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }),
-    [dispatch]
-  )
+  const fail = useToastError()
 
   /**
    * Playing a row is the one gesture that moves the queue. Inside the queue already playing it is

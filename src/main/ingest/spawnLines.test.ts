@@ -1,7 +1,42 @@
+import { EventEmitter } from 'node:events'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { killProcessTree, runLines, type KillableChild } from './spawnLines'
+import { killProcessTree, processError, runLines, type KillableChild } from './spawnLines'
+
+/**
+ * A child whose stdio this file drives by hand — the only way to stage output arriving *after* the
+ * run has settled, which no real child can do (its streams are closed by then). `vi.hoisted`
+ * because `vi.mock` is lifted above the imports; a null `fake` leaves the real `spawn` in place, so
+ * every other test in this file still runs an actual process.
+ */
+interface FakeChild extends EventEmitter {
+  pid: number | undefined
+  stdout: EventEmitter & { setEncoding(encoding: string): void }
+  stderr: EventEmitter & { setEncoding(encoding: string): void }
+  kill(signal?: NodeJS.Signals): boolean
+}
+
+const spawnState = vi.hoisted(() => ({ fake: null as FakeChild | null }))
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  const spawn = (...args: Parameters<typeof actual.spawn>): unknown =>
+    spawnState.fake ?? actual.spawn(...args)
+  return { ...actual, spawn }
+})
+
+function fakeChildProcess(): FakeChild {
+  const stream = (): FakeChild['stdout'] =>
+    Object.assign(new EventEmitter(), { setEncoding: () => {} })
+  return Object.assign(new EventEmitter(), {
+    // No pid on purpose: a fake pid would route `killProcessTree` at a real process group.
+    pid: undefined,
+    stdout: stream(),
+    stderr: stream(),
+    kill: () => true
+  })
+}
 
 /**
  * The only place in the repo that spawns a real child process — and the child is always `node`
@@ -55,6 +90,10 @@ function forceKill(pid: number): void {
 }
 
 describe('runLines', () => {
+  afterEach(() => {
+    spawnState.fake = null
+  })
+
   it('re-assembles a line split across chunks and flushes the final unterminated line', async () => {
     const lines: string[] = []
     const result = await runLines({
@@ -105,24 +144,62 @@ describe('runLines', () => {
     expect(onStderr).toHaveBeenCalledWith('boom')
   })
 
+  /**
+   * Both settle paths owe the caller the same two things, and the failing path is the one that
+   * used to skip them: the buffered partial line is lost, and a chunk arriving after the rejection
+   * still reaches `onStdout` — a PROGRESS line landing on a renderer that already reset.
+   */
+  it('flushes the buffered partials and stops listening the moment it settles', async () => {
+    const child = fakeChildProcess()
+    spawnState.fake = child
+    const stdoutLines: string[] = []
+    const stderrLines: string[] = []
+
+    const promise = runLines({
+      bin: NODE,
+      args: [],
+      onStdout: (line) => stdoutLines.push(line),
+      onStderr: (line) => stderrLines.push(line)
+    })
+
+    child.stdout.emit('data', 'first\nunterminated')
+    child.stderr.emit('data', 'ERROR: no newline either')
+    child.emit('error', new Error('spawn EACCES'))
+
+    await expect(promise).rejects.toThrow(/EACCES/)
+
+    child.stdout.emit('data', 'too late\n')
+    child.stderr.emit('data', 'too late as well\n')
+
+    expect(stdoutLines).toEqual(['first', 'unterminated'])
+    expect(stderrLines).toEqual(['ERROR: no newline either'])
+  })
+
   it('rejects when the binary cannot be spawned', async () => {
     await expect(
       runLines({ bin: path.join(os.tmpdir(), 'mml-no-such-binary-xyz'), args: [] })
     ).rejects.toThrow(/ENOENT/)
   })
 
-  // yt-dlp's JS-runtime child needs ELECTRON_RUN_AS_NODE, which reaches it through this env.
-  it('hands the given env to the child in place of its own', async () => {
+  /**
+   * yt-dlp's JS-runtime child needs ELECTRON_RUN_AS_NODE, and the caller names only that. Anything
+   * it does *not* name has to survive: the bundled PyInstaller binary unpacks itself into TMPDIR,
+   * and a win32 spawn without SystemRoot fails outright — so overrides merge, never replace.
+   */
+  it('merges the overrides over the inherited environment', async () => {
     const lines: string[] = []
     const result = await runLines({
       bin: NODE,
-      args: ['-e', `process.stdout.write(String(process.env.MML_ENV_MARKER))`],
+      args: [
+        '-e',
+        `process.stdout.write(process.env.MML_ENV_MARKER + '|' + String((process.env.PATH ?? '').length > 0))`
+      ],
       onStdout: (line) => lines.push(line),
-      env: { ...process.env, MML_ENV_MARKER: 'passed-through' }
+      envOverrides: { MML_ENV_MARKER: 'passed-through' }
     })
 
     expect(result.code).toBe(0)
-    expect(lines).toEqual(['passed-through'])
+    expect(lines).toEqual(['passed-through|true'])
   })
 
   it('kills the child and rejects when the signal aborts', async () => {
@@ -325,6 +402,31 @@ describe('runLines', () => {
 
     expect(result.code).toBe(0)
     expect(() => controller.abort()).not.toThrow()
+  })
+})
+
+/**
+ * The renderer never sees the error object — `lib/errors.ts` matches the serialised
+ * `<Name>: <message>` text — so both halves are pinned here for the two callers that share them.
+ */
+describe('processError', () => {
+  it('names the error as the caller asked and hangs the stderr tail under the message', () => {
+    const error = processError('YtDlpError', 'yt-dlp download failed (exit 1)', [
+      'ERROR: unable to download video data',
+      'HTTP Error 403'
+    ])
+
+    expect(error.name).toBe('YtDlpError')
+    expect(error.message).toBe(
+      'yt-dlp download failed (exit 1):\nERROR: unable to download video data\nHTTP Error 403'
+    )
+  })
+
+  it('drops blank tail lines, and the colon along with them when nothing is left', () => {
+    const error = processError('FfmpegError', 'ffmpeg exited with code 1', ['  ', ''])
+
+    expect(error.name).toBe('FfmpegError')
+    expect(error.message).toBe('ffmpeg exited with code 1')
   })
 })
 

@@ -2,7 +2,8 @@ import { useMemo, useState, type ReactElement } from 'react'
 import type { SongDto } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage, trashFailureMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
+import { trashFailureMessage } from '../lib/errors'
 import { formatBytes, formatCompressionSaving } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -32,8 +33,7 @@ export function SettingsDialog(): ReactElement {
   const close = (): void => dispatch({ type: 'dialog/closed' })
   useEscapeKey(close)
 
-  const fail = (error: unknown): void =>
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+  const fail = useToastError()
 
   const total = songs.reduce((bytes, song) => bytes + (song.sizeBytes ?? 0), 0)
   const listed = useMemo(() => bySizeDescending(songs), [songs])

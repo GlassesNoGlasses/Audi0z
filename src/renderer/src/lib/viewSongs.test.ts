@@ -76,6 +76,32 @@ describe('sortSongs', () => {
   })
 
   /**
+   * Human collation, not code units: case must not split the alphabet in two (every lowercase
+   * letter is "greater" than every uppercase one in UTF-16), and numbered titles must count
+   * ("Track 2" before "Track 10") — the same case-blindness the search already has.
+   */
+  it('orders by title like a human list, not by code unit', () => {
+    const titled = [
+      song('z', 'Zebra Mix'),
+      song('a', 'apple bounce'),
+      song('t10', 'Track 10'),
+      song('t2', 'Track 2')
+    ]
+    expect(ids(sortSongs(titled, { field: 'title', direction: 'asc' }))).toEqual([
+      'a',
+      't2',
+      't10',
+      'z'
+    ])
+    expect(ids(sortSongs(titled, { field: 'title', direction: 'desc' }))).toEqual([
+      'z',
+      't10',
+      't2',
+      'a'
+    ])
+  })
+
+  /**
    * A song nobody has measured has nothing to sort by, so it goes to the end whichever way the
    * sort runs — flipping the direction must not float the unknowns to the top of the list.
    */

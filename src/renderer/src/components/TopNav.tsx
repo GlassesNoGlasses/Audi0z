@@ -245,7 +245,6 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 function SortIcon(): ReactElement {
   return (
     <svg
-      className="icon"
       viewBox="0 0 16 16"
       width="16"
       height="16"
@@ -267,7 +266,6 @@ function SortIcon(): ReactElement {
 function DownloadIcon(): ReactElement {
   return (
     <svg
-      className="icon"
       viewBox="0 0 16 16"
       width="16"
       height="16"

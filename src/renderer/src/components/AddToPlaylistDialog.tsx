@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
 import { formatDuration } from '../lib/format'
 import { filterSongs } from '../lib/search'
 import { useAppDispatch, useAppState } from '../state/AppContext'
@@ -30,6 +30,7 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
   const close = (): void => dispatch({ type: 'dialog/closed' })
   // Before the early return below: a hook may not sit behind a conditional.
   useEscapeKey(close)
+  const fail = useToastError()
 
   // Deleted from under the dialog — from the sidebar, or by another window on the same library.
   // There is nothing left to add to, so it gets out of the way rather than sitting there inert.
@@ -50,7 +51,7 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
     void window.api.playlists
       .addSong(playlistId, songId)
       .then((updated) => dispatch({ type: 'playlists/upserted', playlist: updated }))
-      .catch((error: unknown) => dispatch({ type: 'toast/pushed', message: errorMessage(error) }))
+      .catch(fail)
   }
 
   return (

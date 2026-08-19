@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
 import { useSmartPrev } from '../hooks/useSmartPrev'
-import { errorMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
+import { formatDuration } from '../lib/format'
+import { currentSong } from '../playback/selectors'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -12,12 +14,6 @@ export interface PlayerBarProps {
   /** Brackets a drag of the seek slider in silence — see `useAudioElement`. */
   beginScrub(): void
   endScrub(): void
-}
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
-  const whole = Math.floor(seconds)
-  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`
 }
 
 /**
@@ -34,7 +30,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
   const [duration, setDuration] = useState(0)
   const volumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const current = songs.find((song) => song.id === playback.currentId) ?? null
+  const current = currentSong(songs, playback)
   const canPlay = playback.currentId !== null || playback.order.length > 0
 
   useEffect(() => {
@@ -62,8 +58,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
     }
   }, [])
 
-  const fail = (error: unknown): void =>
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+  const fail = useToastError()
 
   /**
    * Shuffle and repeat are dual-writes: the engine gets them now, and whichever store owns the
@@ -149,7 +144,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
       <div className="player-main">
         <div className="player-title">{current ? current.title : 'Nothing playing'}</div>
         <div className="player-seek">
-          <span className="player-time">{formatTime(position)}</span>
+          <span className="player-time">{formatDuration(position, '0:00')}</span>
           <input
             type="range"
             aria-label="Seek"
@@ -168,7 +163,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
             // and the scrub silence would outlive the drag — element paused, store still playing.
             onLostPointerCapture={endScrub}
           />
-          <span className="player-time">{formatTime(duration)}</span>
+          <span className="player-time">{formatDuration(duration, '0:00')}</span>
         </div>
       </div>
 
