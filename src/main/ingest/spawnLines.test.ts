@@ -111,6 +111,20 @@ describe('runLines', () => {
     ).rejects.toThrow(/ENOENT/)
   })
 
+  // yt-dlp's JS-runtime child needs ELECTRON_RUN_AS_NODE, which reaches it through this env.
+  it('hands the given env to the child in place of its own', async () => {
+    const lines: string[] = []
+    const result = await runLines({
+      bin: NODE,
+      args: ['-e', `process.stdout.write(String(process.env.MML_ENV_MARKER))`],
+      onStdout: (line) => lines.push(line),
+      env: { ...process.env, MML_ENV_MARKER: 'passed-through' }
+    })
+
+    expect(result.code).toBe(0)
+    expect(lines).toEqual(['passed-through'])
+  })
+
   it('kills the child and rejects when the signal aborts', async () => {
     const controller = new AbortController()
     const promise = runLines({
