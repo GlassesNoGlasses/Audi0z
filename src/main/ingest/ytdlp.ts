@@ -33,14 +33,7 @@ export function resolveYtDlpPath({ resourcesBinDir, platform }: ResolveYtDlpPath
   return path.join(resourcesBinDir, assetName(platform))
 }
 
-/**
- * yt-dlp needs an external JS runtime for YouTube's signature challenges (EJS) and, by itself,
- * only finds deno on PATH — which a Finder-launched app does not have. The app's own Electron
- * binary doubles as that runtime: `--js-runtimes node:<path>` names it, and ELECTRON_RUN_AS_NODE
- * in the child env — inherited by the runtime child yt-dlp spawns — makes it start as plain Node
- * rather than opening a second app. The flag and the env var only work as a pair, which is why
- * both come from the one option.
- */
+// yt-dlp requires JS runtime path -> fetch from Electron app itself
 function jsRuntimeArgs(jsRuntimePath: string | undefined): string[] {
   return jsRuntimePath === undefined ? [] : ['--js-runtimes', `node:${jsRuntimePath}`]
 }
@@ -61,9 +54,7 @@ export function buildProbeArgs(url: string, jsRuntimePath?: string): string[] {
   ]
 }
 
-/**
- * Handles `--dump-single-json` edge cases (sometimes it's not a single json...)
- */
+/** Handles `--dump-single-json` edge cases (sometimes it's not a single json...) */
 function parseDump(stdout: string[]): Record<string, unknown> {
   const candidates = [
     stdout.join('\n'),
