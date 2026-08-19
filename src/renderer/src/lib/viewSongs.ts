@@ -31,6 +31,7 @@ export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
   const flip = direction === 'asc' ? 1 : -1
   return [...songs].sort((a, b) => {
     if (field === 'addedAt') return a.addedAt < b.addedAt ? -flip : a.addedAt > b.addedAt ? flip : 0
+    else if (field === 'title') return a.title < b.title ? -flip : a.title > b.title ? flip : 0
     // A song nobody has measured has nothing to sort by, so it sinks — in both directions,
     // matching how the storage list treats an unreadable size.
     if (a.durationSec === undefined) return b.durationSec === undefined ? 0 : 1

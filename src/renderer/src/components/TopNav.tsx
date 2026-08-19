@@ -181,17 +181,23 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
               aria-checked={sort === null}
               onClick={() => choose(null)}
             >
-              Manual order
+              Custom Order
             </button>
-            {/* The arrow is part of the name on purpose: `aria-checked` says which mode is on,
-                and nothing else would say which way round it runs. */}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort?.field === 'title'}
+              onClick={() => choose('title')}
+            >
+              {chosenSortVisual(sort, 'title')} Title
+            </button>
             <button
               type="button"
               role="menuitemradio"
               aria-checked={sort?.field === 'addedAt'}
               onClick={() => choose('addedAt')}
             >
-              {chosenSortVisual(sort, 'addedAt')} Date added
+              {chosenSortVisual(sort, 'addedAt')} Date Added
             </button>
             <button
               type="button"
