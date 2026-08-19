@@ -287,10 +287,10 @@ describe('TopNav sort menu', () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
 
-    await sortView(user, /Date added$/)
+    await sortView(user, /Date Added$/)
     expect(probe('sort')).toBe('addedAt asc')
 
-    await sortView(user, /Date added$/)
+    await sortView(user, /Date Added$/)
     expect(probe('sort')).toBe('addedAt desc')
   })
 
@@ -299,7 +299,7 @@ describe('TopNav sort menu', () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
 
-    await sortView(user, /Date added$/, 2)
+    await sortView(user, /Date Added$/, 2)
     expect(probe('sort')).toBe('addedAt desc')
 
     await sortView(user, /Duration$/)
@@ -311,7 +311,7 @@ describe('TopNav sort menu', () => {
     await renderTopNav({ songs })
 
     await sortView(user, /Duration$/)
-    await sortView(user, 'Manual order')
+    await sortView(user, 'Custom Order')
 
     expect(probe('sort')).toBe('manual')
   })
@@ -325,6 +325,7 @@ describe('TopNav sort menu', () => {
     expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
       'true',
       'false',
+      'false',
       'false'
     ])
 
@@ -333,6 +334,7 @@ describe('TopNav sort menu', () => {
 
     await user.click(trigger())
     expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
+      'false',
       'false',
       'false',
       'true'
