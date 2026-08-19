@@ -306,6 +306,17 @@ describe('TopNav sort menu', () => {
     expect(probe('sort')).toBe('durationSec asc')
   })
 
+  it('sorts by title ascending, and flips direction on the next press', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+
+    await sortView(user, /Title$/)
+    expect(probe('sort')).toBe('title asc')
+
+    await sortView(user, /Title$/)
+    expect(probe('sort')).toBe('title desc')
+  })
+
   it('goes back to the stored order from Manual order', async () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })

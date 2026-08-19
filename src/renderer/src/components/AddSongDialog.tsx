@@ -3,6 +3,7 @@ import { AUDIO_FORMAT_LABELS } from '../../../shared/audioFormats'
 import type { DownloadProgress } from '../../../shared/types'
 import { refreshLibrary } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { useToastError } from '../hooks/useToastError'
 import { errorMessage, isBusy, isCancelled } from '../lib/errors'
 import { formatBytes, formatCompressionSaving } from '../lib/format'
 import { titleFromPath } from '../lib/text'
@@ -75,8 +76,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   const chosenTags = tags.filter((tag) => picked.has(tag.name)).map((tag) => tag.name)
 
   const close = (): void => dispatch({ type: 'dialog/closed' })
-  const fail = (error: unknown): void =>
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+  const fail = useToastError()
 
   function cancelDownload(): void {
     void window.api.download.cancel().catch(fail)
@@ -208,7 +208,8 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
                 Add Files Here…
               </button>
               <p className="dialog-hint">
-                {paths.length >= 1 && `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
+                {paths.length >= 1 &&
+                  `${paths[0]}${paths.length > 1 ? ` (+${paths.length - 1} more)` : ''}`}
               </p>
               {/* The picker's own filter, read out loud — both come from the shared catalogue. */}
               <p className="dialog-hint">Supported: {AUDIO_FORMAT_LABELS.join(', ')}.</p>

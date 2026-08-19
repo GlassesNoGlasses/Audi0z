@@ -45,9 +45,15 @@ export function formatBytes(bytes: number | null): string {
   return unit === 0 ? `${Math.round(value)} B` : `${value.toFixed(1)} ${BYTE_UNITS[unit]}`
 }
 
-/** `173` -> `'2:53'`. Minutes keep counting past an hour rather than growing a third field. */
-export function formatDuration(seconds: number | undefined): string {
-  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return NO_DURATION
+/**
+ * `173` -> `'2:53'`. Minutes keep counting past an hour rather than growing a third field.
+ *
+ * `fallback` is what a missing, NaN or negative duration reads as. A list of songs wants the
+ * placeholder, which is the default; the transport passes `'0:00'`, because a clock that has not
+ * been told a time yet is sitting at the start rather than at an unknown point.
+ */
+export function formatDuration(seconds: number | undefined, fallback = NO_DURATION): string {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return fallback
   const whole = Math.floor(seconds)
   const minutes = Math.floor(whole / 60)
   return `${minutes}:${String(whole % 60).padStart(2, '0')}`

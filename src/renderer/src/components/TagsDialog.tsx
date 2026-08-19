@@ -2,7 +2,7 @@ import { useState, type FormEvent, type ReactElement } from 'react'
 import type { Tag } from '../../../shared/types'
 import { refreshLibrary, refreshTags } from '../hooks/useApiEvents'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
 import { readableTextColor } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
@@ -26,8 +26,7 @@ export function TagsDialog(): ReactElement {
   const close = (): void => dispatch({ type: 'dialog/closed' })
   useEscapeKey(close)
 
-  const fail = (error: unknown): void =>
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+  const fail = useToastError()
 
   function create(event: FormEvent): void {
     event.preventDefault()

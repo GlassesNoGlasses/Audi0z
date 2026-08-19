@@ -8,6 +8,9 @@
  * call site.
  */
 
+import type { Dispatch } from 'react'
+import type { AppAction } from '../state/appReducer'
+
 const INVOKE_PREFIX = /^Error invoking remote method '[^']*':\s*/
 /**
  * The error's class name, which electron pastes in front of the message it serialises
@@ -65,4 +68,9 @@ export function trashFailureMessage(error: unknown): string {
   return isTrashFailure(error)
     ? `${errorMessage(error)} — the song is still in your library.`
     : errorMessage(error)
+}
+
+/** The one way an async failure reaches the user: normalised message, pushed as a toast. */
+export function toastError(dispatch: Dispatch<AppAction>, error: unknown): void {
+  dispatch({ type: 'toast/pushed', message: errorMessage(error) })
 }

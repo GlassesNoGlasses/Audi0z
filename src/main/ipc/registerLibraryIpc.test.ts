@@ -164,67 +164,12 @@ describe(IPC.library.list, () => {
       sizeBytes: 4096
     })
     expect(harness.fileSize).toHaveBeenCalledWith(path.join(lib.audio, added.fileName))
-  })
-
-  /** One stat per song, not a stat *and* an access: `exists` is just "the size came back". */
-  it('measures each song exactly once and derives exists from the result', async () => {
-    const harness = setup()
-    await harness.libraryStore.add(draftSong())
-
-    await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(harness.fileSize).toHaveBeenCalledTimes(1)
+    // One stat per song, not a stat *and* an access — `exists` is just "the size came back".
     expect(harness.fileExists).not.toHaveBeenCalled()
   })
 
-  it('reports sizeBytes null and exists false when the file cannot be measured', async () => {
-    const harness = setup()
-    await harness.libraryStore.add(draftSong())
-    harness.fileSize.mockResolvedValue(null)
-
-    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(dto.sizeBytes).toBeNull()
-    expect(dto.exists).toBe(false)
-  })
-
-  /** A 0-byte file is present, however useless — it must not collapse into "missing". */
-  it('treats a zero-byte file as existing', async () => {
-    const harness = setup()
-    await harness.libraryStore.add(draftSong())
-    harness.fileSize.mockResolvedValue(0)
-
-    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(dto.sizeBytes).toBe(0)
-    expect(dto.exists).toBe(true)
-  })
-
-  /**
-   * The id is a uuid in practice, but `library.json` is hand-editable and `mediaProtocol` decodes
-   * what it finds in the path — so it has to be encoded on the way out or the two disagree.
-   */
-  it('percent-encodes the song id into the media url', async () => {
-    const harness = setup()
-    const id = 'a b#c?d&e'
-    await harness.libraryStore.add(draftSong({ id }))
-
-    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(dto.url).toBe(`media://audio/${encodeURIComponent(id)}`)
-    expect(decodeURIComponent(new URL(dto.url).pathname.slice(1))).toBe(id)
-  })
-
-  it('reports exists:false for a fileName pointing outside the audio directory', async () => {
-    const harness = setup()
-    await harness.libraryStore.add(draftSong({ fileName: '../../etc/passwd' }))
-
-    const [dto] = await harness.invoke<SongDto[]>(IPC.library.list)
-
-    expect(dto.exists).toBe(false)
-    expect(dto.sizeBytes).toBeNull()
-    expect(harness.fileSize).not.toHaveBeenCalled()
-  })
+  // The projection's invariants (missing/zero-byte files, id encoding, out-of-dir fileName,
+  // measured exactly once) are pinned in `songDto.test.ts` — here only the wiring is.
 
   /**
    * The same courtesy the media protocol pays. `compressExisting` renames the new file into place

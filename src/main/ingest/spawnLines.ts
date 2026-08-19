@@ -14,7 +14,9 @@ export interface RunLinesOptions {
   onStderr?: (line: string) => void
   signal?: AbortSignal
   killGraceMs?: number
-  env?: NodeJS.ProcessEnv // child env; omitted = inherit this process's
+  // Merged over this process's env, never swapped for it: a child that loses PATH/TMPDIR (or
+  // SystemRoot on win32) fails in ways the caller never asked for. Omitted = plain inherit.
+  envOverrides?: Record<string, string>
 }
 
 export interface RunLinesResult {
@@ -24,6 +26,18 @@ export interface RunLinesResult {
 
 export type RunLines = (opts: RunLinesOptions) => Promise<RunLinesResult>
 export const STDERR_TAIL_LINES = 20
+
+/**
+ * The one shape a failed child process takes: what went wrong, and the last thing the process said
+ * about it. Both halves are contract — the renderer has only the serialised `<Name>: <message>`
+ * text to recognise a failure by (`renderer/src/lib/errors.ts`), so `name` stays the caller's word.
+ */
+export function processError(name: string, message: string, stderrTail: string[]): Error {
+  const tail = stderrTail.filter((line) => line.trim() !== '').join('\n')
+  const error = new Error(tail === '' ? message : `${message}:\n${tail}`)
+  error.name = name
+  return error
+}
 
 // How long a cancelled process group has to honour SIGTERM before SIGKILL settles it
 export const KILL_GRACE_MS = 5000
@@ -94,7 +108,7 @@ export const runLines: RunLines = ({
   onStderr,
   signal,
   killGraceMs = KILL_GRACE_MS,
-  env
+  envOverrides
 }) =>
   new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -114,13 +128,15 @@ export const runLines: RunLines = ({
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
       detached: process.platform !== 'win32', // orphan child handling
-      env
+      env: envOverrides === undefined ? undefined : { ...process.env, ...envOverrides }
     })
 
+    const onStdoutChunk = (chunk: string): void => stdout.push(chunk)
+    const onStderrChunk = (chunk: string): void => stderr.push(chunk)
     child.stdout?.setEncoding('utf8')
-    child.stdout?.on('data', (chunk: string) => stdout.push(chunk))
+    child.stdout?.on('data', onStdoutChunk)
     child.stderr?.setEncoding('utf8')
-    child.stderr?.on('data', (chunk: string) => stderr.push(chunk))
+    child.stderr?.on('data', onStderrChunk)
 
     // Armed on abort, cleared the moment the child settles. `unref` as well as `clearTimeout`:
     // neither this timer nor a missed clear may be what keeps the process alive.
@@ -132,12 +148,18 @@ export const runLines: RunLines = ({
     }
     signal?.addEventListener('abort', onAbort, { once: true })
 
+    // Every settle path owes the caller the same teardown: the partial line still in each buffer is
+    // delivered, and no chunk arriving afterwards may reach a caller that has already moved on.
     let settled = false
     const settle = (finish: () => void): void => {
       if (settled) return
       settled = true
       signal?.removeEventListener('abort', onAbort)
       if (killTimer) clearTimeout(killTimer)
+      child.stdout?.off('data', onStdoutChunk)
+      child.stderr?.off('data', onStderrChunk)
+      stdout.flush()
+      stderr.flush()
       finish()
     }
 
@@ -146,8 +168,6 @@ export const runLines: RunLines = ({
     // `close` rather than `exit`: it fires once the stdio streams are drained, so no output is lost.
     child.on('close', (code) =>
       settle(() => {
-        stdout.flush()
-        stderr.flush()
         if (signal?.aborted) {
           reject(abortError(bin))
           return

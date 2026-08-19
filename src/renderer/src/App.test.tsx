@@ -27,6 +27,21 @@ async function askToDelete(user: ReturnType<typeof userEvent.setup>, title: stri
   await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Delete' }))
 }
 
+/** A retitle, the whole way through the row's ⋯ menu and the Edit dialog it opens. */
+async function rename(
+  user: ReturnType<typeof userEvent.setup>,
+  title: string,
+  next: string
+): Promise<void> {
+  await user.click(screen.getByRole('button', { name: `Options for ${title}` }))
+  await user.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Edit' }))
+  const field = screen.getByRole('textbox', { name: 'Title' })
+  await user.clear(field)
+  await user.type(field, next)
+  await user.click(screen.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit song' })).toBeNull())
+}
+
 describe('App shell', () => {
   it('renders the app name', async () => {
     seedApi()
@@ -161,6 +176,8 @@ describe('App sorting', () => {
     song('c', 'Charlie Tune', { addedAt: '2024-03-01T00:00:00.000Z' })
   ]
 
+  const byTitle = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
+
   /**
    * The whole point of sorting in `songsInView`: the queue re-sync applies the same order, so what
    * plays next is what the list now shows. Sorting is not a queue switch, though — it reorders
@@ -182,6 +199,45 @@ describe('App sorting', () => {
 
     // Alpha Mix is the last of the new order, so next wraps to the top of it — under the old
     // queue it would have been Bravo Beat.
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Charlie Tune')
+  })
+
+  /**
+   * Title is the first sort field the user can EDIT, and to the queue re-sync a rename under it is
+   * indistinguishable from a re-sort: the same memo recomputes and the same order comes out moved.
+   * Nobody asked for the queue to change, though — the rename was about one song's name — so a
+   * data-driven reorder waits, exactly as the duration backfill waits for the music to stop.
+   */
+  it('leaves the playing queue alone when a rename re-sorts the view', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: byTitle })
+    await renderApp()
+
+    await sortView(user, /Title$/)
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    await rename(user, 'Bravo Beat', 'Zulu Beat')
+
+    // The list re-sorts on the spot; the queue playing behind it does not.
+    expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Zulu Beat'])
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Zulu Beat')
+  })
+
+  /** Deferred, not dropped: the order the rename asked for lands as soon as nothing is playing. */
+  it('applies a deferred reorder once playback stops', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs: byTitle })
+    await renderApp()
+
+    await sortView(user, /Title$/)
+    await user.click(screen.getByRole('button', { name: 'Play Library' }))
+    await rename(user, 'Bravo Beat', 'Zulu Beat')
+
+    await user.click(screen.getByRole('button', { name: 'Pause' }))
+
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Charlie Tune')
   })

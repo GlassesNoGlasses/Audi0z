@@ -1,7 +1,7 @@
 import path from 'node:path'
 import type { IpcMain } from 'electron'
 import { AUDIO_FORMAT_LABELS } from '../../shared/audioFormats'
-import { IPC, MEDIA_SCHEME } from '../../shared/ipc'
+import { IPC } from '../../shared/ipc'
 import type {
   AddSongRequest,
   CompressResult,
@@ -15,6 +15,7 @@ import { resolveAudioPath } from '../media/mediaProtocol'
 import { isPlayableFile } from '../media/mimeTypes'
 import { NotFoundError } from '../store/errors'
 import type { LibraryStore, PlaylistStore, SettingsStore, TagStore } from '../store/storeTypes'
+import { toSongDto } from './songDto'
 
 /** Thrown when the renderer sends something that does not match the `Api` contract. */
 export class InvalidPayloadError extends Error {
@@ -161,6 +162,11 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return song
   }
 
+  /**
+   * `compressExisting` renames the new file into place and only then removes the old one, so a
+   * projection that raced the swap would measure a path that is already gone and report a song that
+   * compressed perfectly as missing. Settle the swap and re-read the record, then project.
+   */
   async function toDto(song: Song): Promise<SongDto> {
     const settled = deps.awaitCompression?.(song.id)
     if (settled) {
@@ -168,14 +174,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
       const fresh = await deps.libraryStore.getSong(song.id)
       if (fresh) song = fresh
     }
-    const resolved = resolveAudioPath(deps.audioDir, song.fileName)
-    const size = resolved === null ? null : await deps.fileSize(resolved)
-    return {
-      ...song,
-      exists: size !== null,
-      url: `${MEDIA_SCHEME}://audio/${encodeURIComponent(song.id)}`,
-      sizeBytes: size
-    }
+    return toSongDto(song, deps)
   }
 
   ipc.handle(IPC.library.list, async (): Promise<SongDto[]> => {

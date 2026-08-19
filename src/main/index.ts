@@ -189,10 +189,14 @@ function startup(): void {
         // The app's own binary, run as Node, is yt-dlp's JS runtime — see ytdlp.ts.
         jsRuntimePath: process.execPath,
         ...(job.onProgress ? { onProgress: job.onProgress } : {}),
+        ...(job.onWarning ? { onWarning: job.onWarning } : {}),
         signal: job.signal
       }),
-    probe: (url) =>
-      probe({ url, run: runLines, binPath: ytDlpPath, jsRuntimePath: process.execPath })
+    probe: (url, signal) =>
+      probe({ url, run: runLines, binPath: ytDlpPath, jsRuntimePath: process.execPath, signal }),
+    // A download that finished but not as intended: same toast as a failure, minus the rejection —
+    // the invoke still resolves, because the song is in the library.
+    onWarning: (message) => reportError({ source: 'ytdlp', message })
   })
 
   app.on('before-quit', () => {

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent, type ReactElement } from 'react'
 import { useEscapeKey } from '../hooks/useEscapeKey'
-import { errorMessage } from '../lib/errors'
+import { useToastError } from '../hooks/useToastError'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
 export interface EditSongDialogProps {
@@ -25,6 +25,7 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
 
   // Before the early return below: a hook may not sit behind a conditional.
   useEscapeKey(close)
+  const fail = useToastError()
 
   // Deleted from under the dialog. Both delete paths — the row menu's confirmation and the Settings
   // file list — dismiss their own dialog and then await `library.remove`, so Edit can be opened on a
@@ -50,7 +51,7 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
         close()
       })
       .catch((error: unknown) => {
-        dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+        fail(error)
         setSaving(false)
       })
   }
@@ -63,7 +64,7 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
           <label className="field">
             Title
             <input value={title} onChange={(event) => setTitle(event.target.value)} />
-            <p>{title.trim().length <= 0 && "Title must be at least 1 character"}</p>
+            <p>{title.trim().length <= 0 && 'Title must be at least 1 character'}</p>
           </label>
           <div className="dialog-actions">
             <button type="button" onClick={close}>

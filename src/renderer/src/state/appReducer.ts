@@ -16,7 +16,10 @@ export type ConfirmIntent =
 export type AddSource = { kind: 'files'; paths: string[] } | { kind: 'url' }
 
 /** How the view is ordered; null for original order */
-export type SortMode = { field: 'addedAt' | 'durationSec' | 'title'; direction: 'asc' | 'desc' } | null
+export type SortMode = {
+  field: 'addedAt' | 'durationSec' | 'title'
+  direction: 'asc' | 'desc'
+} | null
 
 export type Dialog =
   | { kind: 'add'; source: AddSource }

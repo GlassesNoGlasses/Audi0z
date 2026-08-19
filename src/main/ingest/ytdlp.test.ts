@@ -10,7 +10,8 @@ import {
   probe,
   PROBE_TIMEOUT_MS,
   removeSelfUpdatedYtDlp,
-  resolveYtDlpPath
+  resolveYtDlpPath,
+  ytDlpRuntime
 } from './ytdlp'
 
 /** A `runLines` stand-in that replays canned output and exits with `code`. */
@@ -65,6 +66,24 @@ describe('removeSelfUpdatedYtDlp', () => {
   })
 })
 
+describe('ytDlpRuntime', () => {
+  it('hands back nothing at all when no runtime is named', () => {
+    expect(ytDlpRuntime(undefined)).toEqual({ args: [] })
+  })
+
+  /**
+   * The flags and the env var are one decision, not two: half of it — args without
+   * ELECTRON_RUN_AS_NODE — launches the packaged app's GUI instead of a Node runtime, so they are
+   * only ever produced together.
+   */
+  it('pairs the runtime flags with the env var that makes Electron behave as node', () => {
+    expect(ytDlpRuntime('/opt/app/Electron')).toEqual({
+      args: ['--no-js-runtimes', '--js-runtimes', 'node:/opt/app/Electron'],
+      envOverrides: { ELECTRON_RUN_AS_NODE: '1' }
+    })
+  })
+})
+
 describe('buildProbeArgs', () => {
   it('asks for a single-entry JSON dump without downloading', () => {
     expect(buildProbeArgs('https://example.test/watch?v=1')).toEqual([
@@ -76,9 +95,10 @@ describe('buildProbeArgs', () => {
     ])
   })
 
-  it('names the JS runtime first when given one, leaving the URL last', () => {
-    const args = buildProbeArgs('https://example.test/watch?v=1', '/opt/app/Electron')
-    expect(args.slice(0, 2)).toEqual(['--js-runtimes', 'node:/opt/app/Electron'])
+  it('puts the runtime args first when given them, leaving the URL last', () => {
+    const runtime = ytDlpRuntime('/opt/app/Electron')
+    const args = buildProbeArgs('https://example.test/watch?v=1', runtime.args)
+    expect(args.slice(0, 3)).toEqual(runtime.args)
     expect(args.at(-1)).toBe('https://example.test/watch?v=1')
   })
 })
@@ -97,19 +117,14 @@ describe('probe', () => {
     expect(vi.mocked(run).mock.calls[0][0].args).toEqual(buildProbeArgs(url))
   })
 
-  /**
-   * The flag and the env var only work as a pair: `--js-runtimes node:<path>` names the app's own
-   * Electron binary, and ELECTRON_RUN_AS_NODE — inherited by the runtime child yt-dlp spawns —
-   * is what makes that binary start as plain Node rather than opening a second app.
-   */
   it('names the JS runtime in both args and env when given one', async () => {
     const run = fakeRun([JSON.stringify({ title: 'Runtime' })])
 
     await probe({ url, run, binPath: '/bin/yt-dlp', jsRuntimePath: '/opt/app/Electron' })
 
     const call = vi.mocked(run).mock.calls[0][0]
-    expect(call.args).toEqual(buildProbeArgs(url, '/opt/app/Electron'))
-    expect(call.env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1' })
+    expect(call.args).toEqual(buildProbeArgs(url, ytDlpRuntime('/opt/app/Electron').args))
+    expect(call.envOverrides).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
   })
 
   it('leaves the env inherited when no runtime is named', async () => {
@@ -117,7 +132,26 @@ describe('probe', () => {
 
     await probe({ url, run, binPath: '/bin/yt-dlp' })
 
-    expect(vi.mocked(run).mock.calls[0][0].env).toBeUndefined()
+    const call = vi.mocked(run).mock.calls[0][0]
+    expect(call.args).not.toContain('--js-runtimes')
+    expect(call.envOverrides).toBeUndefined()
+  })
+
+  /**
+   * `--dump-single-json` is not alone on stdout as often as its name suggests: a warning printed
+   * above the dump makes the whole of stdout unparseable, and the dump is still there on its own
+   * line. Reading only the joined form is what made the per-line fallback unreachable.
+   */
+  it('finds the dump on its own line when something was printed above it', async () => {
+    const run = fakeRun([
+      'WARNING: Falling back on generic information extractor',
+      '{"title":"Real"}'
+    ])
+
+    await expect(probe({ url, run, binPath: '/bin/yt-dlp' })).resolves.toEqual({
+      title: 'Real',
+      sourceUrl: url
+    })
   })
 
   it('rejects descriptively when stdout is not JSON', async () => {
@@ -161,6 +195,48 @@ describe('probe', () => {
    */
   it('defaults to a budget well clear of the measured cold-start cost', () => {
     expect(PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000)
+  })
+
+  /**
+   * `before-quit` cancels the downloader, and a probe stuck on a hanging extractor is exactly what
+   * would otherwise outlive the app. A cancel is not a timeout: the timeout sentence names a
+   * budget nobody spent, so it must stay on the timeout path alone.
+   */
+  it('lets the caller cancel a running probe without calling it a timeout', async () => {
+    const controller = new AbortController()
+    const run: RunLines = vi.fn(
+      ({ signal }) =>
+        new Promise<RunLinesResult>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            const error = new Error('aborted: /bin/yt-dlp')
+            error.name = 'AbortError'
+            reject(error)
+          })
+        })
+    )
+
+    const pending = probe({ url, run, binPath: '/bin/yt-dlp', signal: controller.signal })
+    controller.abort()
+
+    const error = await pending.then(
+      () => new Error('probe resolved instead of rejecting'),
+      (reason: Error) => reason
+    )
+    expect(error.name).toBe('AbortError')
+    expect(error.message).not.toMatch(/timed out/i)
+  })
+
+  // `runLines` refuses to spawn on an aborted signal — so a cancel that lands first must reach it.
+  it('hands the runner an aborted signal when the caller cancelled before it started', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const run = fakeRun([JSON.stringify({ title: 'Never' })])
+
+    await probe({ url, run, binPath: '/bin/yt-dlp', signal: controller.signal }).catch(
+      () => undefined
+    )
+
+    expect(vi.mocked(run).mock.calls[0][0].signal?.aborted).toBe(true)
   })
 
   it('leaves the timeout unarmed once the probe answers', async () => {
@@ -219,14 +295,18 @@ describe('buildDownloadArgs', () => {
     expect(args).toContain('--progress')
   })
 
-  it('names the JS runtime first when given one, leaving the URL last', () => {
+  it('puts the runtime args first when given them, leaving the URL last', () => {
     const args = buildDownloadArgs({
       url: 'https://example.test/v/1',
       outTemplate: '/tmp/job/download.%(ext)s',
       ffmpegDir: '/opt/ffmpeg',
-      jsRuntimePath: '/opt/app/Electron'
+      runtimeArgs: ytDlpRuntime('/opt/app/Electron').args
     })
-    expect(args.slice(0, 2)).toEqual(['--js-runtimes', 'node:/opt/app/Electron'])
+    expect(args.slice(0, 3)).toEqual([
+      '--no-js-runtimes',
+      '--js-runtimes',
+      'node:/opt/app/Electron'
+    ])
     expect(args.at(-1)).toBe('https://example.test/v/1')
   })
 })
@@ -292,6 +372,44 @@ describe('download', () => {
     await expect(download({ ...base, run })).rejects.toThrow(/HTTP Error 403/)
   })
 
+  /**
+   * yt-dlp exits 0 when it cannot solve YouTube's JS challenge: it falls back to a throttled
+   * format and says so on stderr alone. Judging the run by its exit code is what made every
+   * regression in the runtime wiring invisible — the file arrives, just slowly and sometimes short.
+   */
+  it.each([
+    // All three captured verbatim from live runs of the pinned 2026.07.04 binary.
+    ['WARNING: [youtube] jNQXAC9IVRw: n challenge solving failed: Some formats may be missing'],
+    ['ERROR: [jsc] Unexpected error solving 2 challenge request(s) using "node" provider'],
+    ['WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled']
+  ])('warns when the run only succeeded by giving up on the JS challenge: %s', async (line) => {
+    const run = fakeRun(['/tmp/job/download.m4a'], 0, [line])
+    const onWarning = vi.fn()
+
+    await expect(download({ ...base, run, onWarning })).resolves.toBe('/tmp/job/download.m4a')
+
+    expect(onWarning).toHaveBeenCalledTimes(1)
+    expect(onWarning.mock.calls[0][0]).toMatch(/slow or incomplete/i)
+  })
+
+  it('stays quiet when the run says nothing about the challenge', async () => {
+    const run = fakeRun(['/tmp/job/download.m4a'], 0, ['WARNING: Falling back on generic'])
+    const onWarning = vi.fn()
+
+    await download({ ...base, run, onWarning })
+
+    expect(onWarning).not.toHaveBeenCalled()
+  })
+
+  // A failed run already tells the whole story: the error it throws carries the stderr tail.
+  it('leaves a failed run to its error rather than warning about it too', async () => {
+    const run = fakeRun([], 1, ['ERROR: nsig extraction failed: challenge solving failed'])
+    const onWarning = vi.fn()
+
+    await expect(download({ ...base, run, onWarning })).rejects.toThrow(/challenge solving failed/)
+    expect(onWarning).not.toHaveBeenCalled()
+  })
+
   it('rejects when yt-dlp never printed an output path', async () => {
     const run = fakeRun(['PROGRESS:1024/4096'])
 
@@ -313,9 +431,15 @@ describe('download', () => {
     await download({ ...base, jsRuntimePath: '/opt/app/Electron', run })
 
     const call = vi.mocked(run).mock.calls[0][0]
-    expect(call.args).toEqual(buildDownloadArgs({ ...base, jsRuntimePath: '/opt/app/Electron' }))
-    expect(call.args.slice(0, 2)).toEqual(['--js-runtimes', 'node:/opt/app/Electron'])
-    expect(call.env).toMatchObject({ ELECTRON_RUN_AS_NODE: '1' })
+    expect(call.args).toEqual(
+      buildDownloadArgs({ ...base, runtimeArgs: ytDlpRuntime('/opt/app/Electron').args })
+    )
+    expect(call.args.slice(0, 3)).toEqual([
+      '--no-js-runtimes',
+      '--js-runtimes',
+      'node:/opt/app/Electron'
+    ])
+    expect(call.envOverrides).toEqual({ ELECTRON_RUN_AS_NODE: '1' })
   })
 
   it('leaves the env inherited when no runtime is named', async () => {
@@ -323,6 +447,8 @@ describe('download', () => {
 
     await download({ ...base, run })
 
-    expect(vi.mocked(run).mock.calls[0][0].env).toBeUndefined()
+    const call = vi.mocked(run).mock.calls[0][0]
+    expect(call.args).not.toContain('--js-runtimes')
+    expect(call.envOverrides).toBeUndefined()
   })
 })

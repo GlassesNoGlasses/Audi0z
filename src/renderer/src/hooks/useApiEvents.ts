@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch } from 'react'
-import { errorMessage } from '../lib/errors'
+import { toastError } from '../lib/errors'
 import type { AppAction } from '../state/appReducer'
 
 /**
@@ -21,7 +21,7 @@ export async function refreshLibrary(dispatch: Dispatch<AppAction>): Promise<voi
     dispatch({ type: 'playlists/loaded', playlists })
     dispatch({ type: 'tags/loaded', tags })
   } catch (error) {
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+    toastError(dispatch, error)
   }
 }
 
@@ -30,7 +30,7 @@ export async function refreshTags(dispatch: Dispatch<AppAction>): Promise<void> 
   try {
     dispatch({ type: 'tags/loaded', tags: await window.api.tags.list() })
   } catch (error) {
-    dispatch({ type: 'toast/pushed', message: errorMessage(error) })
+    toastError(dispatch, error)
   }
 }
 
@@ -43,14 +43,14 @@ export function useApiEvents(dispatch: Dispatch<AppAction>): void {
     const unsubscribeChanged = window.api.events.onLibraryChanged(() => {
       void refreshLibrary(dispatch)
     })
-    // Through `errorMessage` like every other call site: one failure reported on both paths has to
-    // arrive as the same string, or the reducer's duplicate collapse cannot see that it is one.
-    // (Nothing was serialised on this path, so only the trim and the empty-message fallback bite:
-    // `errorMessage` strips a leading `ClassName: ` only behind the invoke wrapper, which is what
-    // keeps an errno — `ENOENT: no such file …`, whose prefix is the message, not a class name —
-    // spelled the same here as it is on the rejected `invoke`.)
+    // Through `toastError` — and so `errorMessage` — like every other call site: one failure
+    // reported on both paths has to arrive as the same string, or the reducer's duplicate collapse
+    // cannot see that it is one. (Nothing was serialised on this path, so only the trim and the
+    // empty-message fallback bite: `errorMessage` strips a leading `ClassName: ` only behind the
+    // invoke wrapper, which is what keeps an errno — `ENOENT: no such file …`, whose prefix is the
+    // message, not a class name — spelled the same here as it is on the rejected `invoke`.)
     const unsubscribeError = window.api.events.onError((error) => {
-      dispatch({ type: 'toast/pushed', message: errorMessage(error.message) })
+      toastError(dispatch, error.message)
     })
     return () => {
       unsubscribeChanged()

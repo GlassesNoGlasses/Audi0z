@@ -337,8 +337,14 @@ input[type='range'] {
   position: relative;
 }
 
-/* The same surface a row's ⋯ menu is drawn on: one popup, one language, wherever it opens. */
-.sort-menu {
+/*
+ * One popup, one language, wherever it opens: the sort menu here and a row's ⋯ menu are the same
+ * surface drawn in two places, so they are written once rather than agreeing by hand. Both hang off
+ * their anchor rather than being laid out in it, so opening one never reflows what is behind it,
+ * and both open to the left because the button they come from is already at the right-hand edge.
+ */
+.sort-menu,
+.song-menu-popup {
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -353,17 +359,26 @@ input[type='range'] {
   z-index: 5;
 }
 
-.sort-menu button {
+.sort-menu button,
+.song-menu-popup button {
   background: none;
   border: none;
   border-radius: var(--radius);
   padding: 6px 10px;
   text-align: left;
-  /* The direction arrow arrives and leaves as the mode changes; the item must not rewrap under it. */
+}
+
+/* The direction arrow arrives and leaves as the mode changes; the item must not rewrap under it. */
+.sort-menu button {
   white-space: nowrap;
 }
 
-.sort-menu button:hover {
+/*
+ * The one thing the two menus do not share: only the row's can hold a disabled item, so
+ * `:not(:disabled)` stays on its own half of the list rather than being levelled onto both.
+ */
+.sort-menu button:hover,
+.song-menu-popup button:hover:not(:disabled) {
   background: var(--panel);
   border-color: transparent;
 }
@@ -486,6 +501,11 @@ input[type='range'] {
 
 /* ---------- the row's overflow menu ---------- */
 
+/*
+ * The popup's surface and its items are drawn with the sort menu's, up in the library section —
+ * they are one popup in two places. Only what the ROW's menu does differently lives down here.
+ */
+
 .song-menu {
   position: relative;
 }
@@ -503,42 +523,10 @@ input[type='range'] {
   color: var(--fg);
 }
 
-/*
- * Hung off the row rather than laid out in it, so opening it never reflows the list. It opens to
- * the left because the button it comes from is already at the right-hand edge.
- */
-.song-menu-popup {
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
-  display: flex;
-  flex-direction: column;
-  min-width: 180px;
-  padding: 4px;
-  position: absolute;
-  right: 0;
-  top: 100%;
-  z-index: 5;
-}
-
 /* At the bottom of the list the popup would clip into the scroll edge, so it hangs upward. */
 .song-menu-popup--up {
   bottom: 100%;
   top: auto;
-}
-
-.song-menu-popup button {
-  background: none;
-  border: none;
-  border-radius: var(--radius);
-  padding: 6px 10px;
-  text-align: left;
-}
-
-.song-menu-popup button:hover:not(:disabled) {
-  background: var(--panel);
-  border-color: transparent;
 }
 
 /* The tick column is a fixed gutter, so the names line up whether they are ticked or not. */
@@ -604,6 +592,9 @@ input[type='range'] {
 }
 
 /*
+ * How every pressed button in the app says ON — the transport's shuffle and repeat, the Add
+ * dialog's file/URL switch, and its tag picker — written once so the three cannot drift apart.
+ *
  * An enabled toggle has to be readable at a glance, and only a FILL can carry that here:
  *   - a border cannot, because `button:hover:not(:disabled)` paints the same accent border, so a
  *     hovered OFF toggle would look exactly like an ON one;
@@ -612,7 +603,9 @@ input[type='range'] {
  * So: an accent-tinted fill no other state has, with the accent border alongside it. `color-mix`
  * needs Chromium 111+, which is all this app ever runs on.
  */
-.player-toggles button[aria-pressed='true'] {
+.player-toggles button[aria-pressed='true'],
+.segmented button[aria-pressed='true'],
+.tag-picker button[aria-pressed='true'] {
   background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
   border-color: var(--accent);
 }
@@ -1016,13 +1009,9 @@ input[type='range'] {
   gap: 4px;
 }
 
-/* The same accent fill the transport toggles and the tag picker use, for the same reason: the global
-   hover already moves the border, so only a fill can say "on" at a glance. The ink goes plain with
-   it, exactly as the tag picker's does — accent on an accent-tinted fill is too little contrast to
-   read a word by. */
+/* The shared "on" fill carries the background and the border (see the player toggles); the ink is
+   this control's own — accent on an accent-tinted fill is too little contrast to read a word by. */
 .segmented button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
-  border-color: var(--accent);
   color: var(--fg);
 }
 
@@ -1040,11 +1029,9 @@ input[type='range'] {
   padding: 3px 10px;
 }
 
-/* The same accent fill the transport toggles use, for the same reason: hover already moves the
-   border, so only a fill can say "on" at a glance. */
+/* The shared "on" fill again, and plain ink on top of it: the chip's own `--muted` is too faint to
+   read against the accent tint. */
 .tag-picker button[aria-pressed='true'] {
-  background: color-mix(in srgb, var(--accent) 24%, var(--panel-2));
-  border-color: var(--accent);
   color: var(--fg);
 }
 

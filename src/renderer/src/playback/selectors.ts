@@ -2,7 +2,14 @@
  * Read-only views over `PlaybackState`. Played flags belong to the current queue — the engine
  * clears the set on every queue switch, so every read is already scoped.
  */
+import type { SongDto } from '../../../shared/types'
 import type { PlaybackState } from './types'
+
+/** The playing song's DTO, or null when nothing is cued or the song has left the library. */
+export function currentSong(songs: SongDto[], state: PlaybackState): SongDto | null {
+  if (state.currentId === null) return null
+  return songs.find((song) => song.id === state.currentId) ?? null
+}
 
 /** Whether `songId` is marked played in the current queue. */
 export function isPlayed(state: PlaybackState, songId: string): boolean {
