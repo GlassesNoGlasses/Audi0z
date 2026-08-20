@@ -15,11 +15,24 @@ export type ConfirmIntent =
 /** Where an add is coming from: files already chosen with the picker, or a URL to fetch. */
 export type AddSource = { kind: 'files'; paths: string[] } | { kind: 'url' }
 
-/** How the view is ordered; null for original order */
+export enum SortType {
+  CUSTOM = 'Custom Order',
+  TITLE = 'Title',
+  DATEADDED = 'Date Added',
+  DURATION = 'Duration',
+  SIZE = 'Size',
+}
+
+export enum SortDirection {
+  ASC,
+  DESC
+}
+
+/** How the view is ordered; null for custom order */
 export type SortMode = {
-  field: 'addedAt' | 'durationSec' | 'title'
-  direction: 'asc' | 'desc'
-} | null
+  type: SortType
+  direction: SortDirection
+}
 
 export type Dialog =
   | { kind: 'add'; source: AddSource }
@@ -91,7 +104,7 @@ export function initialAppState(): AppState {
     settings: { ...FALLBACK_SETTINGS },
     view: { kind: 'library' },
     query: '',
-    sort: null,
+    sort: {type: SortType.CUSTOM, direction: SortDirection.ASC},
     expandedPlaylists: new Set(),
     dialog: null,
     toasts: [],

@@ -22,7 +22,7 @@ import { songsInView, sortSongs } from './lib/viewSongs'
 import { currentSong } from './playback/selectors'
 import { LIBRARY_QUEUE_ID } from './playback/types'
 import { AppProvider, useAppDispatch, useAppState } from './state/AppContext'
-import type { ConfirmIntent, SortMode } from './state/appReducer'
+import { SortDirection, SortType, type ConfirmIntent, type SortMode } from './state/appReducer'
 
 function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index])
@@ -38,7 +38,7 @@ function sameMembers(a: readonly string[], b: readonly string[]): boolean {
 /** By value, not identity: "the user just asked for this order" must not hang on allocation. */
 function sameSort(a: SortMode, b: SortMode): boolean {
   if (a === null || b === null) return a === b
-  return a.field === b.field && a.direction === b.direction
+  return a.type === b.type && a.direction === b.direction
 }
 
 export function App(): ReactElement {
@@ -104,7 +104,7 @@ function AppShell(): ReactElement {
             songs,
             playlists.find((playlist) => playlist.id === queueId) ?? null,
             { kind: 'playlist', id: queueId },
-            null
+            {type: SortType.CUSTOM, direction: SortDirection.ASC}
           )
     return sortSongs(source, sort).map((song) => song.id)
   }, [playback.queueId, songs, playlists, sort])

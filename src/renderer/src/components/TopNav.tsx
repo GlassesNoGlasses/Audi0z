@@ -3,11 +3,8 @@ import { songsInView, viewedPlaylist } from '../lib/viewSongs'
 import { defaultRng } from '../playback/engine'
 import { LIBRARY_QUEUE_ID, type Rng } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
-import type { SortMode } from '../state/appReducer'
+import { SortDirection, SortType } from '../state/appReducer'
 import { SearchBox } from './SearchBox'
-
-/** What the menu can order by. Null is not one of them: it is the stored order, listed as Manual. */
-type SortField = NonNullable<SortMode>['field']
 
 export interface TopNavProps {
   /** Picks which song a shuffled view starts on. Injected by the tests, `Math.random` in the app. */
@@ -29,6 +26,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   )
 
   const [sortOpen, setSortOpen] = useState(false)
+  const [sortOrder, setSortOrder] = useState(Object.values(SortType))
   const sortRef = useRef<HTMLDivElement>(null)
   const sortTriggerRef = useRef<HTMLButtonElement>(null)
 
@@ -111,22 +109,35 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
    * press on the one already in force flips it. Manual hands the view back to its stored order.
    * Every choice shuts the menu: it is a radio group, not somewhere to stay.
    */
-  function choose(field: SortField | null): void {
+  function choose(mode: SortType): void {
     setSortOpen(false)
+    setSortOrder(prev => [mode, ...prev.filter((t) => t !== mode)])
+
     dispatch({
       type: 'sort/changed',
-      sort:
-        field === null
-          ? null
-          : { field, direction: sort?.field === field && sort.direction === 'asc' ? 'desc' : 'asc' }
+      sort: { type: mode, direction: sort.type === mode &&
+        sort.direction === SortDirection.ASC ? SortDirection.DESC : SortDirection.ASC }
     })
   }
 
-  function chosenSortVisual(sort: SortMode, target: SortField): string {
-    if (sort?.field != target) {
+  function chosenSortVisual(targetType: SortType): string {
+    if (sort.type === SortType.CUSTOM || sort.type !== targetType) {
       return ''
     }
-    return sort.direction === 'asc' ? '↓' : '↑'
+    return sort.direction === SortDirection.ASC ? '↓' : '↑'
+  }
+
+  const SortElement = (targetType: SortType): ReactElement => {
+    return (
+      <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={sort.type === targetType}
+      onClick={() => choose(targetType)}
+      >
+      {chosenSortVisual(targetType)} {targetType.valueOf()}
+      </button>
+    )
   }
 
   return (
@@ -161,6 +172,8 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
       <span className="topnav-spacer" />
 
+      <span>{sortOrder[0].valueOf()}</span>
+
       <div className="sort-menu-anchor" ref={sortRef}>
         <button
           type="button"
@@ -175,38 +188,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
         </button>
         {sortOpen ? (
           <div className="sort-menu" role="menu" aria-label="Sort songs">
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={sort === null}
-              onClick={() => choose(null)}
-            >
-              Custom Order
-            </button>
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={sort?.field === 'title'}
-              onClick={() => choose('title')}
-            >
-              {chosenSortVisual(sort, 'title')} Title
-            </button>
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={sort?.field === 'addedAt'}
-              onClick={() => choose('addedAt')}
-            >
-              {chosenSortVisual(sort, 'addedAt')} Date Added
-            </button>
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={sort?.field === 'durationSec'}
-              onClick={() => choose('durationSec')}
-            >
-              {chosenSortVisual(sort, 'durationSec')} Duration
-            </button>
+            {sortOrder.map((type) =>  {return SortElement(type)})}
           </div>
         ) : null}
       </div>

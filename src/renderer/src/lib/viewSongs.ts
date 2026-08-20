@@ -1,5 +1,5 @@
 import type { Playlist, SongDto } from '../../../shared/types'
-import type { SortMode, View } from '../state/appReducer'
+import { SortDirection, SortType, type SortMode, type View } from '../state/appReducer'
 
 /**
  * What the current view is about, and in what order.
@@ -26,27 +26,26 @@ export function viewedPlaylist(view: View, playlists: Playlist[]): Playlist | nu
  * stay in the order they arrived in.
  */
 export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
-  if (sort === null) return songs
-  const { field, direction } = sort
-  const flip = direction === 'asc' ? 1 : -1
-  // A switch with no default on purpose: a new sort field falls through returning undefined,
-  // which `sort` refuses to accept — the compiler points here instead of silently mis-sorting.
-  return [...songs].sort((a, b) => {
-    switch (field) {
-      case 'addedAt':
+  const { type, direction } = sort
+  if (type === SortType.CUSTOM) return songs
+
+  const flip = direction === SortDirection.ASC ? 1 : -1
+ return [...songs].sort((a, b) => {
+    switch (type) {
+      case SortType.DATEADDED:
         return a.addedAt < b.addedAt ? -flip : a.addedAt > b.addedAt ? flip : 0
-      case 'title':
-        // Human collation rather than code units: case-blind (matching the search), digit-aware
-        // ("Track 2" before "Track 10"), accents beside their base letters.
+      case SortType.TITLE:
         return (
           a.title.localeCompare(b.title, undefined, { numeric: true, sensitivity: 'base' }) * flip
         )
-      case 'durationSec':
-        // A song nobody has measured has nothing to sort by, so it sinks — in both directions,
-        // matching how the storage list treats an unreadable size.
+      case SortType.DURATION:
         if (a.durationSec === undefined) return b.durationSec === undefined ? 0 : 1
         if (b.durationSec === undefined) return -1
         return (a.durationSec - b.durationSec) * flip
+      case SortType.SIZE:
+        if (a.sizeBytes === null) return b.sizeBytes === null ? 0 : 1
+        if (b.sizeBytes === null) return -1
+        return (a.sizeBytes - b.sizeBytes) * flip
     }
   })
 }
