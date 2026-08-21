@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { SortMode } from '../state/appReducer'
+import { SortDirection, SortType, type SortMode } from '../state/appReducer'
 import { playlist, song } from '../testing/harness'
 import { songsInView, sortSongs, viewedPlaylist } from './viewSongs'
 
@@ -13,7 +13,10 @@ const dated = [
   song('c', 'Charlie', { addedAt: '2024-02-01T00:00:00.000Z' })
 ]
 
-const newestFirst: SortMode = { field: 'addedAt', direction: 'desc' }
+/** The stored order itself — what every view boots with. */
+const customOrder: SortMode = { type: SortType.CUSTOM, direction: SortDirection.ASC }
+
+const newestFirst: SortMode = { type: SortType.DATEADDED, direction: SortDirection.DESC }
 
 function ids(entries: { id: string }[]): string[] {
   return entries.map((entry) => entry.id)
@@ -35,22 +38,22 @@ describe('viewedPlaylist', () => {
 
 describe('songsInView', () => {
   it('is the whole library in the Library view', () => {
-    expect(songsInView(songs, null, { kind: 'library' }, null)).toEqual(songs)
+    expect(songsInView(songs, null, { kind: 'library' }, customOrder)).toEqual(songs)
   })
 
   it("is the playlist in the playlist's own order", () => {
-    const inView = songsInView(songs, mixes, { kind: 'playlist', id: 'p1' }, null)
+    const inView = songsInView(songs, mixes, { kind: 'playlist', id: 'p1' }, customOrder)
     expect(inView.map((entry) => entry.id)).toEqual(['c', 'a'])
   })
 
   it('is empty when the viewed playlist is gone', () => {
-    expect(songsInView(songs, null, { kind: 'playlist', id: 'p9' }, null)).toEqual([])
+    expect(songsInView(songs, null, { kind: 'playlist', id: 'p9' }, customOrder)).toEqual([])
   })
 
   /** A playlist can name a song that was deleted between two reads; a hole is not a row. */
   it('drops ids the library no longer knows', () => {
     const stale = playlist('p1', 'Mixes', ['c', 'gone', 'a'])
-    const inView = songsInView(songs, stale, { kind: 'playlist', id: 'p1' }, null)
+    const inView = songsInView(songs, stale, { kind: 'playlist', id: 'p1' }, customOrder)
     expect(inView.map((entry) => entry.id)).toEqual(['c', 'a'])
   })
 
@@ -66,13 +69,19 @@ describe('songsInView', () => {
 })
 
 describe('sortSongs', () => {
-  it('leaves the stored order alone with no sort', () => {
-    expect(sortSongs(dated, null)).toBe(dated)
+  it('leaves the stored order alone under Custom Order', () => {
+    expect(sortSongs(dated, customOrder)).toBe(dated)
+    // Whatever the direction says: Custom Order has no axis for it to flip.
+    expect(sortSongs(dated, { type: SortType.CUSTOM, direction: SortDirection.DESC })).toBe(dated)
   })
 
   it('orders by date added in either direction', () => {
-    expect(ids(sortSongs(dated, { field: 'addedAt', direction: 'asc' }))).toEqual(['b', 'c', 'a'])
-    expect(ids(sortSongs(dated, { field: 'addedAt', direction: 'desc' }))).toEqual(['a', 'c', 'b'])
+    expect(
+      ids(sortSongs(dated, { type: SortType.DATEADDED, direction: SortDirection.ASC }))
+    ).toEqual(['b', 'c', 'a'])
+    expect(
+      ids(sortSongs(dated, { type: SortType.DATEADDED, direction: SortDirection.DESC }))
+    ).toEqual(['a', 'c', 'b'])
   })
 
   /**
@@ -87,18 +96,15 @@ describe('sortSongs', () => {
       song('t10', 'Track 10'),
       song('t2', 'Track 2')
     ]
-    expect(ids(sortSongs(titled, { field: 'title', direction: 'asc' }))).toEqual([
+    expect(ids(sortSongs(titled, { type: SortType.TITLE, direction: SortDirection.ASC }))).toEqual([
       'a',
       't2',
       't10',
       'z'
     ])
-    expect(ids(sortSongs(titled, { field: 'title', direction: 'desc' }))).toEqual([
-      'z',
-      't10',
-      't2',
-      'a'
-    ])
+    expect(ids(sortSongs(titled, { type: SortType.TITLE, direction: SortDirection.DESC }))).toEqual(
+      ['z', 't10', 't2', 'a']
+    )
   })
 
   /**
@@ -106,21 +112,39 @@ describe('sortSongs', () => {
    * sort runs — flipping the direction must not float the unknowns to the top of the list.
    */
   it('orders by duration with unmeasured songs sinking in both directions', () => {
-    expect(ids(sortSongs(dated, { field: 'durationSec', direction: 'asc' }))).toEqual([
-      'b',
-      'a',
-      'c'
+    expect(
+      ids(sortSongs(dated, { type: SortType.DURATION, direction: SortDirection.ASC }))
+    ).toEqual(['b', 'a', 'c'])
+    expect(
+      ids(sortSongs(dated, { type: SortType.DURATION, direction: SortDirection.DESC }))
+    ).toEqual(['a', 'b', 'c'])
+  })
+
+  /**
+   * Same courtesy for size, whose unknown is `null` — the DTO's "the file is gone" marker, the
+   * one thing a size sort has nothing to say about.
+   */
+  it('orders by size with unmeasured songs sinking in both directions', () => {
+    const sized = [
+      song('big', 'Big', { sizeBytes: 9000 }),
+      song('gone', 'Gone', { sizeBytes: null }),
+      song('small', 'Small', { sizeBytes: 100 })
+    ]
+    expect(ids(sortSongs(sized, { type: SortType.SIZE, direction: SortDirection.ASC }))).toEqual([
+      'small',
+      'big',
+      'gone'
     ])
-    expect(ids(sortSongs(dated, { field: 'durationSec', direction: 'desc' }))).toEqual([
-      'a',
-      'b',
-      'c'
+    expect(ids(sortSongs(sized, { type: SortType.SIZE, direction: SortDirection.DESC }))).toEqual([
+      'big',
+      'small',
+      'gone'
     ])
   })
 
   it('does not mutate its input', () => {
     const before = ids(dated)
-    sortSongs(dated, { field: 'durationSec', direction: 'desc' })
+    sortSongs(dated, { type: SortType.DURATION, direction: SortDirection.DESC })
     expect(ids(dated)).toEqual(before)
   })
 })

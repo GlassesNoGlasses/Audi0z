@@ -1,6 +1,6 @@
 /**
  * Main IPC structure for app `API` wiring.
- * 
+ *
  * Parts:
  * - library: main to interact with audio files.
  * - tags: tags and cascading edits.

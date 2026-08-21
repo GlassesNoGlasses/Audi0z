@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Playlist, Settings, SongDto } from '../../../shared/types'
 import { LIBRARY_QUEUE_ID, type Rng } from '../playback/types'
 import { AppProvider, useAppDispatch, useAppState } from '../state/AppContext'
-import { FALLBACK_SETTINGS, type Dialog, type View } from '../state/appReducer'
+import { FALLBACK_SETTINGS, SortDirection, type Dialog, type View } from '../state/appReducer'
 import {
   audioElement,
   nowPlaying,
@@ -48,7 +48,9 @@ function Probe(): ReactElement {
       <span data-testid="isPlaying">{playback.isPlaying ? 'playing' : 'paused'}</span>
       <span data-testid="playToken">{playback.playToken}</span>
       <span data-testid="dialog">{dialog === null ? 'none' : JSON.stringify(dialog)}</span>
-      <span data-testid="sort">{sort === null ? 'manual' : `${sort.field} ${sort.direction}`}</span>
+      <span data-testid="sort">
+        {`${sort.type} ${sort.direction === SortDirection.ASC ? 'asc' : 'desc'}`}
+      </span>
     </div>
   )
 }
@@ -288,10 +290,10 @@ describe('TopNav sort menu', () => {
     await renderTopNav({ songs })
 
     await sortView(user, /Date Added$/)
-    expect(probe('sort')).toBe('addedAt asc')
+    expect(probe('sort')).toBe('Date Added asc')
 
     await sortView(user, /Date Added$/)
-    expect(probe('sort')).toBe('addedAt desc')
+    expect(probe('sort')).toBe('Date Added desc')
   })
 
   /** A different field is a fresh question, so it is asked ascending rather than inheriting. */
@@ -300,10 +302,13 @@ describe('TopNav sort menu', () => {
     await renderTopNav({ songs })
 
     await sortView(user, /Date Added$/, 2)
-    expect(probe('sort')).toBe('addedAt desc')
+    expect(probe('sort')).toBe('Date Added desc')
 
     await sortView(user, /Duration$/)
-    expect(probe('sort')).toBe('durationSec asc')
+    expect(probe('sort')).toBe('Duration asc')
+
+    await sortView(user, /Size$/)
+    expect(probe('sort')).toBe('Size asc')
   })
 
   it('sorts by title ascending, and flips direction on the next press', async () => {
@@ -311,30 +316,38 @@ describe('TopNav sort menu', () => {
     await renderTopNav({ songs })
 
     await sortView(user, /Title$/)
-    expect(probe('sort')).toBe('title asc')
+    expect(probe('sort')).toBe('Title asc')
 
     await sortView(user, /Title$/)
-    expect(probe('sort')).toBe('title desc')
+    expect(probe('sort')).toBe('Title desc')
   })
 
-  it('goes back to the stored order from Manual order', async () => {
+  it('goes back to the stored order from Custom Order', async () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
 
     await sortView(user, /Duration$/)
     await sortView(user, 'Custom Order')
 
-    expect(probe('sort')).toBe('manual')
+    expect(probe('sort')).toBe('Custom Order asc')
   })
 
-  it('ticks the mode in force and shuts behind the choice', async () => {
+  it('ticks the mode in force, shuts, and lifts the choice to the top of the menu', async () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
     await user.click(trigger())
 
     const items = (): HTMLElement[] => screen.getAllByRole('menuitemradio')
+    expect(items().map((item) => item.textContent?.trim())).toEqual([
+      'Custom Order',
+      'Title',
+      'Date Added',
+      'Duration',
+      'Size'
+    ])
     expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
       'true',
+      'false',
       'false',
       'false',
       'false'
@@ -343,13 +356,34 @@ describe('TopNav sort menu', () => {
     await user.click(screen.getByRole('menuitemradio', { name: /Duration$/ }))
     expect(screen.queryByRole('menu')).toBeNull()
 
+    // The chosen mode heads the next visit, wearing its direction arrow; the rest keep their order.
     await user.click(trigger())
-    expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
-      'false',
-      'false',
-      'false',
-      'true'
+    expect(items().map((item) => item.textContent?.trim())).toEqual([
+      '↓ Duration',
+      'Custom Order',
+      'Title',
+      'Date Added',
+      'Size'
     ])
+    expect(items().map((item) => item.getAttribute('aria-checked'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+      'false'
+    ])
+  })
+
+  /** The sort in force is named on the bar itself — no need to open the menu to know it. */
+  it('names the sort in force beside the menu button', async () => {
+    const user = userEvent.setup()
+    await renderTopNav({ songs })
+    expect(screen.getByText('Custom Order')).toBeInTheDocument()
+
+    await sortView(user, /Duration$/)
+
+    expect(screen.getByText('Duration')).toBeInTheDocument()
+    expect(screen.queryByText('Custom Order')).toBeNull()
   })
 
   it('shuts on Escape, handing focus back to the button that opened it', async () => {
@@ -361,7 +395,7 @@ describe('TopNav sort menu', () => {
 
     expect(screen.queryByRole('menu')).toBeNull()
     expect(document.activeElement).toBe(trigger())
-    expect(probe('sort')).toBe('manual')
+    expect(probe('sort')).toBe('Custom Order asc')
   })
 
   it('shuts on a click outside itself', async () => {

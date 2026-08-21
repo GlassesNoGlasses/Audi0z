@@ -87,7 +87,7 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
 
     async update(id, patch) {
       if (patch.title !== undefined && patch.title.trim() === '') {
-        throw new Error(`Invalid updated title given ${patch.title}`);
+        throw new Error(`Invalid updated title given ${patch.title}`)
       }
       const current = await load()
       const index = current.findIndex((song) => song.id === id)
