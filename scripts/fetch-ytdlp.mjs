@@ -13,7 +13,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // Pinned yt-dlp release. Change as needed.
-const YTDLP_VERSION = '2026.07.04'
+const YTDLP_VERSION = '2026.08.19'
 
 // Electron `process.platform` -> release asset name.
 const ASSETS = {
