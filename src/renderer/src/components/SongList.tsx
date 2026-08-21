@@ -1,11 +1,14 @@
-import { useCallback, useMemo, type ReactElement } from 'react'
+import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useToastError } from '../hooks/useToastError'
 import { filterSongs } from '../lib/search'
 import { songsInView, viewedPlaylist } from '../lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
-import type { AppState } from '../state/appReducer'
+import { SortType, type AppState } from '../state/appReducer'
 import { SongRow } from './SongRow'
+
+/** Where a drag in flight would land: the row under the pointer, and which side of its midpoint. */
+type DropMark = { id: string; edge: 'before' | 'after' }
 
 export function SongList(): ReactElement {
   const state = useAppState()
@@ -22,6 +25,66 @@ export function SongList(): ReactElement {
   const visible = useMemo(() => filterSongs(inView, query), [inView, query])
 
   const fail = useToastError()
+
+  // Dragging rearranges the stored order, so it is only offered when the rows on screen ARE that
+  // order: any other sort draws a computed order a drop position says nothing about, and a
+  // filtered list says nothing about where the hidden songs go — the sidebar's own rule.
+  const canDrag = sort.type === SortType.CUSTOM && query.trim() === ''
+
+  // State draws the seam; the refs are what the drop reads. Split on purpose: the rows are
+  // memoised, and callbacks remade on every pointer move would re-render all of them per row
+  // crossed, so the callbacks below depend on nothing the drag itself changes.
+  const [dragActive, setDragActive] = useState(false)
+  const [dropMark, setDropMark] = useState<DropMark | null>(null)
+  const dragIdRef = useRef<string | null>(null)
+  const dropMarkRef = useRef<DropMark | null>(null)
+
+  const onRowDragStart = useCallback((songId: string) => {
+    dragIdRef.current = songId
+    setDragActive(true)
+  }, [])
+
+  const onRowDragOver = useCallback((songId: string, edge: 'before' | 'after') => {
+    dropMarkRef.current = { id: songId, edge }
+    setDropMark((current) =>
+      current?.id === songId && current.edge === edge ? current : { id: songId, edge }
+    )
+  }, [])
+
+  const endDrag = useCallback(() => {
+    dragIdRef.current = null
+    dropMarkRef.current = null
+    setDragActive(false)
+    setDropMark(null)
+  }, [])
+
+  /**
+   * Lands the drag: the dragged id is pulled out of the FULL view order and put back beside the
+   * target, and the store's answer — not the arithmetic here — is what the list is redrawn from.
+   * The write goes to whichever order the view is showing: the playlist's own songIds, or the
+   * library's stored order.
+   */
+  const onRowDrop = useCallback(() => {
+    const dragId = dragIdRef.current
+    const mark = dropMarkRef.current
+    endDrag()
+    if (dragId === null || mark === null || dragId === mark.id) return
+    const ids = inView.map((song) => song.id).filter((id) => id !== dragId)
+    const at = ids.indexOf(mark.id)
+    if (at === -1) return
+    ids.splice(mark.edge === 'before' ? at : at + 1, 0, dragId)
+    if (view.kind === 'playlist') {
+      void window.api.playlists
+        .reorderSongs(view.id, ids)
+        .then((playlist) => dispatch({ type: 'playlists/upserted', playlist }))
+        .catch(fail)
+      return
+    }
+    void window.api.library
+      .reorder(ids)
+      .then((next) => dispatch({ type: 'library/loaded', songs: next }))
+      .catch(fail)
+  }, [endDrag, inView, view, dispatch, fail])
 
   /**
    * Playing a row is the one gesture that moves the queue. Inside the queue already playing it is
@@ -119,11 +182,18 @@ export function SongList(): ReactElement {
           isCurrent={song.id === playback.currentId}
           tags={tags}
           containingPlaylist={containingPlaylist}
+          draggable={canDrag}
+          dragActive={dragActive}
+          dropEdge={dropMark?.id === song.id ? dropMark.edge : null}
           onPlay={onPlay}
           onEdit={onEdit}
           onDelete={onDelete}
           onToggleTag={onToggleTag}
           onRemoveFromPlaylist={onRemoveFromPlaylist}
+          onDragStart={onRowDragStart}
+          onDragOver={onRowDragOver}
+          onDrop={onRowDrop}
+          onDragEnd={endDrag}
         />
       ))}
     </ul>

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { playlist, song } from '../testing/harness'
-import { createAppReducer, initialAppState, type AppState } from './appReducer'
+import {
+  createAppReducer,
+  initialAppState,
+  SortDirection,
+  SortType,
+  type AppState
+} from './appReducer'
 
 /**
  * The app reducer owns everything the playback engine does not, and forwards the rest verbatim —
@@ -250,17 +256,25 @@ describe('appReducer', () => {
    * happened to be open when it was chosen, so moving between views carries it along.
    */
   it('records the sort mode and keeps it across a change of view', () => {
-    expect(initialAppState().sort).toBeNull()
+    // The stored order is where every window starts — nothing persists the sort across launches.
+    expect(initialAppState().sort).toEqual({
+      type: SortType.CUSTOM,
+      direction: SortDirection.ASC
+    })
 
     const sorted = reducer(seeded(), {
       type: 'sort/changed',
-      sort: { field: 'durationSec', direction: 'desc' }
+      sort: { type: SortType.DURATION, direction: SortDirection.DESC }
     })
-    expect(sorted.sort).toEqual({ field: 'durationSec', direction: 'desc' })
+    expect(sorted.sort).toEqual({ type: SortType.DURATION, direction: SortDirection.DESC })
 
     const viewed = reducer(sorted, { type: 'view/selected', view: { kind: 'playlist', id: 'p1' } })
-    expect(viewed.sort).toEqual({ field: 'durationSec', direction: 'desc' })
+    expect(viewed.sort).toEqual({ type: SortType.DURATION, direction: SortDirection.DESC })
 
-    expect(reducer(viewed, { type: 'sort/changed', sort: null }).sort).toBeNull()
+    const custom = reducer(viewed, {
+      type: 'sort/changed',
+      sort: { type: SortType.CUSTOM, direction: SortDirection.ASC }
+    })
+    expect(custom.sort).toEqual({ type: SortType.CUSTOM, direction: SortDirection.ASC })
   })
 })

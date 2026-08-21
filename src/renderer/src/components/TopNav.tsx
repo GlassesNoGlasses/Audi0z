@@ -111,12 +111,17 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
    */
   function choose(mode: SortType): void {
     setSortOpen(false)
-    setSortOrder(prev => [mode, ...prev.filter((t) => t !== mode)])
+    setSortOrder((prev) => [mode, ...prev.filter((t) => t !== mode)])
 
     dispatch({
       type: 'sort/changed',
-      sort: { type: mode, direction: sort.type === mode &&
-        sort.direction === SortDirection.ASC ? SortDirection.DESC : SortDirection.ASC }
+      sort: {
+        type: mode,
+        direction:
+          sort.type === mode && sort.direction === SortDirection.ASC
+            ? SortDirection.DESC
+            : SortDirection.ASC
+      }
     })
   }
 
@@ -130,12 +135,13 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   const SortElement = (targetType: SortType): ReactElement => {
     return (
       <button
-      type="button"
-      role="menuitemradio"
-      aria-checked={sort.type === targetType}
-      onClick={() => choose(targetType)}
+        key={targetType}
+        type="button"
+        role="menuitemradio"
+        aria-checked={sort.type === targetType}
+        onClick={() => choose(targetType)}
       >
-      {chosenSortVisual(targetType)} {targetType.valueOf()}
+        {chosenSortVisual(targetType)} {targetType.valueOf()}
       </button>
     )
   }
@@ -188,7 +194,9 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
         </button>
         {sortOpen ? (
           <div className="sort-menu" role="menu" aria-label="Sort songs">
-            {sortOrder.map((type) =>  {return SortElement(type)})}
+            {sortOrder.map((type) => {
+              return SortElement(type)
+            })}
           </div>
         ) : null}
       </div>

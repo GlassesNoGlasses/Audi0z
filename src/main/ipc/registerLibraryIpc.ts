@@ -119,7 +119,8 @@ function parsePlaybackOptions(value: unknown): { shuffle?: boolean; repeat?: boo
   }
 }
 
-function parsePlaylistOrder(value: unknown): string[] {
+/** A full stored order — playlists, or the songs of one list — as ids, none of them blank. */
+function parseOrderedIds(value: unknown): string[] {
   const ids = assertStringArray(value, 'orderedIds')
   for (const id of ids) assertNonEmptyString(id, 'orderedIds entry')
   return ids
@@ -220,6 +221,12 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     await deps.playlistStore.cascadeRemoveSong(song.id)
   })
 
+  /** The library's stored order is the renderer's Custom Order; answers as `library:list` does. */
+  ipc.handle(IPC.library.reorder, async (_event, orderedIds: unknown): Promise<SongDto[]> => {
+    const reordered = await deps.libraryStore.reorder(parseOrderedIds(orderedIds))
+    return Promise.all(reordered.map((song) => toDto(song)))
+  })
+
   ipc.handle(IPC.library.compress, async (_event, id: unknown): Promise<CompressResult> => {
     const songId = assertNonEmptyString(id, 'id')
     const { song, shrank } = await deps.compressSong(songId)
@@ -271,7 +278,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
   )
 
   ipc.handle(IPC.playlists.reorder, (_event, orderedIds: unknown): Promise<Playlist[]> =>
-    deps.playlistStore.reorder(parsePlaylistOrder(orderedIds))
+    deps.playlistStore.reorder(parseOrderedIds(orderedIds))
   )
 
   ipc.handle(
@@ -306,7 +313,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     (_event, playlistId: unknown, songIds: unknown): Promise<Playlist> =>
       deps.playlistStore.reorderSongs(
         assertNonEmptyString(playlistId, 'playlistId'),
-        assertStringArray(songIds, 'songIds')
+        parseOrderedIds(songIds)
       )
   )
 

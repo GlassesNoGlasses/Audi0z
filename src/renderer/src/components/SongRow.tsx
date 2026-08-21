@@ -29,11 +29,21 @@ export interface SongRowProps {
   tags: Tag[]
   /** The playlist this row is being viewed inside, if any — the only place it can be removed from one. */
   containingPlaylist: Playlist | null
+  /** Whether this row may START a reorder drag — Custom Order with nothing filtered away. */
+  draggable: boolean
+  /** True while the list is running one of its own drags — the only kind the row receives. */
+  dragActive: boolean
+  /** The seam to paint on this row, when the drag in flight is hovering it. */
+  dropEdge: 'before' | 'after' | null
   onPlay(songId: string): void
   onEdit(songId: string): void
   onDelete(songId: string): void
   onToggleTag(songId: string, tagName: string): void
   onRemoveFromPlaylist(playlistId: string, songId: string): void
+  onDragStart(songId: string): void
+  onDragOver(songId: string, edge: 'before' | 'after'): void
+  onDrop(): void
+  onDragEnd(): void
 }
 
 /**
@@ -51,11 +61,18 @@ function SongRowView({
   isCurrent,
   tags,
   containingPlaylist,
+  draggable,
+  dragActive,
+  dropEdge,
   onPlay,
   onEdit,
   onDelete,
   onToggleTag,
-  onRemoveFromPlaylist
+  onRemoveFromPlaylist,
+  onDragStart,
+  onDragOver,
+  onDrop,
+  onDragEnd
 }: SongRowProps): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
@@ -157,7 +174,34 @@ function SongRowView({
   }
 
   return (
-    <li className={`song-row${isCurrent ? ' is-current' : ''}`}>
+    <li
+      className={`song-row${isCurrent ? ' is-current' : ''}${dropEdge ? ` drop-${dropEdge}` : ''}`}
+      draggable={draggable}
+      onDragStart={(event) => {
+        if (!draggable) return
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', song.id)
+        onDragStart(song.id)
+      }}
+      // The `dragActive` guards below leave a drag this list never started completely alone — no
+      // seam, no reorder, nothing cancelled on the way past — exactly as the sidebar's rows do:
+      // a drag is ours only between our own dragStart and dragEnd.
+      onDragOver={(event) => {
+        if (!dragActive) return
+        event.preventDefault()
+        event.stopPropagation()
+        event.dataTransfer.dropEffect = 'move'
+        const rect = event.currentTarget.getBoundingClientRect()
+        onDragOver(song.id, event.clientY < rect.top + rect.height / 2 ? 'before' : 'after')
+      }}
+      onDrop={(event) => {
+        if (!dragActive) return
+        event.preventDefault()
+        event.stopPropagation()
+        onDrop()
+      }}
+      onDragEnd={onDragEnd}
+    >
       <span className="song-duration">{formatDuration(song.durationSec)}</span>
       <button
         type="button"

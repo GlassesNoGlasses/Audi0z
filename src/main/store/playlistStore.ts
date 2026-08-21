@@ -5,7 +5,6 @@ import { ConflictError, NotFoundError } from './errors'
 import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreatePlaylistStore } from './storeTypes'
 
-
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
 }
@@ -97,7 +96,9 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
 
     async reorder(orderedIds) {
       const current = await load()
-      if (new Set(orderedIds).size !== current.length) {
+      // Both halves are load-bearing: a duplicated id can cover every name while the raw list is
+      // still the wrong length, and applying it would write one playlist twice.
+      if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
         throw new ConflictError('Reorder must name every playlist exactly once.')
       }
       const byId = new Map(current.map((playlist) => [playlist.id, playlist]))
@@ -150,17 +151,18 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
     },
 
     async reorderSongs(playlistId, songIds) {
-      const {current, index} = await mustFind(playlistId)
+      const { current, index } = await mustFind(playlistId)
       const playlist = current[index]
-      const parsedSongIds = new Set(songIds)
-      if (parsedSongIds.size !== playlist.songIds.length) {
+      const named = new Set(songIds)
+      // Both halves are load-bearing, as in `reorder` above: a duplicated id can cover every name
+      // while the raw list is still the wrong length.
+      if (named.size !== songIds.length || songIds.length !== playlist.songIds.length) {
         throw new ConflictError('Reorder must name every song exactly once.')
       }
-
-      playlist.songIds.forEach((id) => {
-        if (!parsedSongIds.has(id)) throw new NotFoundError(`No song with id "${id}"`)
-      })
-      return replace(current, index, {...playlist, songIds: [...parsedSongIds]})
+      for (const id of playlist.songIds) {
+        if (!named.has(id)) throw new NotFoundError(`No song with id "${id}"`)
+      }
+      return replace(current, index, { ...playlist, songIds: [...songIds] })
     }
   }
 }

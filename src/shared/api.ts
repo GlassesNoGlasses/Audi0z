@@ -30,6 +30,8 @@ export interface Api {
     // backfills the duration of newly-added songs in batches
     updateDurations(entries: Array<{ id: string; durationSec: number }>): Promise<SongDto[]>
     remove(id: string): Promise<void>
+    /** Rearranges the library's stored (Custom) order; must name every song exactly once. */
+    reorder(orderedIds: string[]): Promise<SongDto[]>
     compress(id: string): Promise<CompressResult>
     showFolder(): Promise<void>
   }

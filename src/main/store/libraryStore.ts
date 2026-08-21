@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { LibraryFile, Song } from '../../shared/types'
 import { libraryJsonPath } from '../paths'
-import { NotFoundError } from './errors'
+import { ConflictError, NotFoundError } from './errors'
 import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
 import type { CreateLibraryStore } from './storeTypes'
 
@@ -87,7 +87,7 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
 
     async update(id, patch) {
       if (patch.title !== undefined && patch.title.trim() === '') {
-        throw new Error(`Invalid updated title given ${patch.title}`);
+        throw new Error(`Invalid updated title given ${patch.title}`)
       }
       const current = await load()
       const index = current.findIndex((song) => song.id === id)
@@ -172,6 +172,24 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       current[index] = updated
       await persist(current)
       return cloneSong(updated)
+    },
+
+    // the library's stored order IS the Custom Order the renderer shows, so rearranging it is a
+    // write like any other; same contract as playlistStore.reorder — every song exactly once
+    async reorder(orderedIds) {
+      const current = await load()
+      if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
+        throw new ConflictError('Reorder must name every song exactly once.')
+      }
+      const byId = new Map(current.map((song) => [song.id, song]))
+      const next = orderedIds.map((id) => {
+        const found = byId.get(id)
+        if (found === undefined) throw new NotFoundError(`No song with id "${id}"`)
+        return found
+      })
+      current.splice(0, current.length, ...next) // in-memory edit
+      await persist(current)
+      return current.map(cloneSong)
     },
 
     // removes in-memory metadata only; IPC will handle the actual file removal

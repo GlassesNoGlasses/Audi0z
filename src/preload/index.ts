@@ -26,6 +26,7 @@ export const api: Api = {
     update: (id, patch) => ipcRenderer.invoke(IPC.library.update, id, patch),
     updateDurations: (entries) => ipcRenderer.invoke(IPC.library.updateDurations, entries),
     remove: (id) => ipcRenderer.invoke(IPC.library.remove, id),
+    reorder: (orderedIds) => ipcRenderer.invoke(IPC.library.reorder, orderedIds),
     compress: (id) => ipcRenderer.invoke(IPC.library.compress, id),
     showFolder: () => ipcRenderer.invoke(IPC.library.showFolder)
   },
@@ -44,8 +45,10 @@ export const api: Api = {
     addSong: (playlistId, songId) => ipcRenderer.invoke(IPC.playlists.addSong, playlistId, songId),
     removeSong: (playlistId, songId) =>
       ipcRenderer.invoke(IPC.playlists.removeSong, playlistId, songId),
-    setPlaybackOptions: (id, opts) => ipcRenderer.invoke(IPC.playlists.setPlaybackOptions, id, opts),
-    reorderSongs: (playlistId, songIds) => ipcRenderer.invoke(IPC.playlists.reorderSongs, playlistId, songIds)
+    setPlaybackOptions: (id, opts) =>
+      ipcRenderer.invoke(IPC.playlists.setPlaybackOptions, id, opts),
+    reorderSongs: (playlistId, songIds) =>
+      ipcRenderer.invoke(IPC.playlists.reorderSongs, playlistId, songIds)
   },
   files: {
     pickAudioFiles: () => ipcRenderer.invoke(IPC.files.pickAudioFiles)

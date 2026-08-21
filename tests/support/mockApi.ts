@@ -260,6 +260,17 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         }
         libraryChanged.emit()
       }),
+      // Same contract as the store: the whole order at once, every song exactly once. No
+      // `libraryChanged` here — the real channel answers with the new order and emits nothing,
+      // so the renderer redraws from the reply alone.
+      reorder: vi.fn(async (orderedIds) => {
+        const named = new Set(orderedIds)
+        if (named.size !== orderedIds.length || orderedIds.length !== state.songs.length) {
+          throw new Error('Reorder must name every song exactly once.')
+        }
+        state.songs = orderedIds.map(findSong)
+        return state.songs.map(cloneSong)
+      }),
       // Always the winning outcome: the kept-the-original path is rarer than the one every test
       // means when it clicks Compress, so a test that wants it says so with `mockResolvedValue`.
       compress: vi.fn(async (songId) => {
@@ -355,6 +366,19 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         const playlist = findPlaylist(playlistId)
         if (opts.shuffle !== undefined) playlist.shuffle = opts.shuffle
         if (opts.repeat !== undefined) playlist.repeat = opts.repeat
+        return clonePlaylist(playlist)
+      }),
+      // Same contract as the store, one level down: the playlist's own song order.
+      reorderSongs: vi.fn(async (playlistId, songIds) => {
+        const playlist = findPlaylist(playlistId)
+        const named = new Set(songIds)
+        if (named.size !== songIds.length || songIds.length !== playlist.songIds.length) {
+          throw new Error('Reorder must name every song exactly once.')
+        }
+        for (const sid of playlist.songIds) {
+          if (!named.has(sid)) throw new Error(`mockApi: reorder lost song ${sid}`)
+        }
+        playlist.songIds = [...songIds]
         return clonePlaylist(playlist)
       })
     },

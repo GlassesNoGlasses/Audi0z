@@ -229,6 +229,58 @@ describe('reorder', () => {
     // A failed reorder leaves the order alone.
     expect((await store.list()).map((p) => p.id)).toEqual([a.id, b.id])
   })
+
+  it('rejects a duplicated id even when every playlist is named', async () => {
+    const store = createPlaylistStore(lib.root)
+    const a = await store.create('Alpha')
+    const b = await store.create('Bravo')
+
+    // A set of the names alone cannot catch this one: {a, b} covers both playlists, but applying
+    // the raw list would write Alpha twice and grow the file by one.
+    await expect(store.reorder([a.id, a.id, b.id])).rejects.toBeInstanceOf(ConflictError)
+    expect((await store.list()).map((p) => p.id)).toEqual([a.id, b.id])
+  })
+})
+
+describe('reorderSongs', () => {
+  it('applies and persists the new song order', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+    await store.addSong(playlist.id, 'a')
+    await store.addSong(playlist.id, 'b')
+    await store.addSong(playlist.id, 'c')
+
+    const next = await store.reorderSongs(playlist.id, ['c', 'a', 'b'])
+
+    expect(next.songIds).toEqual(['c', 'a', 'b'])
+    // A second store over the same dir reads the same order back off disk.
+    expect((await createPlaylistStore(lib.root).list())[0]?.songIds).toEqual(['c', 'a', 'b'])
+  })
+
+  it('rejects an order that does not name every song exactly once', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+    await store.addSong(playlist.id, 'a')
+    await store.addSong(playlist.id, 'b')
+
+    await expect(store.reorderSongs(playlist.id, ['a'])).rejects.toBeInstanceOf(ConflictError)
+    // The duplicate covers every name, so only the length gives it away.
+    await expect(store.reorderSongs(playlist.id, ['a', 'a', 'b'])).rejects.toBeInstanceOf(
+      ConflictError
+    )
+    await expect(store.reorderSongs(playlist.id, ['a', 'nope'])).rejects.toBeInstanceOf(
+      NotFoundError
+    )
+
+    // A failed reorder leaves the order alone.
+    expect((await store.list())[0]?.songIds).toEqual(['a', 'b'])
+  })
+
+  it('throws NotFound for an unknown playlist', async () => {
+    await expect(createPlaylistStore(lib.root).reorderSongs('missing', [])).rejects.toBeInstanceOf(
+      NotFoundError
+    )
+  })
 })
 
 describe('cache isolation', () => {

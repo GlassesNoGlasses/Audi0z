@@ -376,6 +376,34 @@ describe(IPC.library.updateDurations, () => {
   })
 })
 
+describe(IPC.library.reorder, () => {
+  /** The library's stored order is the renderer's Custom Order, so this is a write like any other. */
+  it('reorders the library and hands back DTOs in the stored order', async () => {
+    const harness = setup()
+    const a = await harness.libraryStore.add(draftSong({ title: 'a' }))
+    const b = await harness.libraryStore.add(draftSong({ title: 'b' }))
+    const c = await harness.libraryStore.add(draftSong({ title: 'c' }))
+
+    const reordered = await harness.invoke<SongDto[]>(IPC.library.reorder, [c.id, a.id, b.id])
+
+    expect(reordered.map((song) => song.title)).toEqual(['c', 'a', 'b'])
+    // Full DTOs, exactly as `library:list` answers — the renderer redraws from this reply alone.
+    expect(reordered[0]).toMatchObject({ url: `media://audio/${c.id}`, sizeBytes: 4096 })
+    expect((await harness.libraryStore.list()).map((song) => song.title)).toEqual(['c', 'a', 'b'])
+  })
+
+  it.each([[undefined], ['solo'], [[1]], [['']]])(
+    'rejects a malformed orderedIds payload (%s)',
+    async (orderedIds) => {
+      const harness = setup()
+      const added = await harness.libraryStore.add(draftSong())
+
+      await expect(harness.invoke(IPC.library.reorder, orderedIds)).rejects.toThrow()
+      expect((await harness.libraryStore.list()).map((song) => song.id)).toEqual([added.id])
+    }
+  )
+})
+
 describe(IPC.library.remove, () => {
   it('trashes the file before touching the stores, then cascades', async () => {
     const harness = setup()
@@ -904,6 +932,24 @@ describe('playlist channels', () => {
     ])
   })
 
+  /** Same write, one level down: the playlist's own song order. */
+  it('reorders the songs of one playlist and hands back the stored playlist', async () => {
+    const harness = setup()
+    const created = await harness.invoke<Playlist>(IPC.playlists.create, 'Mix')
+    await harness.invoke(IPC.playlists.addSong, created.id, 'a')
+    await harness.invoke(IPC.playlists.addSong, created.id, 'b')
+    await harness.invoke(IPC.playlists.addSong, created.id, 'c')
+
+    const reordered = await harness.invoke<Playlist>(IPC.playlists.reorderSongs, created.id, [
+      'c',
+      'a',
+      'b'
+    ])
+
+    expect(reordered.songIds).toEqual(['c', 'a', 'b'])
+    expect((await harness.playlistStore.list())[0]?.songIds).toEqual(['c', 'a', 'b'])
+  })
+
   it.each([
     [IPC.playlists.create, ['']],
     [IPC.playlists.create, [42]],
@@ -913,6 +959,11 @@ describe('playlist channels', () => {
     [IPC.playlists.reorder, ['p1']],
     [IPC.playlists.reorder, [[1]]],
     [IPC.playlists.reorder, [['']]],
+    [IPC.playlists.reorderSongs, ['', ['a']]],
+    [IPC.playlists.reorderSongs, ['id', undefined]],
+    [IPC.playlists.reorderSongs, ['id', 'a']],
+    [IPC.playlists.reorderSongs, ['id', [1]]],
+    [IPC.playlists.reorderSongs, ['id', ['']]],
     [IPC.playlists.addSong, ['id', 42]],
     [IPC.playlists.addSong, ['', 'song']],
     [IPC.playlists.removeSong, ['id', '']],
