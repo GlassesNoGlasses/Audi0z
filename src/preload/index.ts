@@ -44,7 +44,8 @@ export const api: Api = {
     addSong: (playlistId, songId) => ipcRenderer.invoke(IPC.playlists.addSong, playlistId, songId),
     removeSong: (playlistId, songId) =>
       ipcRenderer.invoke(IPC.playlists.removeSong, playlistId, songId),
-    setPlaybackOptions: (id, opts) => ipcRenderer.invoke(IPC.playlists.setPlaybackOptions, id, opts)
+    setPlaybackOptions: (id, opts) => ipcRenderer.invoke(IPC.playlists.setPlaybackOptions, id, opts),
+    reorderSongs: (playlistId, songIds) => ipcRenderer.invoke(IPC.playlists.reorderSongs, playlistId, songIds)
   },
   files: {
     pickAudioFiles: () => ipcRenderer.invoke(IPC.files.pickAudioFiles)

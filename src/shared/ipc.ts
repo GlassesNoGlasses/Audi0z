@@ -35,7 +35,8 @@ export const IPC = {
     reorder: 'playlists:reorder',
     addSong: 'playlists:addSong',
     removeSong: 'playlists:removeSong',
-    setPlaybackOptions: 'playlists:setPlaybackOptions'
+    setPlaybackOptions: 'playlists:setPlaybackOptions',
+    reorderSongs: 'playlists:reorderSongs'
   },
   files: {
     pickAudioFiles: 'files:pickAudioFiles'

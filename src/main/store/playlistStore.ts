@@ -97,7 +97,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
 
     async reorder(orderedIds) {
       const current = await load()
-      if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
+      if (new Set(orderedIds).size !== current.length) {
         throw new ConflictError('Reorder must name every playlist exactly once.')
       }
       const byId = new Map(current.map((playlist) => [playlist.id, playlist]))
@@ -147,6 +147,20 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
         changed = true
       }
       if (changed) await persist(current)
+    },
+
+    async reorderSongs(playlistId, songIds) {
+      const {current, index} = await mustFind(playlistId)
+      const playlist = current[index]
+      const parsedSongIds = new Set(songIds)
+      if (parsedSongIds.size !== playlist.songIds.length) {
+        throw new ConflictError('Reorder must name every song exactly once.')
+      }
+
+      playlist.songIds.forEach((id) => {
+        if (!parsedSongIds.has(id)) throw new NotFoundError(`No song with id "${id}"`)
+      })
+      return replace(current, index, {...playlist, songIds: [...parsedSongIds]})
     }
   }
 }

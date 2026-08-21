@@ -31,6 +31,7 @@ export interface PlaylistStore {
   removeSong(playlistId: string, songId: string): Promise<Playlist>
   setPlaybackOptions(id: string, opts: { shuffle?: boolean; repeat?: boolean }): Promise<Playlist>
   cascadeRemoveSong(songId: string): Promise<void>
+  reorderSongs(playlistId: string, songIds: string[]): Promise<Playlist>
 }
 
 export interface SettingsStore {

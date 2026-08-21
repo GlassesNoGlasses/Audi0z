@@ -48,6 +48,7 @@ export interface Api {
     addSong(playlistId: string, songId: string): Promise<Playlist>
     removeSong(playlistId: string, songId: string): Promise<Playlist>
     setPlaybackOptions(id: string, opts: { shuffle?: boolean; repeat?: boolean }): Promise<Playlist>
+    reorderSongs(playlistId: string, songIds: string[]): Promise<Playlist>
   }
   files: {
     pickAudioFiles(): Promise<string[]>

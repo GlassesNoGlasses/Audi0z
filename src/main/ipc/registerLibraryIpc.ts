@@ -301,6 +301,15 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
       )
   )
 
+  ipc.handle(
+    IPC.playlists.reorderSongs,
+    (_event, playlistId: unknown, songIds: unknown): Promise<Playlist> =>
+      deps.playlistStore.reorderSongs(
+        assertNonEmptyString(playlistId, 'playlistId'),
+        assertStringArray(songIds, 'songIds')
+      )
+  )
+
   ipc.handle(IPC.settings.get, (): Promise<Settings> => deps.settingsStore.get())
 
   ipc.handle(IPC.settings.set, (_event, patch: unknown): Promise<Settings> =>
