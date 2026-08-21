@@ -197,11 +197,13 @@ input[type='range'] {
  * rather than a border, because a border would take up space and shove the whole list down by two
  * pixels every time the pointer crosses a row.
  */
-.playlist-item.drop-before {
+.playlist-item.drop-before,
+.song-row.drop-before {
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
-.playlist-item.drop-after {
+.playlist-item.drop-after,
+.song-row.drop-after {
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
