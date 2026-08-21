@@ -19,6 +19,9 @@ function mockLibraryStore(): LibraryStore {
     updateDurations: vi.fn(async () => {
       throw new Error('importer must not call updateDurations')
     }),
+    reorder: vi.fn(async () => {
+      throw new Error('importer must not call reorder')
+    }),
     remove: vi.fn(async () => {
       throw new Error('importer must not call remove')
     }),

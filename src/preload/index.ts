@@ -26,6 +26,7 @@ export const api: Api = {
     update: (id, patch) => ipcRenderer.invoke(IPC.library.update, id, patch),
     updateDurations: (entries) => ipcRenderer.invoke(IPC.library.updateDurations, entries),
     remove: (id) => ipcRenderer.invoke(IPC.library.remove, id),
+    reorder: (orderedIds) => ipcRenderer.invoke(IPC.library.reorder, orderedIds),
     compress: (id) => ipcRenderer.invoke(IPC.library.compress, id),
     showFolder: () => ipcRenderer.invoke(IPC.library.showFolder)
   },

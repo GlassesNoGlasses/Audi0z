@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
 import { libraryJsonPath } from '../paths'
 import type { LibraryFile, Song } from '../../shared/types'
-import { NotFoundError } from './errors'
+import { ConflictError, NotFoundError } from './errors'
 import { writeJsonFile } from './jsonFile'
 import { createLibraryStore } from './libraryStore'
 
@@ -466,6 +466,49 @@ describe('remove', () => {
 
     await expect(store.remove('missing')).resolves.toBeUndefined()
     expect(await store.list()).toEqual([added])
+  })
+})
+
+describe('reorder', () => {
+  it('applies and persists the new library order', async () => {
+    const store = createLibraryStore(lib.root)
+    const a = await store.add(draft({ title: 'a' }))
+    const b = await store.add(draft({ title: 'b' }))
+    const c = await store.add(draft({ title: 'c' }))
+
+    const next = await store.reorder([c.id, a.id, b.id])
+
+    expect(next.map((song) => song.title)).toEqual(['c', 'a', 'b'])
+    // A second store over the same dir reads the same order back off disk.
+    expect((await createLibraryStore(lib.root).list()).map((song) => song.title)).toEqual([
+      'c',
+      'a',
+      'b'
+    ])
+  })
+
+  it('rejects an order that does not name every song exactly once', async () => {
+    const store = createLibraryStore(lib.root)
+    const a = await store.add(draft({ title: 'a' }))
+    const b = await store.add(draft({ title: 'b' }))
+
+    await expect(store.reorder([a.id])).rejects.toBeInstanceOf(ConflictError)
+    // The duplicate covers every name, so only the length gives it away.
+    await expect(store.reorder([a.id, a.id, b.id])).rejects.toBeInstanceOf(ConflictError)
+    await expect(store.reorder([a.id, 'nope'])).rejects.toBeInstanceOf(NotFoundError)
+
+    // A failed reorder leaves the order alone.
+    expect((await store.list()).map((song) => song.id)).toEqual([a.id, b.id])
+  })
+
+  it('does not let callers mutate the store through the returned order', async () => {
+    const store = createLibraryStore(lib.root)
+    const added = await store.add(draft({ tags: ['keep'] }))
+
+    const next = await store.reorder([added.id])
+    next[0]?.tags.push('injected')
+
+    expect((await store.list())[0]?.tags).toEqual(['keep'])
   })
 })
 
