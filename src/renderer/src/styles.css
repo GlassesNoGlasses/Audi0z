@@ -330,6 +330,22 @@ input[type='range'] {
 }
 
 /*
+ * A fixed footprint on purpose: the caption swaps between labels as short as "Size" and as long
+ * as "Custom Order", and the search box flexes against the same free space as the spacer — a
+ * caption that changed width would stretch the search box on every sort change. Right-aligned so
+ * the label keeps a constant gap to the sort button it captions; the ellipsis is insurance for a
+ * label the width does not fit.
+ */
+.sort-caption {
+  flex: none;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 96px;
+}
+
+/*
  * The bar clips nothing, so the menu below can hang off it — this only has to be what it hangs
  * from. `flex` rather than the default block: a block wraps the button in a line box, and the
  * descender space under it would sit the icon a couple of pixels above the ones either side.

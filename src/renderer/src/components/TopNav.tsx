@@ -178,7 +178,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
       <span className="topnav-spacer" />
 
-      <span>{sortOrder[0].valueOf()}</span>
+      <span className="sort-caption">{sortOrder[0].valueOf()}</span>
 
       <div className="sort-menu-anchor" ref={sortRef}>
         <button
