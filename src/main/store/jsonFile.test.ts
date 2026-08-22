@@ -148,6 +148,19 @@ describe('writeJsonFile', () => {
     })
   })
 
+  it('captures the payload at call time, not when the queue drains', async () => {
+    const items = ['before']
+    const write = writeJsonFile(file, { version: 1, items })
+    // Mutated while the write is still queued — the file must hold what was passed, not this.
+    items[0] = 'after'
+    await write
+
+    await expect(readJsonFile(file, isDoc, makeDefault)).resolves.toEqual({
+      version: 1,
+      items: ['before']
+    })
+  })
+
   it('cleans up the temp file when the write fails', async () => {
     const circular: { self?: unknown } = {}
     circular.self = circular

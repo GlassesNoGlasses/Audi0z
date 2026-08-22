@@ -187,9 +187,11 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
         if (found === undefined) throw new NotFoundError(`No song with id "${id}"`)
         return found
       })
-      current.splice(0, current.length, ...next) // in-memory edit
-      await persist(current)
-      return current.map(cloneSong)
+      // Disk first, cache after: a failed write must leave the served order untouched, or the
+      // next unrelated persist would commit an order the caller was told did not save.
+      await persist(next)
+      current.splice(0, current.length, ...next)
+      return next.map(cloneSong)
     },
 
     // removes in-memory metadata only; IPC will handle the actual file removal

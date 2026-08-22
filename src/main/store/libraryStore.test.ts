@@ -476,9 +476,9 @@ describe('reorder', () => {
     const b = await store.add(draft({ title: 'b' }))
     const c = await store.add(draft({ title: 'c' }))
 
-    const next = await store.reorder([c.id, a.id, b.id])
+    await store.reorder([c.id, a.id, b.id])
 
-    expect(next.map((song) => song.title)).toEqual(['c', 'a', 'b'])
+    expect((await store.list()).map((song) => song.title)).toEqual(['c', 'a', 'b'])
     // A second store over the same dir reads the same order back off disk.
     expect((await createLibraryStore(lib.root).list()).map((song) => song.title)).toEqual([
       'c',
@@ -501,14 +501,18 @@ describe('reorder', () => {
     expect((await store.list()).map((song) => song.id)).toEqual([a.id, b.id])
   })
 
-  it('does not let callers mutate the store through the returned order', async () => {
+  it('a failed persist leaves the cached order alone', async () => {
     const store = createLibraryStore(lib.root)
-    const added = await store.add(draft({ tags: ['keep'] }))
+    const a = await store.add(draft({ title: 'a' }))
+    const b = await store.add(draft({ title: 'b' }))
 
-    const next = await store.reorder([added.id])
-    next[0]?.tags.push('injected')
+    vi.mocked(writeJsonFile).mockRejectedValueOnce(new Error('disk full'))
+    await expect(store.reorder([b.id, a.id])).rejects.toThrow('disk full')
 
-    expect((await store.list())[0]?.tags).toEqual(['keep'])
+    expect((await store.list()).map((song) => song.id)).toEqual([a.id, b.id])
+    // The next successful write must not smuggle the failed order onto disk behind it.
+    await store.update(a.id, { title: 'a2' })
+    expect((await createLibraryStore(lib.root).list()).map((song) => song.id)).toEqual([a.id, b.id])
   })
 })
 

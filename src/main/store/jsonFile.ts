@@ -104,8 +104,16 @@ const chains = new Map<string, Promise<void>>()
  * flushing at once cannot interleave; different paths proceed in parallel.
  */
 export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
+  // Serialised at call time: the queue must carry the payload as handed over, not whatever a
+  // caller's live array holds by the time the chain drains.
+  let json: string
+  try {
+    json = `${JSON.stringify(data, null, 2)}\n`
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+  }
   const key = path.resolve(filePath)
-  const queued = (chains.get(key) ?? Promise.resolve()).then(() => writeNow(filePath, data))
+  const queued = (chains.get(key) ?? Promise.resolve()).then(() => writeNow(filePath, json))
   chains.set(
     key,
     queued.then(
@@ -116,14 +124,13 @@ export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   return queued
 }
 
-/** 
- * Writes to `filePath` JSON data `data`. A temp file is used first, with syncing and renaming 
- * performed on success; temp file is always removed.
+/**
+ * Writes to `filePath` the pre-serialised `json`. A temp file is used first, with syncing and
+ * renaming performed on success; temp file is always removed.
 */
-async function writeNow(filePath: string, data: unknown): Promise<void> {
+async function writeNow(filePath: string, json: string): Promise<void> {
   const tmpPath = `${filePath}.tmp-${randomUUID()}`
   try {
-    const json = `${JSON.stringify(data, null, 2)}\n`
     const handle = await open(tmpPath, 'w')
     try {
       await handle.writeFile(json, 'utf8')

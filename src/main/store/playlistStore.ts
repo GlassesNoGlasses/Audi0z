@@ -53,10 +53,15 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
     return { current, index }
   }
 
-  /** Replaces the entry at `index` with `next`, persists, and hands back a copy. */
+  /**
+   * Replaces the entry at `index` with `next`, persists, and hands back a copy. Disk first via a
+   * draft, cache only after: a failed write must leave the served playlist untouched.
+   */
   async function replace(current: Playlist[], index: number, next: Playlist): Promise<Playlist> {
+    const draft = [...current]
+    draft[index] = next
+    await persist(draft)
     current[index] = next
-    await persist(current)
     return clonePlaylist(next)
   }
 
@@ -107,9 +112,10 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
         if (found === undefined) throw new NotFoundError(`No playlist with id "${id}"`)
         return found
       })
-      current.splice(0, current.length, ...next) // in-memory edit
-      await persist(current)
-      return current.map(clonePlaylist)
+      // Disk first, cache after, as `replace` above: a failed write must not stick in memory.
+      await persist(next)
+      current.splice(0, current.length, ...next)
+      return next.map(clonePlaylist)
     },
 
     async addSong(playlistId, songId) {
@@ -159,8 +165,12 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
       if (named.size !== songIds.length || songIds.length !== playlist.songIds.length) {
         throw new ConflictError('Reorder must name every song exactly once.')
       }
-      for (const id of playlist.songIds) {
-        if (!named.has(id)) throw new NotFoundError(`No song with id "${id}"`)
+      // Walk the SUBMITTED ids against the stored set — not the reverse: a duplicate in the
+      // stored order could otherwise cover every name while an unknown id slips through, and the
+      // error must blame the caller's bad id, not a song that is really there.
+      const stored = new Set(playlist.songIds)
+      for (const id of songIds) {
+        if (!stored.has(id)) throw new NotFoundError(`No song with id "${id}"`)
       }
       return replace(current, index, { ...playlist, songIds: [...songIds] })
     }
