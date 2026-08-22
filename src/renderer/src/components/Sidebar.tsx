@@ -159,8 +159,9 @@ export function Sidebar(): ReactElement {
                 draggable={canDrag}
                 onDragStart={(event) => {
                   if (!canDrag) return
+                  // No setData: the drop path reads component state, and a text/plain payload
+                  // would only feed the app's own text inputs.
                   event.dataTransfer.effectAllowed = 'move'
-                  event.dataTransfer.setData('text/plain', playlist.id)
                   setDragId(playlist.id)
                 }}
                 // The `dragId === null` guards below leave a drag this list never started

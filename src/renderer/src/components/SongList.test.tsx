@@ -366,4 +366,94 @@ describe('SongList drag reorder', () => {
     )
     expect(songTitles()).toEqual(['Bravo Beat', 'Alpha Mix'])
   })
+
+  /** An open menu is buttons all the way down — none of them may double as a drag handle. */
+  it('does not offer a drag while the row menu is open', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Options for Alpha Mix' }))
+    expect(draggableFlags()).toEqual(['false', 'true', 'true'])
+
+    await user.keyboard('{Escape}')
+    await waitFor(() => expect(draggableFlags()).toEqual(['true', 'true', 'true']))
+  })
+
+  /** The drop path reads a ref, so a payload would only feed the app's own text inputs. */
+  it('writes no payload into the dataTransfer', async () => {
+    seedApi({ songs })
+    await renderApp()
+
+    const [alpha] = rows()
+    const dataTransfer = dataTransferStub()
+    const setData = vi.spyOn(dataTransfer, 'setData')
+    fireEvent.dragStart(alpha, { dataTransfer })
+
+    expect(setData).not.toHaveBeenCalled()
+  })
+
+  /** A source row that unmounts mid-drag can never deliver its dragEnd. */
+  it('disarms when the dragged row unmounts mid-drag', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs })
+    await renderApp()
+
+    const [alpha, bravo] = rows()
+    stubRect(bravo)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(bravo, dataTransfer, 45)
+    expect(bravo.className).toContain('drop-before')
+
+    // The search filters Alpha out from under its own drag — the row unmounts, dragEnd never fires.
+    await user.type(screen.getByRole('searchbox', { name: 'Search songs' }), 'bravo')
+    await waitFor(() => expect(songTitles()).toEqual(['Bravo Beat']))
+
+    // A later foreign drag must be left completely alone — the list is no longer armed.
+    const files = [new File(['x'], 'One Track.mp3', { type: 'audio/mpeg' })]
+    const foreign = { files, types: ['Files'] } as unknown as DataTransfer
+    const [bravoOnly] = rows()
+    dragOverAt(bravoOnly, foreign, 45)
+    expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
+
+    const dropped = createEvent.drop(bravoOnly, { dataTransfer: foreign })
+    fireEvent(bravoOnly, dropped)
+    expect(dropped.defaultPrevented).toBe(false)
+    expect(api.library.reorder).not.toHaveBeenCalled()
+  })
+
+  it('clears the seam when the pointer leaves the list', async () => {
+    seedApi({ songs })
+    await renderApp()
+
+    const [alpha, bravo] = rows()
+    stubRect(bravo)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(bravo, dataTransfer, 45)
+    expect(bravo.className).toContain('drop-before')
+
+    fireEvent.dragLeave(document.querySelector('.song-list') as HTMLElement, { dataTransfer })
+
+    expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
+  })
+
+  /** The rows sit in a gapped list: releasing over the gap must land on the seam last painted. */
+  it('commits a drop released over the gap between rows', async () => {
+    const api = seedApi({ songs })
+    await renderApp()
+
+    const [alpha, , charlie] = rows()
+    stubRect(charlie)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(charlie, dataTransfer, 55)
+
+    const list = document.querySelector('.song-list') as HTMLElement
+    fireEvent.dragOver(list, { dataTransfer })
+    fireEvent.drop(list, { dataTransfer })
+
+    expect(api.library.reorder).toHaveBeenCalledWith(['b', 'c', 'a'])
+  })
 })

@@ -413,6 +413,19 @@ describe('Sidebar', () => {
     expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
   })
 
+  /** The drop path reads component state, so a payload would only feed the app's text inputs. */
+  it('writes no payload into the dataTransfer', async () => {
+    seedApi({ songs, playlists: three })
+    await renderApp()
+
+    const [alpha] = items()
+    const dataTransfer = dataTransferStub()
+    const setData = vi.spyOn(dataTransfer, 'setData')
+    fireEvent.dragStart(alpha, { dataTransfer })
+
+    expect(setData).not.toHaveBeenCalled()
+  })
+
   /**
    * A file dragged in from the OS never went through the sidebar's own `dragStart`, so `dragId` is
    * still null and every handler on the row has to leave the event completely alone: no seam, no

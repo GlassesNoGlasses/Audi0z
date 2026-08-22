@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useToastError } from '../hooks/useToastError'
 import { filterSongs } from '../lib/search'
 import { mergeReorderedIds, songsInView, viewedPlaylist } from '../lib/viewSongs'
@@ -61,6 +61,27 @@ export function SongList(): ReactElement {
     setDragActive(false)
     setDropMark(null)
   }, [])
+
+  // A source row that unmounts mid-drag (a refresh, a delete, the search filtering it away) can
+  // never deliver its dragEnd — without this the list stays armed forever and captures every
+  // foreign drag that follows.
+  useEffect(() => {
+    if (!dragActive) return
+    const dragId = dragIdRef.current
+    if (dragId !== null && !visible.some((song) => song.id === dragId)) endDrag()
+  }, [dragActive, visible, endDrag])
+
+  // Belt to the effect's braces: a release anywhere outside the rows still ends the drag.
+  useEffect(() => {
+    if (!dragActive) return
+    const clear = (): void => endDrag()
+    window.addEventListener('dragend', clear)
+    window.addEventListener('drop', clear)
+    return () => {
+      window.removeEventListener('dragend', clear)
+      window.removeEventListener('drop', clear)
+    }
+  }, [dragActive, endDrag])
 
   /**
    * Lands the drag: the dragged id is pulled out of the FULL view order and put back beside the
@@ -202,7 +223,30 @@ export function SongList(): ReactElement {
   }
 
   return (
-    <ul className="song-list" aria-label="Songs">
+    // The list's own handlers cover the 4px gaps between rows — without them the cursor flips to
+    // no-drop crossing each gap and a release there is lost. All three are ours-only (`dragActive`
+    // gates), so a foreign drag passes untouched; the rows stopPropagation, so a drop on a row
+    // never double-fires here.
+    <ul
+      className="song-list"
+      aria-label="Songs"
+      onDragOver={(event) => {
+        if (!dragActive) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+      }}
+      onDrop={(event) => {
+        if (!dragActive) return
+        event.preventDefault()
+        onRowDrop()
+      }}
+      onDragLeave={(event) => {
+        if (!dragActive) return
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+        dropMarkRef.current = null
+        setDropMark(null)
+      }}
+    >
       {visible.map((song) => (
         <SongRow
           key={song.id}
