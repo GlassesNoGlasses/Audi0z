@@ -361,11 +361,10 @@ describe('a cascade whose write is refused', () => {
 })
 
 /**
- * `persist` is an await, and nothing serialises the store's methods against each other — an import
- * or the startup duration backfill can land in the cache while a cascade's write is still in the
- * air. Adoption is therefore the same per-song rewrite applied in place, never a swap for the
- * snapshot the cascade set out with: that would erase whatever arrived in the meantime from the
- * cache, and then from disk, since the next write stringifies the cache as it finds it.
+ * Mutators serialise behind one lock, so an import or the startup duration backfill that lands
+ * while a cascade's write is still in the air QUEUES behind it rather than reading mid-write
+ * state. What these pin is the invariant that matters: nothing that arrives around a cascade is
+ * ever lost — in memory or on disk.
  */
 describe('a cascade whose write is still in flight', () => {
   /** Parks the next `writeJsonFile` call until it is released, and says when it got there. */
@@ -392,9 +391,10 @@ describe('a cascade whose write is still in flight', () => {
 
     const renaming = store.renameTag('slowed', 'slow')
     await write.started
-    const added = await store.add(draft({ title: 'arrived mid-write', tags: [] }))
+    // Queued behind the lock: the add resolves only once the cascade's write has landed.
+    const adding = store.add(draft({ title: 'arrived mid-write', tags: [] }))
     write.release()
-    await renaming
+    const [, added] = await Promise.all([renaming, adding])
 
     expect(await store.list()).toEqual([{ ...first, tags: ['slow'] }, added])
   })
@@ -406,9 +406,9 @@ describe('a cascade whose write is still in flight', () => {
 
     const removing = store.removeTag('slowed')
     await write.started
-    const added = await store.add(draft({ title: 'arrived mid-write', tags: [] }))
+    const adding = store.add(draft({ title: 'arrived mid-write', tags: [] }))
     write.release()
-    await removing
+    const [, added] = await Promise.all([removing, adding])
 
     expect(await store.list()).toEqual([{ ...first, tags: ['edit'] }, added])
   })
@@ -499,6 +499,25 @@ describe('reorder', () => {
 
     // A failed reorder leaves the order alone.
     expect((await store.list()).map((song) => song.id)).toEqual([a.id, b.id])
+  })
+
+  it('composes concurrent mutators — a reorder and a duration flush both land', async () => {
+    const store = createLibraryStore(lib.root)
+    const a = await store.add(draft({ title: 'a' }))
+    const b = await store.add(draft({ title: 'b' }))
+
+    await Promise.all([
+      store.reorder([b.id, a.id]),
+      store.updateDurations([{ id: a.id, durationSec: 120 }])
+    ])
+
+    const cached = await store.list()
+    expect(cached.map((song) => song.id)).toEqual([b.id, a.id])
+    expect(cached.find((song) => song.id === a.id)?.durationSec).toBe(120)
+    // Disk agrees with memory — neither write erased the other.
+    const reread = await createLibraryStore(lib.root).list()
+    expect(reread.map((song) => song.id)).toEqual([b.id, a.id])
+    expect(reread.find((song) => song.id === a.id)?.durationSec).toBe(120)
   })
 
   it('a failed persist leaves the cached order alone', async () => {

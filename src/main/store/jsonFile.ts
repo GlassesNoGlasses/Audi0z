@@ -95,6 +95,30 @@ export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
   }
 }
 
+/**
+ * One store mutator at a time: a mutator reads its cache, awaits the disk, then adopts — and a
+ * second mutator entering that await window reads not-yet-adopted state, erasing the first write
+ * in memory, on disk, or both. Wrap every mutator of one store with the same lock; reads stay
+ * unlocked, they only ever see adopted state.
+ */
+export function createMutatorLock(): <A extends unknown[], R>(
+  fn: (...args: A) => Promise<R>
+) => (...args: A) => Promise<R> {
+  let chain: Promise<unknown> = Promise.resolve()
+  return (fn) =>
+    (...args) => {
+      const result = chain.then(
+        () => fn(...args),
+        () => fn(...args)
+      )
+      chain = result.then(
+        () => undefined,
+        () => undefined
+      )
+      return result
+    }
+}
+
 /** One promise chain per resolved path used in `writeJsonFile`. Last caller wins.  */
 const chains = new Map<string, Promise<void>>()
 

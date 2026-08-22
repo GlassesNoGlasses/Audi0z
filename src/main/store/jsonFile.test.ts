@@ -1,4 +1,4 @@
-import { readdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
@@ -166,6 +166,17 @@ describe('writeJsonFile', () => {
     circular.self = circular
 
     await expect(writeJsonFile(file, circular)).rejects.toThrow()
+
+    expect((await readdir(lib.root)).filter((name) => name.includes('.tmp-'))).toEqual([])
+  })
+
+  it('cleans up the temp file when the DISK write fails, not just the stringify', async () => {
+    await writeJsonFile(file, { version: 1, items: ['seed'] })
+    // The atomic rename cannot land on a directory, so writeNow itself fails mid-flight.
+    await rm(file)
+    await mkdir(file)
+
+    await expect(writeJsonFile(file, { version: 1, items: ['x'] })).rejects.toThrow()
 
     expect((await readdir(lib.root)).filter((name) => name.includes('.tmp-'))).toEqual([])
   })

@@ -318,6 +318,29 @@ describe('reorderSongs', () => {
   })
 })
 
+describe('concurrent mutators', () => {
+  it('composes two quick adds — both songs land', async () => {
+    const store = createPlaylistStore(lib.root)
+    const created = await store.create('P')
+
+    await Promise.all([store.addSong(created.id, 's1'), store.addSong(created.id, 's2')])
+
+    expect((await store.list())[0]?.songIds).toEqual(['s1', 's2'])
+    expect((await createPlaylistStore(lib.root).list())[0]?.songIds).toEqual(['s1', 's2'])
+  })
+
+  it('composes a reorder with a create landing mid-write', async () => {
+    const store = createPlaylistStore(lib.root)
+    const a = await store.create('A')
+    const b = await store.create('B')
+
+    await Promise.all([store.reorder([b.id, a.id]), store.create('C')])
+
+    expect((await store.list()).map((p) => p.name)).toEqual(['B', 'A', 'C'])
+    expect((await createPlaylistStore(lib.root).list()).map((p) => p.name)).toEqual(['B', 'A', 'C'])
+  })
+})
+
 describe('failed writes', () => {
   /** Makes the next persist fail: the atomic rename cannot land on a directory. */
   async function blockWrites(): Promise<void> {

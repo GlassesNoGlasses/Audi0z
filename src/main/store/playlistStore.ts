@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { Playlist, PlaylistsFile } from '../../shared/types'
 import { playlistsJsonPath } from '../paths'
 import { ConflictError, NotFoundError } from './errors'
-import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
-import type { CreatePlaylistStore } from './storeTypes'
+import { createMutatorLock, loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
+import type { CreatePlaylistStore, PlaylistStore } from './storeTypes'
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
@@ -65,7 +65,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
     return clonePlaylist(next)
   }
 
-  return {
+  const store: PlaylistStore = {
     async list() {
       return (await load()).map(clonePlaylist)
     },
@@ -174,5 +174,21 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
       }
       return replace(current, index, { ...playlist, songIds: [...songIds] })
     }
+  }
+
+  // See `createMutatorLock`: mutators serialise so none reads the cache mid-way through another's
+  // disk round-trip. `list` stays unlocked.
+  const locked = createMutatorLock()
+  return {
+    ...store,
+    create: locked(store.create),
+    rename: locked(store.rename),
+    remove: locked(store.remove),
+    reorder: locked(store.reorder),
+    addSong: locked(store.addSong),
+    removeSong: locked(store.removeSong),
+    setPlaybackOptions: locked(store.setPlaybackOptions),
+    cascadeRemoveSong: locked(store.cascadeRemoveSong),
+    reorderSongs: locked(store.reorderSongs)
   }
 }
