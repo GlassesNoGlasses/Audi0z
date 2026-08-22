@@ -6,13 +6,7 @@ import { AppProvider, useAppDispatch, useAppState } from '../state/AppContext'
 import type { AppAction } from '../state/appReducer'
 import { useSmartPrev } from './useSmartPrev'
 
-/**
- * Driven against the real store rather than a dispatch spy: the ≤5s path has to prove the engine
- * actually heard the intent and walked its history, and the >5s path has to prove it never did.
- *
- * The `<audio>` here is a bare jsdom element with no pipeline behind it — writing `currentTime`
- * sets the property and fires nothing, which is all this hook ever asks of it.
- */
+/** Driven against the real store, not a dispatch spy: both paths turn on what the engine heard. */
 
 /** The store handle and the callback under test, from the newest render. */
 let dispatch: Dispatch<AppAction>
@@ -27,7 +21,6 @@ function Probe({ audioRef }: { audioRef: RefObject<HTMLAudioElement> }): ReactEl
 }
 
 interface Harness {
-  /** Presses Previous. */
   press(): void
   currentId(): string | null
   playToken(): number
@@ -71,7 +64,6 @@ describe('useSmartPrev', () => {
     press()
 
     expect(audio.currentTime).toBe(0)
-    // Both halves of "the engine never heard it": no step back, and no restart either.
     expect(currentId()).toBe('b')
     expect(playToken()).toBe(token)
   })

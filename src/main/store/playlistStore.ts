@@ -53,10 +53,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
     return { current, index }
   }
 
-  /**
-   * Replaces the entry at `index` with `next`, persists, and hands back a copy. Disk first via a
-   * draft, cache only after: a failed write must leave the served playlist untouched.
-   */
+  /** Disk first via a draft, cache only after: a failed write must not stick in memory. */
   async function replace(current: Playlist[], index: number, next: Playlist): Promise<Playlist> {
     const draft = [...current]
     draft[index] = next
@@ -101,8 +98,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
 
     async reorder(orderedIds) {
       const current = await load()
-      // Both halves are load-bearing: a duplicated id can cover every name while the raw list is
-      // still the wrong length, and applying it would write one playlist twice.
+      // Both halves: a duplicated id can cover every name while the list is the wrong length.
       if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
         throw new ConflictError('Reorder must name every playlist exactly once.')
       }
@@ -112,7 +108,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
         if (found === undefined) throw new NotFoundError(`No playlist with id "${id}"`)
         return found
       })
-      // Disk first, cache after, as `replace` above: a failed write must not stick in memory.
+      // Disk first, cache after: a failed write must not stick in memory.
       await persist(next)
       current.splice(0, current.length, ...next)
       return next.map(clonePlaylist)
@@ -160,14 +156,10 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
       const { current, index } = await mustFind(playlistId)
       const playlist = current[index]
       const named = new Set(songIds)
-      // Both halves are load-bearing, as in `reorder` above: a duplicated id can cover every name
-      // while the raw list is still the wrong length.
       if (named.size !== songIds.length || songIds.length !== playlist.songIds.length) {
         throw new ConflictError('Reorder must name every song exactly once.')
       }
-      // Walk the SUBMITTED ids against the stored set — not the reverse: a duplicate in the
-      // stored order could otherwise cover every name while an unknown id slips through, and the
-      // error must blame the caller's bad id, not a song that is really there.
+      // Walk the SUBMITTED ids against the stored set, not the reverse: blame the caller's bad id.
       const stored = new Set(playlist.songIds)
       for (const id of songIds) {
         if (!stored.has(id)) throw new NotFoundError(`No song with id "${id}"`)
@@ -176,8 +168,7 @@ export const createPlaylistStore: CreatePlaylistStore = (dir) => {
     }
   }
 
-  // See `createMutatorLock`: mutators serialise so none reads the cache mid-way through another's
-  // disk round-trip. `list` stays unlocked.
+  // Mutators serialise (see `createMutatorLock`); `list` stays unlocked.
   const locked = createMutatorLock()
   return {
     ...store,

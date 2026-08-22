@@ -4,32 +4,14 @@ import { useToastError } from '../hooks/useToastError'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
-/**
- * The sidebar's playlist match, in one place so the list that is drawn and the checks made against
- * a just-written name cannot drift apart.
- *
- * `lib/search` exports only the songs filter, which searches tags as well — a playlist has none, so
- * this is the plain case-insensitive substring match instead. The trim lives in here for the same
- * reason `canDrag` trims: a box holding nothing but spaces is not a filter.
- */
+/** Plain substring match, not `lib/search`: that one also searches tags, which a playlist has none of. */
 function matchesFilter(name: string, filter: string): boolean {
   return name.toLowerCase().includes(filter.trim().toLowerCase())
 }
 
 /**
- * Library + playlists, and the only place the VIEW is chosen.
- *
- * Selecting an entry changes what is listed and nothing else — the queue and the music carry on
- * untouched. Browsing is not a transport control: the queue follows only when the user plays a
- * song from the view they moved to (`SongList`). Expanding an entry to peek at its songs is
- * deliberately not even a view change.
- *
- * Which is why the entries carry two independent marks: `aria-current` is the view the user is
- * browsing, and `is-playing-source` is where the sound is coming from. Wander off the playing
- * playlist and they part company — that parting is the whole point of the second one.
- *
- * The playlist filter is local state, like `AddToPlaylistDialog`'s: the store's `query` is the song
- * list's, and narrowing the sidebar is not a request to narrow what is being browsed.
+ * Library + playlists, and the only place the VIEW is chosen — browsing never moves the queue.
+ * Hence two marks: `aria-current` is the browsed view, `is-playing-source` is where sound plays.
  */
 export function Sidebar(): ReactElement {
   const { songs, playlists, view, expandedPlaylists, playback } = useAppState()
@@ -44,19 +26,15 @@ export function Sidebar(): ReactElement {
 
   const shown = playlists.filter((playlist) => matchesFilter(playlist.name, filter))
 
-  // Dragging rearranges the stored order, so it is only offered when the rows on screen ARE that
-  // order: a filtered list says nothing about where the hidden playlists go, and a row that is
-  // being renamed has a text field in it that a drag would fight for the pointer.
+  // Drag only when the rows on screen ARE the stored order: a filter hides where the rest go, and
+  // a rename row has a text field a drag would fight for the pointer.
   const canDrag = filter.trim() === '' && renamingId === null
 
-  // Cued-but-silent (the boot state) is not "playing from": the marker needs a current song. Boot
-  // loads the library queue whether or not anyone has pressed play, so `queueId` alone would light
-  // Library up on a silent app. Deleting the playing playlist nulls `queueId`, so this self-clears.
+  // Cued-but-silent (boot) is not "playing from": boot loads the library queue with nothing playing.
   const playingQueueId = playback.currentId === null ? null : playback.queueId
 
-  // Indexed once per library change rather than scanned per row: this component re-renders on
-  // every state change, and a scan would walk the whole library for each song of each expanded
-  // playlist — the two multiply, and the library is the side that grows without bound.
+  // Indexed once per library change: this re-renders on every state change, and a per-row scan
+  // would walk the whole library for each song of each expanded playlist.
   const titleById = useMemo(() => new Map(songs.map((song) => [song.id, song.title])), [songs])
 
   const titleOf = (songId: string): string => titleById.get(songId) ?? 'Unknown song'
@@ -71,16 +49,7 @@ export function Sidebar(): ReactElement {
     dispatch({ type: 'view/selected', view: { kind: 'playlist', id: playlist.id } })
   }
 
-  /**
-   * Lands a write that named a playlist — a create or a rename — in the store and in the filter.
-   *
-   * The filter was chosen before this name existed, so leaving it up would hide the row the user
-   * just wrote and the write would read as a no-op. The filter is only spent when it is the thing
-   * in the way — a filter the new name matches goes on narrowing. The updater is functional so it
-   * reads the filter as it stands when the write RESOLVES, honouring one retyped mid-flight; and
-   * this is only ever called from `.then`, so a write that failed does not also cost the user
-   * their filter.
-   */
+  /** Lands a create/rename, spending the filter only when it would hide the just-written name. */
   function applyWrite(playlist: Playlist): void {
     dispatch({ type: 'playlists/upserted', playlist })
     setFilter((current) => (matchesFilter(playlist.name, current) ? current : ''))
@@ -103,10 +72,7 @@ export function Sidebar(): ReactElement {
     void window.api.playlists.rename(playlistId, name).then(applyWrite).catch(fail)
   }
 
-  /**
-   * Lands the drag: the dragged id is pulled out of the order and put back beside the target, and
-   * the store's answer — not the arithmetic here — is what the list is redrawn from.
-   */
+  /** Lands the drag; the list is redrawn from the store's answer, not from the arithmetic here. */
   function commitReorder(targetId: string, edge: 'before' | 'after'): void {
     if (dragId === null || dragId === targetId) return
     const ids = playlists.map((playlist) => playlist.id).filter((id) => id !== dragId)
@@ -159,15 +125,12 @@ export function Sidebar(): ReactElement {
                 draggable={canDrag}
                 onDragStart={(event) => {
                   if (!canDrag) return
-                  // No setData: the drop path reads component state, and a text/plain payload
-                  // would only feed the app's own text inputs.
+                  // No setData: the drop path reads state, and a text/plain payload would only feed our own inputs.
                   event.dataTransfer.effectAllowed = 'move'
                   setDragId(playlist.id)
                 }}
-                // The `dragId === null` guards below leave a drag this list never started
-                // completely alone — no seam, no reorder, nothing cancelled on the way past. A drag
-                // is ours only between our own dragStart and dragEnd, and nothing downstream takes
-                // a dropped file any more, so the containment is the whole point.
+                // A drag is ours only between our own dragStart and dragEnd; the `dragId === null`
+                // guards leave every other drag completely alone.
                 onDragOver={(event) => {
                   if (dragId === null) return
                   event.preventDefault()
@@ -275,8 +238,7 @@ export function Sidebar(): ReactElement {
         </ul>
       </nav>
 
-      {/* Outside the nav, so the list scrolls past it and no number of playlists can push the one
-          way of making another below the fold. */}
+      {/* Outside the nav, so no number of playlists can push it below the fold. */}
       <div className="sidebar-footer">
         {creating ? (
           <form className="inline-form" onSubmit={create}>

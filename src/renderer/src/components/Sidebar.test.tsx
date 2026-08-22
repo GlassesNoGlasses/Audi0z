@@ -24,10 +24,7 @@ const three = [
   playlist('p3', 'Chill', [])
 ]
 
-/**
- * jsdom implements no drag pipeline, so the `DataTransfer` the handlers write to is hand-rolled —
- * only the two methods and two properties the sidebar touches.
- */
+/** jsdom implements no drag pipeline, so the `DataTransfer` is hand-rolled. */
 function dataTransferStub(): DataTransfer {
   const store: Record<string, string> = {}
   return {
@@ -40,10 +37,7 @@ function dataTransferStub(): DataTransfer {
   } as unknown as DataTransfer
 }
 
-/**
- * jsdom has no `DragEvent` constructor either, so testing-library builds a plain `Event` — which
- * drops `clientY`, the one coordinate the drop edge is decided from. Put it back by hand.
- */
+/** jsdom has no `DragEvent`, so the plain `Event` built instead needs its `clientY` put back. */
 function dragOverAt(target: HTMLElement, dataTransfer: DataTransfer, clientY: number): void {
   const event = createEvent.dragOver(target, { dataTransfer })
   Object.defineProperty(event, 'clientY', { value: clientY })
@@ -52,7 +46,6 @@ function dragOverAt(target: HTMLElement, dataTransfer: DataTransfer, clientY: nu
 
 const items = (): HTMLElement[] => [...document.querySelectorAll<HTMLElement>('.playlist-item')]
 
-/** The playlist names in sidebar order — what a reorder is supposed to change. */
 const itemNames = (): string[] =>
   items().map((li) => li.querySelector('.sidebar-entry')?.textContent ?? '')
 
@@ -60,11 +53,7 @@ const itemNames = (): string[] =>
 const draggableFlags = (): (string | null)[] => items().map((li) => li.getAttribute('draggable'))
 
 describe('Sidebar', () => {
-  /**
-   * The view and the queue are separate things. Moving around the sidebar to see what is in a
-   * playlist is not a request to stop the music, so it does not — the queue only changes when the
-   * user plays something from the view they moved to.
-   */
+  /** The view and the queue are separate: browsing a playlist does not hand it the queue. */
   it('shows a playlist without disturbing what is playing', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes] })
@@ -75,7 +64,6 @@ describe('Sidebar', () => {
 
     await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
 
-    // The playlist is on screen in its own order, and playback carried straight on.
     expect(songTitles()).toEqual(['Charlie Tune', 'Alpha Mix'])
     expect(nowPlaying()).toBe('Alpha Mix')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
@@ -96,12 +84,7 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'true')
   })
 
-  /**
-   * The other half of that split, drawn rather than merely honoured: `aria-current` says which
-   * entry is being BROWSED, and the marker below says which one the sound is coming from. They are
-   * independent axes, so a test that only ever looked at a view whose queue it also owned would
-   * not be able to tell the two apart.
-   */
+  /** `aria-current` marks the entry being browsed; `is-playing-source` the one being heard. */
   it('marks the playlist the sound is coming from, not the one being browsed', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [playlist('p1', 'Late night', ['a'])] })
@@ -129,18 +112,14 @@ describe('Sidebar', () => {
 
     const library = within(sidebar()).getByRole('button', { name: 'Library' })
     expect(library).toHaveClass('is-playing-source')
-    // The two axes are independent, not exclusive: the library is both the view being browsed and
-    // the queue being heard, so one entry carries both marks at once.
+    // Independent axes, not exclusive: this entry is both the view browsed and the queue heard.
     expect(library).toHaveAttribute('aria-current', 'true')
     expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).not.toHaveClass(
       'is-playing-source'
     )
   })
 
-  /**
-   * Boot cues the library queue unconditionally, with nothing playing. Marking the entry then would
-   * claim sound is coming from a library nobody has pressed play on yet.
-   */
+  /** Boot cues the library queue with nothing playing, which is not sound coming from it. */
   it('marks nothing while the queue is only cued at boot', async () => {
     seedApi({ songs, playlists: [mixes] })
     await renderApp()
@@ -161,7 +140,6 @@ describe('Sidebar', () => {
 
     expect(within(sidebar()).getByText('Charlie Tune')).toBeInTheDocument()
     expect(within(sidebar()).getByRole('button', { name: 'Collapse Mixes' })).toBeInTheDocument()
-    // Still the library queue, still playing the same song.
     expect(nowPlaying()).toBe('Alpha Mix')
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune'])
     expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
@@ -178,10 +156,7 @@ describe('Sidebar', () => {
     expect(within(sidebar()).getByText('playlist is empty')).toBeInTheDocument()
   })
 
-  /**
-   * The sidebar's filter is its own. The app's search box says what the user is browsing, so
-   * narrowing the playlist list must leave the songs underneath exactly where they were.
-   */
+  /** The sidebar's filter is its own: narrowing the playlist list must not move the songs. */
   it('filters the playlist list by name, case-insensitively', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes, playlist('p2', 'Late night', [])] })
@@ -214,10 +189,7 @@ describe('Sidebar', () => {
     expect(within(sidebar()).queryByRole('button', { name: 'Mixes' })).not.toBeInTheDocument()
   })
 
-  /**
-   * Pinned to the panel's edge rather than trailing the list: the playlists scroll past it, so no
-   * number of playlists can push the one way of making another below the fold.
-   */
+  /** Pinned outside the scrolling list, so no number of playlists can push it below the fold. */
   it('keeps the new playlist button outside the scrolling list', async () => {
     seedApi({ songs, playlists: [mixes] })
     await renderApp()
@@ -242,12 +214,7 @@ describe('Sidebar', () => {
     )
   })
 
-  /**
-   * The filter was chosen before the new name existed, so re-filtering the whole list by it is what
-   * makes a successful create look like a no-op: the row is appended to the store and immediately
-   * excluded from the render. When the filter would hide the very thing the user just made, the
-   * filter is the thing that gives way.
-   */
+  /** A filter chosen before the new name existed would hide the row the create just made. */
   it('clears the filter when the new playlist would not match it', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes] })
@@ -263,17 +230,11 @@ describe('Sidebar', () => {
     await waitFor(() =>
       expect(within(sidebar()).getByRole('button', { name: 'Late night' })).toBeInTheDocument()
     )
-    // The box is visibly empty and the rest of the list came back with it: the row is on screen
-    // because the filter went, not because it was smuggled past a filter that still says `mix`.
     expect(search).toHaveValue('')
     expect(within(sidebar()).getByRole('button', { name: 'Mixes' })).toBeInTheDocument()
   })
 
-  /**
-   * The other half of that rule: the filter is spent only when it is the thing in the way. A filter
-   * the new name matches is doing its job — the row appears underneath it and the narrowing, which
-   * the user typed on purpose, survives the create.
-   */
+  /** The other half of that rule: a filter the new name matches is doing its job, so it stays. */
   it('keeps the filter when the new playlist matches it', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes] })
@@ -293,11 +254,7 @@ describe('Sidebar', () => {
     expect(within(sidebar()).queryByRole('button', { name: 'Mixes' })).not.toBeInTheDocument()
   })
 
-  /**
-   * And it is spent on the way back from a create that worked, not on the way out: a store that
-   * refused to write has produced nothing to make room for, so taking the filter as well would
-   * charge the user twice for one failure.
-   */
+  /** A create the store refused made nothing to make room for, so the filter is not spent. */
   it('keeps the filter when the playlist will not save', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs, playlists: [mixes] })
@@ -347,17 +304,12 @@ describe('Sidebar', () => {
     await user.click(within(sidebar()).getByRole('button', { name: 'Delete playlist Mixes' }))
     await user.click(screen.getByRole('button', { name: 'Delete' }))
 
-    // The view has nowhere to be but the library; the queue was never the playlist's to take.
     await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune']))
     expect(nowPlaying()).toBe('Alpha Mix')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
 
-  /**
-   * The complement of the test above: here the deleted playlist IS the queue. Leaving `queueId`
-   * pointing at it would leave the transport driving a playlist that no longer exists — the toggles
-   * persist to whichever store owns the queue, so shuffle would be written to a dead id and fail.
-   */
+  /** The toggles persist to whichever store owns the queue, so a dead `queueId` breaks them. */
   it('stops the queue and keeps the toggles quiet when the playing playlist is deleted', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs, playlists: [mixes] })
@@ -379,15 +331,11 @@ describe('Sidebar', () => {
     expect(api.playlists.setPlaybackOptions).not.toHaveBeenCalled()
     expect(screen.queryByRole('alert')).toBeNull()
 
-    // Empty, not broken: the library is still one click away from being the queue again.
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
     expect(nowPlaying()).toBe('Alpha Mix')
   })
 
-  /**
-   * jsdom has no layout either, so the row's rect is stubbed: the edge the drop lands on is decided
-   * against the row's own midpoint, and a stubbed rect is what makes that midpoint a real number.
-   */
+  /** jsdom has no layout, so the drop target's rect — and with it its midpoint — is stubbed. */
   it('reorders playlists by dragging one below another', async () => {
     const api = seedApi({ songs, playlists: three })
     await renderApp()
@@ -399,8 +347,7 @@ describe('Sidebar', () => {
 
     const dataTransfer = dataTransferStub()
     fireEvent.dragStart(alpha, { dataTransfer })
-    // Either side of the row's own midpoint: above it the seam is the row's top edge, below it the
-    // bottom one, and the same pointer position must not mean both.
+    // Either side of the row's midpoint: above it the seam is the top edge, below it the bottom.
     dragOverAt(chill, dataTransfer, 45)
     expect(chill.className).toContain('drop-before')
     dragOverAt(chill, dataTransfer, 55)
@@ -408,7 +355,7 @@ describe('Sidebar', () => {
     fireEvent.drop(chill, { dataTransfer })
 
     expect(api.playlists.reorder).toHaveBeenCalledWith(['p2', 'p3', 'p1'])
-    // The list is the store's answer, not the guess the drag made — nothing moves until it lands.
+    // The list is the store's answer, not the guess the drag made.
     await waitFor(() => expect(itemNames()).toEqual(['Bravo', 'Chill', 'Alpha']))
     expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
   })
@@ -426,12 +373,7 @@ describe('Sidebar', () => {
     expect(setData).not.toHaveBeenCalled()
   })
 
-  /**
-   * A file dragged in from the OS never went through the sidebar's own `dragStart`, so `dragId` is
-   * still null and every handler on the row has to leave the event completely alone: no seam, no
-   * reorder, and neither `preventDefault` nor `stopPropagation` on the way past. Nothing downstream
-   * takes a dropped file any more, so what is under test is the containment itself.
-   */
+  /** A drag from the OS never hit the sidebar's `dragStart`, so the handlers leave it alone. */
   it('leaves a drag it never started completely alone', async () => {
     const api = seedApi({ songs, playlists: three })
     await renderApp()
@@ -442,7 +384,6 @@ describe('Sidebar', () => {
 
     dragOverAt(alpha, dataTransfer, 45)
 
-    // No seam drawn: the row is not offering to receive anything.
     expect(items().some((li) => li.className.includes('drop-'))).toBe(false)
 
     const dropped = createEvent.drop(alpha, { dataTransfer })
@@ -496,7 +437,6 @@ describe('Sidebar', () => {
 
     await user.click(within(sidebar()).getByRole('button', { name: 'Rename Alpha' }))
 
-    // Every row, not just the one being renamed: the list is mid-edit, so none of it may move.
     expect(draggableFlags()).toEqual(['false', 'false', 'false'])
   })
 
@@ -517,11 +457,7 @@ describe('Sidebar', () => {
     )
   })
 
-  /**
-   * The rule generalises: a write whose result the filter would hide spends the filter. Renaming a
-   * playlist out of the filter it was found under would otherwise make the row vanish on commit,
-   * which reads as a delete rather than as the rename the user just asked for.
-   */
+  /** The rule generalises: a rename that moves the row out of the filter spends the filter too. */
   it('clears the filter when a rename moves a playlist out of it', async () => {
     const user = userEvent.setup()
     seedApi({ songs, playlists: [mixes, playlist('p2', 'Late night', [])] })

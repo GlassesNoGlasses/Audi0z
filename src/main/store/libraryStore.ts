@@ -36,12 +36,11 @@ function isNotEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim() !== ''
 }
 
-// shallow copy to not modify in-memory loaded library
 function cloneSong(song: Song): Song {
   return { ...song, tags: [...song.tags] }
 }
 
-// adopt a rewrite of a song object in place; original song returned if failed rewrite
+// Applies a rewrite to the cached array in place; `null` leaves that song as it is.
 function adopt(current: Song[], rewrite: (song: Song) => Song | null): void {
   for (let index = 0; index < current.length; index++) {
     const rewritten = rewrite(current[index])
@@ -56,7 +55,6 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
     return file.songs
   })
 
-  // writes current songs to library file `library.json`
   async function persist(current: Song[]): Promise<void> {
     const file: LibraryFile = { version: 1, songs: current }
     await writeJsonFile(filePath, file)
@@ -103,7 +101,6 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       return cloneSong(updated)
     },
 
-    // update in-memory library songs with their duration
     async updateDurations(entries) {
       const byId = new Map(entries.map((entry) => [entry.id, entry.durationSec]))
       const current = await load()
@@ -174,8 +171,7 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       return cloneSong(updated)
     },
 
-    // the library's stored order IS the Custom Order the renderer shows, so rearranging it is a
-    // write like any other; same contract as playlistStore.reorder — every song exactly once
+    // The stored order IS the renderer's Custom Order; every song exactly once, as `playlistStore`.
     async reorder(orderedIds) {
       const current = await load()
       if (new Set(orderedIds).size !== orderedIds.length || orderedIds.length !== current.length) {
@@ -187,8 +183,7 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
         if (found === undefined) throw new NotFoundError(`No song with id "${id}"`)
         return found
       })
-      // Disk first, cache after: a failed write must leave the served order untouched, or the
-      // next unrelated persist would commit an order the caller was told did not save.
+      // Disk first, cache after: a failed write must not stick in memory.
       await persist(next)
       current.splice(0, current.length, ...next)
     },
@@ -203,8 +198,7 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
     }
   }
 
-  // See `createMutatorLock`: mutators serialise so none reads the cache mid-way through another's
-  // disk round-trip. `list`/`getSong` stay unlocked.
+  // Mutators serialise (see `createMutatorLock`); `list`/`getSong` stay unlocked.
   const locked = createMutatorLock()
   return {
     ...store,

@@ -7,13 +7,8 @@ import { readableTextColor } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
 /**
- * The registry, and the only place a tag is created, renamed or deleted. Which tags a *song*
- * carries is chosen on the song itself; this dialog is about which tags exist at all.
- *
- * Renaming and deleting cascade through every song that carries the tag, and the main process
- * announces no library change when they do — so both re-read the library as well as the registry,
- * or the rows behind the dialog would keep showing the old name until something else refreshed
- * them.
+ * The registry: the only place a tag is created, renamed or deleted.
+ * Rename and delete cascade into songs with no library event of their own — hence `refreshLibrary`.
  */
 export function TagsDialog(): ReactElement {
   const { tags } = useAppState()
@@ -100,11 +95,7 @@ export function TagsDialog(): ReactElement {
           </div>
         )}
 
-        {/*
-          Deleting is confirmed inside this dialog rather than through the global one: there is a
-          single dialog slot, so opening that would close this — and the user would be back to the
-          song list with the registry half-edited.
-        */}
+        {/* Inline, not the global confirm dialog: one dialog slot, so that would close this. */}
         {confirming ? (
           <div className="confirm-strip">
             <span>

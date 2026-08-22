@@ -53,11 +53,7 @@ function draftSong(overrides: Partial<Song> = {}): Song {
 
 let lib: TmpLibrary
 
-/**
- * `overrides` replaces individual deps — the compression gate is the only one any test has needed,
- * and every other fixture leaves it out on purpose: `awaitCompression` is optional, so its absence
- * here is what proves the handlers still work in a process with nothing tracking swaps.
- */
+/** `overrides` replaces individual deps; omitting `awaitCompression` is deliberate — it is optional. */
 function setup(overrides: Partial<LibraryIpcDeps> = {}): Harness {
   const handlers = new Map<string, Listener>()
   const ipc: Pick<IpcMain, 'handle'> = {
@@ -168,20 +164,13 @@ describe(IPC.library.list, () => {
     expect(harness.fileExists).not.toHaveBeenCalled()
   })
 
-  // The projection's invariants (missing/zero-byte files, id encoding, out-of-dir fileName,
-  // measured exactly once) are pinned in `songDto.test.ts` — here only the wiring is.
+  // The projection's own invariants are pinned in `songDto.test.ts`; here only the wiring is.
 
-  /**
-   * The same courtesy the media protocol pays. `compressExisting` renames the new file into place
-   * and only then removes the old one, so a listing that raced the swap would measure a path that
-   * is already gone and report a song that compressed perfectly as missing — a verdict the
-   * renderer keeps for the rest of the session, since nothing re-derives `exists` on its own.
-   */
+  /** A listing that raced the swap would measure a path already gone and report the song missing. */
   it('waits out an in-flight compression before measuring a song', async () => {
     let release!: () => void
     let swapped = false
-    // The swap and the settle of the compression job are one moment: the rename lands, the record
-    // is updated, and only then is a waiter let through.
+    // Swap and settle are one moment: the rename lands, the record updates, then waiters go through.
     const gate = new Promise<void>((resolve) => {
       release = () => {
         swapped = true
@@ -200,11 +189,7 @@ describe(IPC.library.list, () => {
     )
 
     const pending = harness.invoke<SongDto[]>(IPC.library.list)
-    // Releasing straight away would pass whether or not the gate is awaited, since the swap would
-    // already have happened by the time the record is re-read. So prove the listener is *stuck*
-    // first: the gate is the only thing here that is not already resolved, and the sentinel is a
-    // macrotask, so a listing that had run to completion — its continuation being a microtask —
-    // would win this race.
+    // The setImmediate sentinel is a macrotask, so a listing that had already settled would win.
     const raced = Promise.race([
       pending.then(() => 'settled'),
       new Promise<string>((resolve) => setImmediate(() => resolve('waiting')))
@@ -252,11 +237,7 @@ describe(IPC.library.add, () => {
     expect(harness.importSong).not.toHaveBeenCalled()
   })
 
-  /**
-   * The picker's "All files" escape hatch hands back whatever the user clicked. A file the media
-   * protocol cannot label would be copied in verbatim and then never play — so it is turned away
-   * at the door, with a sentence the renderer can show. The downloader never comes through here.
-   */
+  /** The picker's "All files" escape hatch can hand back anything; the downloader never comes here. */
   it.each([
     'track.aiff',
     'track.wma',
@@ -360,7 +341,6 @@ describe(IPC.library.updateDurations, () => {
     ).rejects.toThrow()
   })
 
-  /** One bad entry is a bad payload: nothing in the batch is written, not even the good half. */
   it('writes none of a batch when one entry is malformed', async () => {
     const harness = setup()
     const a = await harness.libraryStore.add(draftSong())
@@ -444,10 +424,7 @@ describe(IPC.library.remove, () => {
     expect((await harness.playlistStore.list())[0]?.songIds).toEqual([added.id])
   })
 
-  /**
-   * `shell.trashItem` rejects for a path that is not there, so trashing first would make exactly
-   * the rows the UI marks "File missing" the ones that can never be removed.
-   */
+  /** `shell.trashItem` rejects for a path that is not there, so trashing first would strand exactly the rows the UI marks "File missing". */
   it('removes the row without trashing when the file is already gone', async () => {
     const harness = setup()
     const added = await harness.libraryStore.add(draftSong())
@@ -507,10 +484,7 @@ describe(IPC.library.compress, () => {
     })
   })
 
-  /**
-   * A re-encode that came out no smaller is a success with nothing recorded, not a failure: the
-   * dto is the song exactly as it already stood, and `shrank` is what tells the UI apart.
-   */
+  /** A re-encode that came out no smaller is a success with nothing recorded — `shrank` is the tell. */
   it('carries through a compression that kept the original', async () => {
     const harness = setup()
     const added = await harness.libraryStore.add(draftSong())
@@ -617,7 +591,6 @@ describe('tag channels', () => {
     expect((await harness.libraryStore.getSong(second.id))?.tags).toEqual(['edit'])
   })
 
-  /** The cascade must use the name the tag had *before* the rename, not the new one. */
   it('cascades from the old name even when only the case changed', async () => {
     const harness = setup()
     const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
@@ -628,7 +601,6 @@ describe('tag channels', () => {
     expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['Slowed'])
   })
 
-  /** Opening the rename field, changing nothing and confirming must not wipe the tag. */
   it('leaves every song alone when a tag is renamed to the name it already has', async () => {
     const harness = setup()
     const created = await harness.invoke<Tag>(IPC.tags.create, 'slowed')
@@ -670,7 +642,6 @@ describe('tag channels', () => {
     expect((await harness.libraryStore.getSong(song.id))?.tags).toEqual(['edit'])
   })
 
-  /** Removing something that is already gone is what the user wanted, so it is not an error. */
   it('says nothing and touches nothing when removing an unknown tag', async () => {
     const harness = setup()
     const song = await harness.libraryStore.add(draftSong({ tags: ['slowed'] }))
@@ -687,15 +658,7 @@ describe('tag channels', () => {
   })
 })
 
-/**
- * A tag rename or delete replaces two files, and no filesystem commits two renames as one — so the
- * window between them cannot be closed, only pointed somewhere harmless. Which half a crash strands
- * is decided entirely by the order, and these tests watch that order directly.
- *
- * A crash is stood in for by making the *second* write reject, and the residue is read back through
- * **fresh** stores, which is what a restart is: a store caches its document for the life of the
- * process, so only the bytes on disk say what actually survived.
- */
+/** A crash is the *second* write rejecting; residue is read back through fresh stores, which is what a restart is. */
 describe('tag cascade ordering', () => {
   interface Cascade {
     libraryStore: LibraryStore
@@ -707,11 +670,7 @@ describe('tag cascade ordering', () => {
     deps: Partial<LibraryIpcDeps>
   }
 
-  /**
-   * Real stores, with the library pass and the registry commit both announcing themselves. `crash`
-   * makes the registry commit reject the way a lost power supply would — after the songs have
-   * already moved.
-   */
+  /** Real stores, both cascade writes announcing themselves; `crash` rejects the registry commit. */
   function cascade({ crash = false } = {}): Cascade {
     const libraryStore = createLibraryStore(lib.root)
     const tagStore = createTagStore(lib.root)
@@ -777,11 +736,6 @@ describe('tag cascade ordering', () => {
     expect(order).toEqual(['library', 'registry'])
   })
 
-  /**
-   * The tags dialog lists the registry and nothing else, so committing it first would tell the user
-   * a rename succeeded while every song still carried the dead string — and nothing would prompt
-   * the retry that repairs it. Stranding the other half leaves the tag plainly un-renamed.
-   */
   it('leaves the registry holding the old name when a rename never reaches the commit', async () => {
     const { deps, tagStore, libraryStore } = cascade({ crash: true })
     const harness = setup(deps)
@@ -803,7 +757,6 @@ describe('tag cascade ordering', () => {
       'power lost'
     )
 
-    // Fresh stores, the way the next launch would come up.
     const retry = cascade()
     const stranded = await libraryBytes()
 
@@ -815,7 +768,6 @@ describe('tag cascade ordering', () => {
     expect((await createLibraryStore(lib.root).getSong(song.id))?.tags).toEqual(['slow'])
   })
 
-  /** The residue of an interrupted delete is an ordinary unused tag — with a Delete button on it. */
   it('leaves the tag listed when a remove never reaches the commit', async () => {
     const { deps, tagStore, libraryStore } = cascade({ crash: true })
     const harness = setup(deps)
@@ -847,10 +799,7 @@ describe('tag cascade ordering', () => {
     expect((await createLibraryStore(lib.root).getSong(song.id))?.tags).toEqual(['edit'])
   })
 
-  /**
-   * Cascading first must not cost the clash check: `resolveRename` answers it without writing, so a
-   * refused rename still never touches `library.json`.
-   */
+  /** `resolveRename` answers the clash check without writing, so a refused rename never touches `library.json`. */
   it('refuses a clashing rename before a single song moves', async () => {
     const { deps, renameTag, tagStore, libraryStore } = cascade()
     const harness = setup(deps)
@@ -867,7 +816,6 @@ describe('tag cascade ordering', () => {
     expect(await libraryBytes()).toBe(before)
   })
 
-  /** The reorder's easy mistake: cascading the raw payload instead of the name the registry keeps. */
   it('cascades the trimmed name onto the songs', async () => {
     const { deps, renameTag, tagStore, libraryStore } = cascade()
     const harness = setup(deps)
@@ -913,7 +861,6 @@ describe('playlist channels', () => {
     expect(await harness.invoke<Playlist[]>(IPC.playlists.list)).toEqual([])
   })
 
-  /** The sidebar's order is this array's order, so rearranging it is a write like any other. */
   it('reorders the playlists and hands back the stored order', async () => {
     const harness = setup()
     const first = await harness.invoke<Playlist>(IPC.playlists.create, 'First')
@@ -934,7 +881,6 @@ describe('playlist channels', () => {
     ])
   })
 
-  /** Same write, one level down: the playlist's own song order. */
   it('reorders the songs of one playlist and hands back the stored playlist', async () => {
     const harness = setup()
     const created = await harness.invoke<Playlist>(IPC.playlists.create, 'Mix')

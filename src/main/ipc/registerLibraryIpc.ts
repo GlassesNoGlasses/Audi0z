@@ -33,10 +33,7 @@ export interface LibraryIpcDeps {
   audioDir: string // absolute
   importSong(request: AddSongRequest): Promise<Song>
   compressSong(id: string): Promise<{ song: Song; shrank: boolean }>
-  /**
-   * Usually `compressionJobs.waitFor` — the same seam the media protocol takes. Absent means
-   * nothing is tracking compressions; an undefined return means this song has none in flight.
-   */
+  /** Usually `compressionJobs.waitFor`; an undefined return means none in flight for this song. */
   awaitCompression?(id: string): Promise<void> | undefined
   /** Moves a file to the OS trash; rejects if the user or the OS refuses. */
   trashItem(absPath: string): Promise<void>
@@ -82,7 +79,6 @@ function parseAddSongRequest(value: unknown): AddSongRequest {
   }
 }
 
-// file extension check
 function assertPlayableSource(sourcePath: string): void {
   if (!isPlayableFile(sourcePath)) {
     throw new InvalidPayloadError(
@@ -93,7 +89,6 @@ function assertPlayableSource(sourcePath: string): void {
   }
 }
 
-// > 0 seconds
 function assertDuration(value: unknown, field: string): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
     throw new InvalidPayloadError(`${field} must be a positive finite number`)
@@ -163,11 +158,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return song
   }
 
-  /**
-   * `compressExisting` renames the new file into place and only then removes the old one, so a
-   * projection that raced the swap would measure a path that is already gone and report a song that
-   * compressed perfectly as missing. Settle the swap and re-read the record, then project.
-   */
+  /** Settle the compression swap and re-read: a racing projection stats a path already gone. */
   async function toDto(song: Song): Promise<SongDto> {
     const settled = deps.awaitCompression?.(song.id)
     if (settled) {
@@ -195,7 +186,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return toDto(await deps.libraryStore.update(songId, parsed))
   })
 
-  /** The backfill's flush: update songs with their durations periodically in the back */
   ipc.handle(IPC.library.updateDurations, async (_event, entries: unknown): Promise<SongDto[]> => {
     if (!Array.isArray(entries)) throw new InvalidPayloadError('entries must be an array')
     const parsed = entries.map((entry) => {
@@ -212,7 +202,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return Promise.all(updated.map((song) => toDto(song)))
   })
 
-  // attempts to remove a song from the libray. If OS rejects, song remains
+  // Trash first: if the OS refuses, the song stays in the library.
   ipc.handle(IPC.library.remove, async (_event, id: unknown): Promise<void> => {
     const song = await requireSong(id)
     const absPath = audioPathOf(song)
@@ -221,11 +211,7 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     await deps.playlistStore.cascadeRemoveSong(song.id)
   })
 
-  /**
-   * The library's stored order is the renderer's Custom Order. Answers nothing: no file changed,
-   * and the renderer already holds every DTO — it applies the order it sent. Re-projecting here
-   * would stat the whole library and wait behind any in-flight compression for an order-only write.
-   */
+  /** Answers nothing — the renderer applied the order it sent; re-projecting stats every song. */
   ipc.handle(IPC.library.reorder, async (_event, orderedIds: unknown): Promise<void> => {
     await deps.libraryStore.reorder(parseOrderedIds(orderedIds))
   })
@@ -236,7 +222,6 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     return { song: await toDto(song), shrank }
   })
 
-  /** The library audio folder itself; for settings & transparency */
   ipc.handle(IPC.library.showFolder, async (): Promise<void> => {
     deps.revealInFolder(deps.audioDir)
   })

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { createCompressionJobs } from './compressionJobs'
 
 describe('createCompressionJobs', () => {
-  /** Tracking is a side channel: the caller must get the same promise it would have gotten. */
   it('passes the job result and rejection through untouched', async () => {
     const jobs = createCompressionJobs()
     await expect(jobs.run('a', async () => 'done')).resolves.toBe('done')
@@ -15,11 +14,7 @@ describe('createCompressionJobs', () => {
     expect(createCompressionJobs().waitFor('a')).toBeUndefined()
   })
 
-  /**
-   * The whole point of the module: a reader that arrives mid-transcode is parked until the file
-   * stops moving. A failure releases it just the same — the original file is still there, so
-   * "settled" is all a waiter needs, and a waiter must never inherit the job's rejection.
-   */
+  /** A reader arriving mid-transcode is parked until the file stops moving, however it stops. */
   it('holds a waiter until the in-flight job settles, success or failure', async () => {
     const jobs = createCompressionJobs()
 
@@ -27,8 +22,7 @@ describe('createCompressionJobs', () => {
     const gate = new Promise<void>((resolve) => (release = resolve))
     const running = jobs.run('a', () => gate)
     let waited = false
-    // Optional-chained because `waitFor` answers undefined for an idle song: the final assertion
-    // is what proves this one was in flight and the waiter really ran.
+    // Optional-chained because `waitFor` answers undefined for an idle song.
     const waiter = jobs.waitFor('a')?.then(() => (waited = true))
     await Promise.resolve()
     expect(waited).toBe(false)
@@ -54,8 +48,7 @@ describe('createCompressionJobs', () => {
   it('forgets the job once it settles', async () => {
     const jobs = createCompressionJobs()
     await jobs.run('a', async () => 'done')
-    // Awaited separately because `run` hands back the job's own promise: the entry is dropped off
-    // the tracked one, a couple of microtasks behind it.
+    // `run` hands back the job's own promise; the entry is dropped a few microtasks behind it.
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(jobs.waitFor('a')).toBeUndefined()
   })

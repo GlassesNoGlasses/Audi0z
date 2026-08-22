@@ -2,45 +2,28 @@ import { useEffect, useRef, type Dispatch } from 'react'
 import type { SongDto } from '../../../shared/types'
 import type { AppAction } from '../state/appReducer'
 
-/**
- * How many files are read at once. Each probe is a `media://` request like any other, and the main
- * process serves them off a pool of four threads the playing song is also fetching its own bytes
- * through — so the backfill only runs while nothing is playing (`idle`), and even then two at a
- * time. The song has first claim, and this is what enforces it.
- */
+/** Probes share the main process's four-thread `media://` pool with the playing song. */
 const MAX_CONCURRENT = 2
 
 /** How many measured songs ride in one library write. */
 const FLUSH_SIZE = 8
 
 /**
- * Fills in the playing time of songs that have none.
+ * Fills in missing playing times by decoding headers in the renderer, persisted in batches.
  *
- * A song's duration is not known until something has decoded its header, and doing that in the
- * main process would mean an ffprobe run per song before the window could even be drawn. So the
- * renderer measures instead: the list paints immediately with `–:––` where a time is missing, and
- * these probes fill them in behind it and persist what they find, once, for good.
- *
- * What they find goes back in batches. A first launch measures the whole library, and a write per
- * song would rewrite (and fsync) the whole of `library.json` once per song, with a re-render of the
- * list behind each one.
- *
- * It is deliberately silent. Nobody asked for this work, so a file that will not answer is asked
- * once and then left alone — no toast, no retry, no second look this session.
- *
- * `idle` is the caller saying nothing is playing. While something is, the backfill takes no new
- * reads: whatever is queued waits, marked, for the music to stop.
+ * Silent by design: a file that will not answer is asked once and never retried this session.
+ * `idle` (nothing playing) gates new reads — the playing song has first claim on the media pool.
  */
 export function useDurationBackfill(
   songs: SongDto[],
   dispatch: Dispatch<AppAction>,
   idle: boolean
 ): void {
-  /** Ids already taken a run at, so a growing library never re-measures what it has measured. */
+  /** Ids already taken a run at, so a growing library never re-measures. */
   const attempted = useRef<Set<string>>(new Set())
   /** Songs enqueued and not yet picked up by a reader. */
   const waiting = useRef<SongDto[]>([])
-  /** Measurements taken and not yet written — the batch the next flush hands to the library. */
+  /** Measurements taken and not yet written. */
   const pending = useRef<Array<{ id: string; durationSec: number }>>([])
   const readers = useRef(0)
   const mounted = useRef(true)
@@ -50,8 +33,7 @@ export function useDurationBackfill(
   const aborts = useRef<Set<() => void>>(new Set())
 
   useEffect(() => {
-    // Read here rather than in the cleanup: these four containers are created once and only ever
-    // mutated, so holding them is holding the same collections the cleanup would have looked up.
+    // Safe to read here: these containers are created once and only ever mutated.
     const seen = attempted.current
     const queued = waiting.current
     const batched = pending.current
@@ -60,13 +42,11 @@ export function useDurationBackfill(
     mounted.current = true
     return () => {
       mounted.current = false
-      // Measurements taken but not yet written are forgotten with their songs un-marked: the next
-      // mount re-probes them, which is cheaper than an async write racing an unmount.
+      // Un-mark unwritten measurements: the next mount re-probes them.
       for (const entry of batched) seen.delete(entry.id)
       batched.length = 0
-      // Nothing queued or in flight got its chance, so forget it was ever asked for. React's
-      // development double-mount runs this between two mounts, and a song marked attempted on the
-      // first would otherwise be skipped for the whole life of the second.
+      // React's dev double-mount runs this between two mounts, so anything un-run must be un-marked
+      // or it is skipped for the whole life of the second mount.
       for (const song of queued) seen.delete(song.id)
       queued.length = 0
       for (const abort of [...running]) abort()
@@ -74,8 +54,7 @@ export function useDurationBackfill(
     }
   }, [])
 
-  // Declared above the effect below so it lands first on an `idle` change: the readers that effect
-  // spawns must see the new answer, not the one from the render before.
+  // Declared first so an `idle` change lands here before the effect that spawns readers runs.
   useEffect(() => {
     idleRef.current = idle
   }, [idle])
@@ -84,9 +63,7 @@ export function useDurationBackfill(
     for (const song of songs) {
       if (!song.exists || song.durationSec !== undefined) continue
       if (attempted.current.has(song.id)) continue
-      // Marked on the way IN, not on the way out: the readers below outlive this effect (every
-      // measurement dispatches, which re-runs it), and a song already waiting its turn must not be
-      // queued a second time by the render that follows.
+      // Marked on the way IN: readers outlive this effect, so a queued song must not re-queue.
       attempted.current.add(song.id)
       waiting.current.push(song)
     }
@@ -99,7 +76,7 @@ export function useDurationBackfill(
         const settle = (seconds: number | null): void => {
           audio.removeEventListener('loadedmetadata', onLoaded)
           audio.removeEventListener('error', onFailed)
-          // Lets go of the file rather than leaving a probe nobody is waiting for holding it open.
+          // Lets go of the file rather than leaving an abandoned probe holding it open.
           audio.removeAttribute('src')
           aborts.current.delete(abort)
           resolve(seconds)
@@ -124,11 +101,7 @@ export function useDurationBackfill(
       })
     }
 
-    /**
-     * Hands whatever has been measured to the library in one write. Taking the batch with `splice`
-     * is what lets two readers flush at once without either seeing the other's entries — so no
-     * measurement is ever written twice, and none is left behind.
-     */
+    /** One write for what has been measured; `splice` lets two readers flush without overlap. */
     async function flush(): Promise<void> {
       const batch = pending.current.splice(0, pending.current.length)
       if (batch.length === 0) return
@@ -138,25 +111,19 @@ export function useDurationBackfill(
           dispatch({ type: 'library/songsUpdated', songs: updated })
         }
       } catch {
-        // Silent by design: a library that will not take a write says so loudly on every path
-        // the user actually asked for, and a toast per batch would bury those.
+        // Silent by design: a toast per batch would bury the failures the user asked for.
       }
     }
 
     async function drain(): Promise<void> {
-      // Re-read on every turn: playback starting mid-queue stops the next read, never the one in
-      // flight — cutting that one short would cost the song its measurement for the session.
-      // What is left in `waiting` stays there, still marked, for the effect run that resumes.
+      // Re-read each turn: playback starting stops the next read, never the one in flight.
       while (mounted.current && idleRef.current) {
         const song = waiting.current.shift()
         if (song === undefined) return
         const seconds = await read(song)
         if (seconds === null) continue
         const durationSec = Math.round(seconds)
-        // A file under half a second rounds to 0, and the library refuses 0 as a playing time —
-        // it refuses the whole batch with it, so one of these would cost every measurement
-        // travelling alongside. Left out instead: the row keeps its placeholder and is never asked
-        // again, exactly the outcome the old write-per-song path had when that write was rejected.
+        // The library refuses 0 — and the whole batch with it — so sub-second files are left out.
         if (durationSec <= 0) continue
         pending.current.push({ id: song.id, durationSec })
         if (pending.current.length >= FLUSH_SIZE) await flush()
@@ -171,7 +138,6 @@ export function useDurationBackfill(
         if (readers.current === 0) void flush()
       })
     }
-    // `idle` is in the deps for this: going quiet re-runs the effect, which spawns readers over
-    // whatever the pause left in the queue.
+    // `idle` is in the deps so going quiet re-runs this and spawns readers over the queue.
   }, [songs, dispatch, idle])
 }

@@ -23,7 +23,6 @@ const registry = [
   { id: 't2', name: 'reverb', color: '#3b2f8f' }
 ]
 
-/** The row's overflow menu, opened from the ⋯ button. */
 async function openMenu(
   user: ReturnType<typeof userEvent.setup>,
   title: string
@@ -66,8 +65,7 @@ describe('SongRow', () => {
   })
 
   it('dates the row between the tags and the size', async () => {
-    // The stamp is built from local-time parts, so the day it reads back as — and therefore the
-    // literal below — is the same in every timezone the suite might run in.
+    // Local-time parts, so the literal below holds in every timezone the suite might run in.
     const addedAt = new Date(2024, 0, 15, 12, 30).toISOString()
     seedApi({ songs: [song('a', 'Alpha Mix', { addedAt, tags: ['slowed'], sizeBytes: 4 * MB })] })
     await renderApp()
@@ -213,7 +211,6 @@ describe('SongRow menu', () => {
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
   })
 
-  /** A screen reader hears one menu per row; only the song's name tells them which row it belongs to. */
   it('names the menu after its song', async () => {
     const user = userEvent.setup()
     seedApi({ songs })
@@ -256,7 +253,6 @@ describe('SongRow menu', () => {
     expect(screen.getByRole('button', { name: 'Options for Alpha Mix' })).toHaveFocus()
   })
 
-  /** An outside click has already chosen where the user is going; stealing focus back would undo it. */
   it('leaves focus alone when a click outside closes the menu', async () => {
     const user = userEvent.setup()
     seedApi({ songs })
@@ -269,10 +265,7 @@ describe('SongRow menu', () => {
     expect(screen.getByRole('button', { name: 'Options for Alpha Mix' })).not.toHaveFocus()
   })
 
-  /**
-   * jsdom has no layout, so the flip decision is driven by stubbed rects: a popup whose natural
-   * position overflows the list's bottom, with room above, must get the --up modifier.
-   */
+  /** jsdom has no layout, so the flip decision is driven by stubbed rects. */
   it('flips upward when its natural position would clip into the bottom of the list', async () => {
     const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element
@@ -299,12 +292,7 @@ describe('SongRow menu', () => {
     }
   })
 
-  /**
-   * The other half of the flip condition, which the test above cannot reach: down overflows here
-   * too, but a popup taller than the whole list has no room above it either. Flipping would only
-   * move the clipping to the top, so it stays down — an implementation joining the two halves with
-   * `||` instead of `&&` flips and fails this.
-   */
+  /** Down overflows here too, but nothing fits above either — `||` instead of `&&` flips. */
   it('stays down when it is too tall to fit above the list either', async () => {
     const rects = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
       this: Element
@@ -352,7 +340,6 @@ describe('SongRow tag menu', () => {
     const menu = await openMenu(user, 'Alpha Mix')
     await user.click(within(menu).getByRole('menuitem', { name: 'Tags' }))
 
-    // What the song already carries is ticked; the rest of the registry is offered alongside it.
     expect(within(menu).getByRole('menuitemcheckbox', { name: 'slowed' })).toHaveAttribute(
       'aria-checked',
       'true'
@@ -393,9 +380,7 @@ describe('SongRow tag menu', () => {
 
     const chip = within(menu).getByText('slowed')
     expect(chip).toHaveClass('menu-tag-chip')
-    // ...and only that class: the popup lives inside `.song-list`, which is exactly what TagsDialog's
-    // tests read row chips through (`.song-list .song-tag`), so a shared class name here would put
-    // the menu's chips into their count.
+    // Not `song-tag`: TagsDialog's tests count row chips through `.song-list .song-tag`.
     expect(chip).not.toHaveClass('song-tag')
     expect(chip).toHaveStyle({ backgroundColor: '#e0a35c', color: '#000000' })
     // The chip must not have grown a focus stop of its own — the walker owns the buttons.

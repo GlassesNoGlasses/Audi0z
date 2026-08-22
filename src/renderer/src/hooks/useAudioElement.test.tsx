@@ -8,11 +8,7 @@ import {
   type UseAudioElementOptions
 } from './useAudioElement'
 
-/**
- * The hook owns the single `<audio>` element. The regression it exists to prevent (R11): replaying
- * the song that is already loaded must restart it audibly, which means resetting `currentTime` and
- * calling `play()` again WITHOUT reassigning `src` (a reassignment refetches the whole file).
- */
+/** R11: replaying the loaded song resets `currentTime` and calls `play()` without setting `src`. */
 
 stubMediaElement()
 
@@ -131,11 +127,7 @@ describe('useAudioElement', () => {
   })
 })
 
-/**
- * Seeking is deliberately element-local: nothing here touches the store, so the ⏸ glyph never
- * flickers while the user skips. The silence is what makes a run of presses bearable — decoding
- * a tenth of a second at each landing point is the garble these tests exist to keep silent.
- */
+/** Seeking is element-local: nothing here touches the store, so the ⏸ glyph never flickers. */
 describe('useAudioElement — seeking', () => {
   it('seeks forward ten seconds, silent, then resumes on its own', () => {
     vi.useFakeTimers()
@@ -155,7 +147,6 @@ describe('useAudioElement — seeking', () => {
     expect(playSpy().mock.calls.length).toBe(plays + 1)
   })
 
-  /** A run of presses is one scrub: only the last one gets to decide when sound comes back. */
   it('waits out the whole run of presses before resuming', () => {
     vi.useFakeTimers()
     const { audio, seekBy } = renderHook()
@@ -244,7 +235,6 @@ describe('useAudioElement — scrubbing', () => {
     expect(audio.paused).toBe(true)
   })
 
-  /** The store outranks a scrub: whatever the pointer is doing, a pause under it is still a pause. */
   it('lets the store pause a song out from under a held scrub', () => {
     const { audio, beginScrub, endScrub, update } = renderHook()
 
@@ -265,7 +255,6 @@ describe('useAudioElement — scrubbing', () => {
 
     vi.advanceTimersByTime(RESUME_AFTER)
 
-    // What the new song does is the load effect's business; a scrub of the old one has no say.
     expect(playSpy().mock.calls.length).toBe(plays)
   })
 
@@ -283,7 +272,6 @@ describe('useAudioElement — scrubbing', () => {
     expect(playSpy().mock.calls.length).toBe(plays)
   })
 
-  /** A pointer landing inside the quiet window must not be unmuted mid-drag by the last press. */
   it('a press takes over the resume a keyboard seek had pending', () => {
     vi.useFakeTimers()
     const { audio, seekBy, beginScrub, endScrub } = renderHook()

@@ -7,16 +7,12 @@ import { ConflictError, NotFoundError } from './errors'
 import { writeJsonFile } from './jsonFile'
 import { createLibraryStore } from './libraryStore'
 
-/**
- * The real writer, wrapped in a spy: the tag cascades promise ONE write for the whole library pass
- * (and none at all when nothing matched), which is only observable by counting calls.
- */
+/** The real writer, wrapped in a spy: the cascades' one-write-per-pass promise is only observable by counting calls. */
 vi.mock('./jsonFile', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./jsonFile')>()
   return { ...actual, writeJsonFile: vi.fn(actual.writeJsonFile) }
 })
 
-/** Call count of `writeJsonFile` since the last `resetWrites()`. */
 function writeCount(): number {
   return vi.mocked(writeJsonFile).mock.calls.length
 }
@@ -243,7 +239,6 @@ describe('renameTag', () => {
     ])
   })
 
-  /** Renaming onto a tag a song already has must merge, not leave the song holding it twice. */
   it('drops the old name rather than duplicating when the song already has the new one', async () => {
     const store = createLibraryStore(lib.root)
     await store.add(draft({ tags: ['slowed', 'slow', 'edit'] }))
@@ -255,12 +250,7 @@ describe('renameTag', () => {
     expect((await store.list())[0].tags).toEqual(['slow', 'edit'])
   })
 
-  /**
-   * The registry lets a tag be "renamed" to the name it already has (the rename dialog's confirm
-   * button does not care that nothing changed), and the IPC layer cascades unconditionally. The
-   * merge branch must not read that as "this song already has the new name, so drop the old one" —
-   * that would wipe the tag off every song carrying it.
-   */
+  /** The IPC layer cascades unconditionally, so the merge branch must not read this as "drop the old one". */
   it('is a no-op when the new name is identical to the old one', async () => {
     const store = createLibraryStore(lib.root)
     const first = await store.add(draft({ title: 'first', tags: ['slowed', 'edit'] }))
@@ -326,12 +316,7 @@ describe('removeTag', () => {
   })
 })
 
-/**
- * Not the crash case — a crash takes the cache with it. This is the write that *rejects* (ENOSPC,
- * EIO) in a process that carries on: a cache holding contents the file does not have would be
- * flushed out whole by the next unrelated write, silently committing half a tag cascade nobody
- * asked for. So the two cascade passes build into a copy and only adopt it once the disk has it.
- */
+/** Not the crash case: a write that *rejects* in a process that carries on, whose cache the next unrelated write would flush out whole. */
 describe('a cascade whose write is refused', () => {
   function enospc(): Error {
     return Object.assign(new Error('no space left on device'), { code: 'ENOSPC' })
@@ -360,12 +345,7 @@ describe('a cascade whose write is refused', () => {
   })
 })
 
-/**
- * Mutators serialise behind one lock, so an import or the startup duration backfill that lands
- * while a cascade's write is still in the air QUEUES behind it rather than reading mid-write
- * state. What these pin is the invariant that matters: nothing that arrives around a cascade is
- * ever lost — in memory or on disk.
- */
+/** Mutators serialise behind one lock, so anything landing mid-cascade queues rather than reading mid-write state. */
 describe('a cascade whose write is still in flight', () => {
   /** Parks the next `writeJsonFile` call until it is released, and says when it got there. */
   function parkNextWrite(): { started: Promise<void>; release: () => void } {
@@ -391,7 +371,6 @@ describe('a cascade whose write is still in flight', () => {
 
     const renaming = store.renameTag('slowed', 'slow')
     await write.started
-    // Queued behind the lock: the add resolves only once the cascade's write has landed.
     const adding = store.add(draft({ title: 'arrived mid-write', tags: [] }))
     write.release()
     const [, added] = await Promise.all([renaming, adding])
@@ -479,7 +458,6 @@ describe('reorder', () => {
     await expect(store.reorder([c.id, a.id, b.id])).resolves.toBeUndefined()
 
     expect((await store.list()).map((song) => song.title)).toEqual(['c', 'a', 'b'])
-    // A second store over the same dir reads the same order back off disk.
     expect((await createLibraryStore(lib.root).list()).map((song) => song.title)).toEqual([
       'c',
       'a',
@@ -497,7 +475,6 @@ describe('reorder', () => {
     await expect(store.reorder([a.id, a.id, b.id])).rejects.toBeInstanceOf(ConflictError)
     await expect(store.reorder([a.id, 'nope'])).rejects.toBeInstanceOf(NotFoundError)
 
-    // A failed reorder leaves the order alone.
     expect((await store.list()).map((song) => song.id)).toEqual([a.id, b.id])
   })
 
@@ -514,7 +491,6 @@ describe('reorder', () => {
     const cached = await store.list()
     expect(cached.map((song) => song.id)).toEqual([b.id, a.id])
     expect(cached.find((song) => song.id === a.id)?.durationSec).toBe(120)
-    // Disk agrees with memory — neither write erased the other.
     const reread = await createLibraryStore(lib.root).list()
     expect(reread.map((song) => song.id)).toEqual([b.id, a.id])
     expect(reread.find((song) => song.id === a.id)?.durationSec).toBe(120)
@@ -550,12 +526,7 @@ describe('cache isolation', () => {
   })
 })
 
-/**
- * The cache is process-lifetime: a store loads `library.json` once and never re-reads it. These
- * two tests pin that behaviour down, because it is what forces the composition root to hand ONE
- * store instance to every reader and mutator of a library directory — the importer behind
- * `library:add` included.
- */
+/** The cache is process-lifetime: a store loads `library.json` once and never re-reads it. */
 describe('one instance per directory', () => {
   it('does not show a second instance the writes of the first', async () => {
     const first = createLibraryStore(lib.root)
@@ -568,7 +539,6 @@ describe('one instance per directory', () => {
 
     expect(await first.list()).toEqual([added])
     expect((await readLibraryFile(lib.root)).songs).toHaveLength(1)
-    // The write reached the disk, but the second instance is stale for the rest of the session.
     expect(await second.list()).toEqual([])
     await expect(second.getSong(added.id)).resolves.toBeUndefined()
   })
@@ -582,7 +552,6 @@ describe('one instance per directory', () => {
     await first.add(draft({ title: 'first' }))
     const fromSecond = await second.add(draft({ title: 'second' }))
 
-    // The second instance persists its own snapshot, so the first instance's song is gone.
     expect((await readLibraryFile(lib.root)).songs).toEqual([fromSecond])
   })
 })

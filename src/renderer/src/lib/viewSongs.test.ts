@@ -13,7 +13,6 @@ const dated = [
   song('c', 'Charlie', { addedAt: '2024-02-01T00:00:00.000Z' })
 ]
 
-/** The stored order itself — what every view boots with. */
 const customOrder: SortMode = { type: SortType.CUSTOM, direction: SortDirection.ASC }
 
 const newestFirst: SortMode = { type: SortType.DATEADDED, direction: SortDirection.DESC }
@@ -61,7 +60,6 @@ describe('songsInView', () => {
     expect(ids(songsInView(dated, null, { kind: 'library' }, newestFirst))).toEqual(['a', 'c', 'b'])
   })
 
-  /** The sort outranks the playlist's own order — that is what the user asked for. */
   it('orders a playlist view out of the order the playlist stores', () => {
     const inView = songsInView(dated, mixes, { kind: 'playlist', id: 'p1' }, newestFirst)
     expect(ids(inView)).toEqual(['a', 'c'])
@@ -84,11 +82,7 @@ describe('sortSongs', () => {
     ).toEqual(['a', 'c', 'b'])
   })
 
-  /**
-   * Human collation, not code units: case must not split the alphabet in two (every lowercase
-   * letter is "greater" than every uppercase one in UTF-16), and numbered titles must count
-   * ("Track 2" before "Track 10") — the same case-blindness the search already has.
-   */
+  /** Case must not split the alphabet, and numbers must count: "Track 2" before "Track 10". */
   it('orders by title like a human list, not by code unit', () => {
     const titled = [
       song('z', 'Zebra Mix'),
@@ -107,10 +101,7 @@ describe('sortSongs', () => {
     )
   })
 
-  /**
-   * A song nobody has measured has nothing to sort by, so it goes to the end whichever way the
-   * sort runs — flipping the direction must not float the unknowns to the top of the list.
-   */
+  /** An unmeasured song has nothing to sort by, so it sinks whichever way the sort runs. */
   it('orders by duration with unmeasured songs sinking in both directions', () => {
     expect(
       ids(sortSongs(dated, { type: SortType.DURATION, direction: SortDirection.ASC }))
@@ -120,10 +111,7 @@ describe('sortSongs', () => {
     ).toEqual(['a', 'b', 'c'])
   })
 
-  /**
-   * Same courtesy for size, whose unknown is `null` — the DTO's "the file is gone" marker, the
-   * one thing a size sort has nothing to say about.
-   */
+  /** Size's unknown is `null`, the DTO's "the file is gone" marker. */
   it('orders by size with unmeasured songs sinking in both directions', () => {
     const sized = [
       song('big', 'Big', { sizeBytes: 9000 }),

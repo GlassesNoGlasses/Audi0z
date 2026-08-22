@@ -26,23 +26,13 @@ function stageLabel(progress: DownloadProgress): string {
   }
 }
 
-/** How far along in bytes — only when there is both a numerator and a denominator to show. */
 function bytesLabel(progress: DownloadProgress): string | null {
   const { bytes, totalBytes } = progress
   if (bytes === undefined || totalBytes === undefined) return null
   return `${formatBytes(bytes)} / ${formatBytes(totalBytes)}`
 }
 
-/**
- * Both ways into the library.
- *
- * A file import is one call. A URL is two steps by design — probe first so the user confirms a
- * real title and tags before yt-dlp starts pulling bytes — and stays open when it fails, because
- * the usual fix (a different URL) is right there in the form.
- *
- * Several picked files are imported one after another: the form re-arms with the next file's name
- * instead of silently ignoring everything past the first.
- */
+/** Both ways in: files (one call each, the form re-arms) and a URL (probe first, then download). */
 export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   const { settings, tags } = useAppState()
   const dispatch = useAppDispatch()
@@ -58,21 +48,16 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
   const [compress, setCompress] = useState(settings.compressByDefault)
   /** Anything in flight: the form must not be submitted twice or edited out from under a request. */
   const [busy, setBusy] = useState(false)
-  /** A *probe* in flight, which is the one wait long enough to need explaining. */
+  /** A probe in flight — the one wait long enough to need explaining. */
   const [probing, setProbing] = useState(false)
-  /**
-   * A *download* in flight, which is narrower than `busy` and is the only thing `download.cancel()`
-   * can reach. Tracked apart from `busy` because the action row swaps the close button for
-   * "Cancel download": doing that for every busy state left a slow probe with no way out at all.
-   */
+  /** A download in flight — narrower than `busy`; only this swaps in the Cancel download button. */
   const [downloading, setDownloading] = useState(false)
   const [progress, setProgress] = useState<DownloadProgress | null>(null)
 
-  // Subscribed for the dialog's whole life, not just while a download runs: the first progress
-  // line can arrive before `start` has even resolved its promise.
+  // Subscribed for the dialog's whole life: the first progress line can beat `start`'s promise.
   useEffect(() => window.api.download.onProgress(setProgress), [])
 
-  // Registry order, so the same three chips always arrive in the same order.
+  // Registry order, so the chips always arrive in the same order.
   const chosenTags = tags.filter((tag) => picked.has(tag.name)).map((tag) => tag.name)
 
   const close = (): void => dispatch({ type: 'dialog/closed' })
@@ -82,8 +67,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
     void window.api.download.cancel().catch(fail)
   }
 
-  // Escape does whatever the button next to it does — cancels a running download rather than
-  // walking away and orphaning it, and otherwise closes.
+  // Escape cancels a running download rather than orphaning it, and otherwise closes.
   useEscapeKey(() => (downloading ? cancelDownload() : close()))
 
   function toggleTag(name: string): void {
@@ -133,7 +117,6 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
           close()
           return
         }
-        // More files were picked: re-arm the form for the next one.
         setPaths(rest)
         setTitle(titleFromPath(rest[0]))
         setPicked(new Set())
@@ -271,10 +254,7 @@ export function AddSongDialog({ source }: AddSongDialogProps): ReactElement {
             )}
           </div>
 
-          {/*
-            The estimate sits beside the label rather than inside it: the checkbox is named by its
-            label, and a saving figure in there would rename the preference itself.
-          */}
+          {/* Beside the label, not inside it: a figure in there would rename the preference. */}
           <div className="checkbox-row">
             <label className="checkbox">
               <input

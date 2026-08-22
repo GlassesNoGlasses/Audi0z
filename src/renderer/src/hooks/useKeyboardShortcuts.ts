@@ -1,11 +1,9 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * The app's global keys: space for play/pause, `m` for mute, ←/→ to skip.
- *
- * Bound to `document`, like `useEscapeKey`, because focus is rarely on the player bar when the
- * user reaches for them — and read through a ref so the listener is registered once rather than
- * re-registered on every render, while still seeing the current callbacks.
+ * The app's global keys: space for play/pause, `m` for mute, ←/→ to skip. Bound to `document`
+ * because focus is rarely on the player bar, and read through a ref so the listener registers once
+ * while still seeing the current callbacks.
  */
 
 /** How far one arrow press moves the song, in seconds. */
@@ -14,21 +12,15 @@ const SEEK_STEP_SEC = 10
 export interface KeyboardShortcutsOptions {
   /** False disables everything (a dialog is open). */
   enabled: boolean
-  /** Space and the arrows only act when a song is actually cued. */
   hasCurrentSong: boolean
   onTogglePlay(): void
   onToggleMute(): void
   onSeekBy(delta: number): void
 }
 
-/** Somewhere the user is typing: every key belongs to them, none to the player. */
 const TYPING_TAGS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
-/**
- * Space already activates these. Acting on it too would fire the control AND the transport — so
- * they keep the key, unless they sit inside something carrying `data-space-transport`, the opt-in
- * a control uses to say its own activation is the wrong answer to a space press.
- */
+/** Space already activates these, so they keep the key unless they opt out via `data-space-transport`. */
 const SPACE_ACTIVATED_TAGS = new Set(['BUTTON', 'A'])
 
 function tagOf(target: EventTarget | null): string | null {
@@ -52,17 +44,14 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions): void {
       // A held key would otherwise stutter play/pause dozens of times a second.
       if (event.repeat) return
 
-      // A combination belongs to the OS or to the app chrome, never to the transport: ⌘M is
-      // Minimize on macOS, and answering it here would silently mute — and persist that mute — as
-      // the window went down. Shift is not in the list: it is how the keyboard produces `M`.
+      // A modifier means the OS or the chrome, not the transport (⌘M is Minimize); Shift types `M`.
       if (event.metaKey || event.ctrlKey || event.altKey) return
 
       const { enabled, hasCurrentSong, onTogglePlay, onToggleMute, onSeekBy } = latest.current
       if (!enabled || isTyping(event.target)) return
 
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        // The row menu's own arrow navigation runs first (React handlers beat this document
-        // listener) and marks the event; a menu must never scrub the song behind it.
+        // The row menu's arrow navigation runs first and marks the event; a menu must not scrub.
         if (event.defaultPrevented) return
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[role="menu"]') != null) return
@@ -74,14 +63,11 @@ export function useKeyboardShortcuts(options: KeyboardShortcutsOptions): void {
 
       if (event.key === ' ') {
         const target = event.target instanceof HTMLElement ? event.target : null
-        // Song rows opt back in via `data-space-transport`: space on a focused row belongs to the
-        // transport, not to replaying the row (Enter still activates it). The preventDefault below
-        // is load-bearing twice over — it stops the page scroll AND cancels the button's native
-        // keyup click, which is what used to restart the song.
+        // Rows opt back in via `data-space-transport`; the preventDefault below also cancels the
+        // button's native keyup click, not just the page scroll.
         const optedIn = target?.closest('[data-space-transport]') != null
         if (!optedIn && SPACE_ACTIVATED_TAGS.has(tagOf(event.target) ?? '')) return
-        // Deliberately not a cold start: space resumes what is cued, it does not choose a song.
-        // An opted-in control lands here un-prevented, so its own activation still gets the press.
+        // Not a cold start: space resumes what is cued, it does not choose a song.
         if (!hasCurrentSong) return
         event.preventDefault()
         onTogglePlay()

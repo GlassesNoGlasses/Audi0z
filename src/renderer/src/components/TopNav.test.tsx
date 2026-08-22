@@ -24,11 +24,7 @@ stubMediaElement()
 const songs = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
 const mixes = playlist('p1', 'Mixes', ['c', 'a'])
 
-/**
- * The shuffled start is picked by an injected rng, which the App never passes — so these tests
- * mount the bar on its own over a real store, with a probe reporting the two things its buttons
- * move: what is playing, and which dialog was asked for.
- */
+/** The shuffled start needs an rng the App never passes, so the bar is mounted on its own. */
 
 interface Seed {
   songs?: SongDto[]
@@ -65,8 +61,7 @@ function Seeder({ seed, children }: { seed: Seed; children: ReactNode }): ReactE
     dispatch({ type: 'library/loaded', songs: seed.songs ?? [] })
     dispatch({ type: 'playlists/loaded', playlists: seed.playlists ?? [] })
     dispatch({ type: 'view/selected', view: seed.view ?? { kind: 'library' } })
-    // Exactly what App dispatches once the library is in, `startSongId` and all: it omits one, so
-    // the order is populated while `currentId` stays null.
+    // What App dispatches at start-up: it omits `startSongId`, so `currentId` stays null.
     if (seed.bootQueue) {
       dispatch({
         type: 'queue/selected',
@@ -102,10 +97,7 @@ async function renderTopNav(seed: Seed = {}, rng?: Rng): Promise<RenderResult> {
   return result
 }
 
-/**
- * Moves the mounted bar to another view. A fresh `seed` object re-runs the Seeder's effect, and
- * none of what it re-dispatches touches `playback` — so whatever is playing goes on playing.
- */
+/** Moves the mounted bar to another view; nothing it re-dispatches touches `playback`. */
 async function reseed(result: RenderResult, seed: Seed, rng?: Rng): Promise<void> {
   await act(async () => {
     result.rerender(bar(seed, rng))
@@ -142,12 +134,7 @@ describe('TopNav play button', () => {
     expect(probe('playing')).toBe('b')
   })
 
-  /**
-   * App's start-up cues the library queue with no `startSongId`: a populated order over a null
-   * `currentId`. Only the `currentId !== null` half of `viewIsCued` keeps the button from reading
-   * that as "this view is already loaded" and dispatching a bare toggle — which cold-starts the
-   * engine at `order[0]` and never asks shuffle where the listening should begin.
-   */
+  /** The `currentId !== null` half of `viewIsCued` is what stops a cold start at `order[0]`. */
   it('shuffles out of the boot queue rather than cold-starting at the top', async () => {
     const user = userEvent.setup()
     const rng = vi.fn<Rng>(() => 2)
@@ -176,10 +163,7 @@ describe('TopNav play button', () => {
     expect(screen.getByRole('button', { name: 'Play Library' })).toBeDisabled()
   })
 
-  /**
-   * The play token is the assertion that matters: `useAudioElement` reloads the source whenever it
-   * moves, so an unchanged token is what proves the pause did not rewind the song.
-   */
+  /** `useAudioElement` reloads on every play-token move, so an unchanged token proves no rewind. */
   it('pauses the view it is already playing instead of restarting it', async () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
@@ -383,7 +367,6 @@ describe('TopNav sort menu', () => {
     await sortView(user, /Duration$/)
     expect(screen.getByText('↓ Duration')).toBeInTheDocument()
 
-    // The second press flips the direction, and the caption follows the sort actually in force.
     await sortView(user, /Duration$/)
     expect(screen.getByText('↑ Duration')).toBeInTheDocument()
     expect(screen.queryByText('Custom Order')).toBeNull()
@@ -436,12 +419,7 @@ describe('TopNav in the app', () => {
     expect(nowPlaying()).toBe('Alpha Mix')
   })
 
-  /**
-   * The global arrow shortcut stands down for a menu by looking for `[role="menu"]` around the
-   * event target — and the trigger is a sibling of the menu, not inside it. So the whole guard
-   * rests on the open menu taking focus: without that, → behind the open menu seeks the song ten
-   * seconds. Only provable over the app, which is where the shortcuts and the audio meet.
-   */
+  /** The arrow guard rests on the open menu taking focus — provable only over the real app. */
   it('leaves the playing song where it is when an arrow lands on the open sort menu', async () => {
     const user = userEvent.setup()
     seedApi({ songs })

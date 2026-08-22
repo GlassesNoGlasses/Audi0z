@@ -49,11 +49,7 @@ describe('App shell', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Audi0z')
   })
 
-  /**
-   * The registry is loaded and re-loaded alongside the songs: a tag renamed or deleted anywhere
-   * cascades through the songs, so the two have to be read together or the chips and the rows
-   * disagree.
-   */
+  /** A tag renamed or deleted anywhere cascades through the songs, so the two are read together. */
   it('reads the tag registry at start-up and again when the library changes', async () => {
     const api = seedApi({ tags: [{ id: 't1', name: 'slowed', color: '#5ca8e0' }] })
     const controls = mockApiControls(api)
@@ -113,11 +109,7 @@ describe('App shell', () => {
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument()
   })
 
-  /**
-   * Main reports the trash failure on its error channel AND rejects the `invoke`, and its report
-   * lands first. The renderer's own message is the only one that says the song survived, so it has
-   * to be shown alongside main's rather than collapsed into it.
-   */
+  /** Only the renderer's own message says the song survived, so it is shown alongside main's. */
   it('says the song survived when the trash refuses it', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
@@ -144,10 +136,6 @@ describe('App shell', () => {
     expect(songTitles()).toEqual(['Alpha Mix'])
   })
 
-  /**
-   * The other half of the same pathway: when the renderer has nothing to add, both reports
-   * normalise to the same sentence, and saying it twice only pushes the useful lines off the top.
-   */
   it('says a failure once when main and the rejected invoke report it identically', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
@@ -178,11 +166,6 @@ describe('App sorting', () => {
 
   const byTitle = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
 
-  /**
-   * The whole point of sorting in `songsInView`: the queue re-sync applies the same order, so what
-   * plays next is what the list now shows. Sorting is not a queue switch, though — it reorders
-   * around the song already playing rather than restarting it.
-   */
   it('reorders the playing queue behind the song that is playing', async () => {
     const user = userEvent.setup()
     seedApi({ songs: byDate })
@@ -197,18 +180,12 @@ describe('App sorting', () => {
     expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
     expect(nowPlaying()).toBe('Alpha Mix')
 
-    // Alpha Mix is the last of the new order, so next wraps to the top of it — under the old
-    // queue it would have been Bravo Beat.
+    // Alpha Mix is last in the new order, so next wraps to the top of it.
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Charlie Tune')
   })
 
-  /**
-   * Title is the first sort field the user can EDIT, and to the queue re-sync a rename under it is
-   * indistinguishable from a re-sort: the same memo recomputes and the same order comes out moved.
-   * Nobody asked for the queue to change, though — the rename was about one song's name — so a
-   * data-driven reorder waits, exactly as the duration backfill waits for the music to stop.
-   */
+  /** To the queue re-sync a rename is indistinguishable from a re-sort, so the reorder waits. */
   it('leaves the playing queue alone when a rename re-sorts the view', async () => {
     const user = userEvent.setup()
     seedApi({ songs: byTitle })
@@ -226,7 +203,6 @@ describe('App sorting', () => {
     expect(nowPlaying()).toBe('Zulu Beat')
   })
 
-  /** Deferred, not dropped: the order the rename asked for lands as soon as nothing is playing. */
   it('applies a deferred reorder once playback stops', async () => {
     const user = userEvent.setup()
     seedApi({ songs: byTitle })
@@ -262,19 +238,13 @@ describe('App keyboard shortcuts', () => {
     expect(nowPlaying()).toBe('Alpha Mix')
   })
 
-  /**
-   * Since v3.1 the click itself hands focus back to the body, so space reaches the transport
-   * rather than the row's own button — the state the replay bug lived in is now unreachable by
-   * mouse. A play-token bump is what re-runs `useAudioElement`'s load effect, so an unmoved
-   * `play()` count is the proof that space paused the song rather than starting it from the top.
-   */
+  /** An unmoved `play()` count is the proof: a replay would bump the play token and call it. */
   it('space after clicking a song pauses it rather than replaying it', async () => {
     const user = userEvent.setup()
     seedApi({ songs })
     await renderApp()
 
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
-    // v3.1: a mouse click no longer parks focus on the row — the shortcuts own the keyboard.
     expect(document.activeElement).toBe(document.body)
     const plays = playSpy().mock.calls.length
 
@@ -325,11 +295,7 @@ describe('App keyboard shortcuts', () => {
     expect(audioElement().volume).toBe(1)
   })
 
-  /**
-   * The click drops focus to the body, which is where the arrows are actually pressed. jsdom never
-   * reports a duration, so only the lower clamp is in play here — and it is the one that matters:
-   * three presses past the start must not leave the element at a negative time.
-   */
+  /** jsdom never reports a duration, so only the lower clamp is in play here. */
   it('arrow keys skip ten seconds either way, clamped at the start', async () => {
     const user = userEvent.setup()
     seedApi({ songs })
@@ -373,7 +339,6 @@ describe('App keyboard shortcuts', () => {
 
     press('m')
 
-    // Back to 0.7, not to full — the ref remembers what was audible last.
     await waitFor(() => expect(api.settings.set).toHaveBeenLastCalledWith({ volume: 0.7 }))
     expect(audioElement().volume).toBe(0.7)
     expect(screen.getByRole('slider', { name: 'Volume' })).toHaveValue('0.7')
@@ -399,8 +364,7 @@ describe('test harness', () => {
     await expect(window.api.settings.get()).resolves.toMatchObject({ volume: 0.5 })
   })
 
-  // Runs after the test above, which left volume at 0.5 — proves the setup file reinstalls a
-  // fresh mock for every test rather than sharing one across the file.
+  // Runs after the test above, which left volume at 0.5.
   it('gets a fresh mock api, not the one the previous test mutated', async () => {
     await expect(window.api.settings.get()).resolves.toMatchObject({ volume: 1 })
   })

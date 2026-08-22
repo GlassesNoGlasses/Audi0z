@@ -9,10 +9,7 @@ import {
   type AppState
 } from './appReducer'
 
-/**
- * The app reducer owns everything the playback engine does not, and forwards the rest verbatim —
- * so these tests are mostly about the seam between the two.
- */
+/** The app reducer owns everything the playback engine does not, and forwards the rest verbatim. */
 
 const reducer = createAppReducer(() => 0)
 
@@ -117,10 +114,7 @@ describe('appReducer', () => {
     expect(removed.playlists).toEqual([])
   })
 
-  /**
-   * The other half of the seam: `playlists/removed` is a playback action as well as a list one, so
-   * a deleted playlist cannot stay the queue — the toggles would write shuffle back to a dead id.
-   */
+  /** A deleted playlist cannot stay the queue — the toggles would write shuffle to a dead id. */
   it('drops a deleted playlist from the queue as well as from the list', () => {
     const listed = reducer(seeded(), {
       type: 'playlists/upserted',
@@ -143,9 +137,7 @@ describe('appReducer', () => {
     expect(next.playback.queueId).toBeNull()
     expect(next.playback.currentId).toBeNull()
     expect(next.playback.order).toEqual([])
-    // The app-level half of the case still runs: nothing is left expanded either.
     expect([...next.expandedPlaylists]).toEqual([])
-    // The songs themselves are the library's, not the playlist's.
     expect(next.songs.map((s) => s.id)).toEqual(['a', 'b', 'c'])
   })
 
@@ -200,8 +192,7 @@ describe('appReducer', () => {
   })
 
   it('keeps a report that says something the ones on screen do not', () => {
-    // Main forwards a bare message on its error channel and the renderer's own catch adds context:
-    // both are shown. Collapsing them would have to guess which one matters.
+    // Main forwards a bare message; the renderer's own catch adds context — both are shown.
     const fromMain = reducer(seeded(), {
       type: 'toast/pushed',
       message: 'Failed to move item to trash'
@@ -219,9 +210,7 @@ describe('appReducer', () => {
   })
 
   it('collapses a report identical to one already on screen', () => {
-    // Both paths normalise through `errorMessage`, so one failure reported by main *and* by the
-    // rejected invoke arrives as the same string twice. A second identical line adds nothing and
-    // pushes the useful ones off the top of the stack.
+    // Both paths normalise through `errorMessage`, so one failure can arrive twice, identically.
     const once = reducer(seeded(), { type: 'toast/pushed', message: 'ffmpeg exited with code 1' })
     const twice = reducer(once, { type: 'toast/pushed', message: 'ffmpeg exited with code 1' })
 
@@ -230,8 +219,7 @@ describe('appReducer', () => {
   })
 
   it('shows the same message again once the first one has been dismissed', () => {
-    // The collapse is against what is on screen, not a history: a retry that fails the same way
-    // must still produce feedback rather than looking ignored.
+    // The collapse is against what is on screen, not a history.
     const once = reducer(seeded(), { type: 'toast/pushed', message: 'disk on fire' })
     const dismissed = reducer(once, { type: 'toast/dismissed', id: once.toasts[0].id })
     const again = reducer(dismissed, { type: 'toast/pushed', message: 'disk on fire' })
@@ -251,10 +239,7 @@ describe('appReducer', () => {
     expect(viewed.view).toEqual({ kind: 'playlist', id: 'p1' })
   })
 
-  /**
-   * The sort is global, like the query: it belongs to the window rather than to whichever view
-   * happened to be open when it was chosen, so moving between views carries it along.
-   */
+  /** The sort is global, like the query: it belongs to the window, not to the view. */
   it('records the sort mode and keeps it across a change of view', () => {
     // The stored order is where every window starts — nothing persists the sort across launches.
     expect(initialAppState().sort).toEqual({

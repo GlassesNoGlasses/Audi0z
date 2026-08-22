@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 /**
- * Downloads yt-dlp (URL downloader) binaries into `resources/bin/<platform>/`.
- *
- * Usage:
- *   node scripts/fetch-ytdlp.mjs                # all platforms
- *   node scripts/fetch-ytdlp.mjs darwin linux   # a subset
+ * Downloads the pinned yt-dlp binaries into `resources/bin/<platform>/`.
+ * Usage: `node scripts/fetch-ytdlp.mjs [darwin|win32|linux ...]` — no args means all platforms.
  */
 
 import { createHash } from 'node:crypto'
@@ -12,10 +9,8 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// Pinned yt-dlp release. Change as needed.
 const YTDLP_VERSION = '2026.08.19'
 
-// Electron `process.platform` -> release asset name.
 const ASSETS = {
   darwin: 'yt-dlp_macos',
   win32: 'yt-dlp.exe',
@@ -50,7 +45,6 @@ function parseChecksums(text) {
   return sums
 }
 
-// Already valid, no need to to redownloaded
 async function alreadyValid(target, expected) {
   try {
     return sha256(await readFile(target)) === expected

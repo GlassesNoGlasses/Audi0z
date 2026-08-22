@@ -48,12 +48,7 @@ describe('PlayerBar transport', () => {
     expect(nowPlaying()).toBe('Alpha Mix')
   })
 
-  /**
-   * Past five seconds Previous is a rewind, not a step back — and the rewind is element-only, so
-   * the song playing never changes hands. `nowPlaying` is the half that catches a regression here:
-   * a stray `transport/prev` would land on the history entry behind Bravo and zero the element on
-   * its way, which looks the same from `currentTime` alone.
-   */
+  /** `nowPlaying` is the half that catches a stray `transport/prev`: `currentTime` alone cannot. */
   it('rewinds the song rather than stepping back once it is past five seconds', async () => {
     const user = userEvent.setup()
     seedApi({ songs })
@@ -84,7 +79,6 @@ describe('PlayerBar transport', () => {
     expect(nowPlaying()).toBe('Alpha Mix')
   })
 
-  /** Under the threshold the engine decides — with nothing behind it, that is a restart. */
   it('restarts through the engine when there is nothing behind the current song', async () => {
     const user = userEvent.setup()
     seedApi({ songs })
@@ -119,8 +113,7 @@ describe('PlayerBar toggles', () => {
     const api = seedApi({ songs })
     await renderApp()
 
-    // The accent fill that marks an enabled toggle keys off `aria-pressed`, so both flips are the
-    // behavioural anchor for it.
+    // The accent fill that marks an enabled toggle keys off `aria-pressed`.
     expect(screen.getByRole('button', { name: 'Shuffle' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByRole('button', { name: 'Repeat' })).toHaveAttribute('aria-pressed', 'false')
 
@@ -178,11 +171,7 @@ describe('PlayerBar sliders', () => {
     expect(audio.currentTime).toBe(20)
   })
 
-  /**
-   * The drag is bracketed by the pointer, not by the store: decoding at every value the slider
-   * passes through is the garble the silence exists to avoid, and doing it through `isPlaying`
-   * would flicker the ⏸ glyph for the length of the drag.
-   */
+  /** The drag is bracketed by the pointer, not the store, so the ⏸ glyph never flickers. */
   it('goes quiet under a pointer drag and comes back on release', async () => {
     const user = userEvent.setup()
     seedApi({ songs })

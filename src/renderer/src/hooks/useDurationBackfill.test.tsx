@@ -7,12 +7,7 @@ import { useDurationBackfill } from './useDurationBackfill'
 
 stubMediaElement()
 
-/**
- * jsdom has no media pipeline, so a probe never resolves on its own: the tests below stand in for
- * the browser by defining `duration` on the element the hook created and firing the event it is
- * waiting for. Only elements built with `new Audio()` are captured — the app's own JSX `<audio>`
- * is not one of them.
- */
+/** Every `new Audio()` the hook builds; jsdom resolves none of them, so the tests answer each. */
 let probes: HTMLAudioElement[] = []
 
 beforeEach(() => {
@@ -96,17 +91,11 @@ describe('useDurationBackfill', () => {
       { id: 'b', durationSec: 41 },
       { id: 'c', durationSec: 12 }
     ])
-    // The write is only half the claim: one dispatch behind it, so the list re-renders once for
-    // three songs rather than once each.
+    // One dispatch behind the batch: the list re-renders once for three songs, not once each.
     expect(dispatch).toHaveBeenCalledTimes(1)
   })
 
-  /**
-   * A file under half a second rounds to 0, and the library refuses 0 as a playing time — it
-   * refuses the whole batch with it, so one such file would cost every measurement riding along.
-   * Left behind here instead, which is what the old write-per-song path did with the write it
-   * rejected: the row keeps its placeholder and is never asked again.
-   */
+  /** A file under half a second rounds to 0, which the library refuses — along with its batch. */
   it('leaves behind a probe too short to round to a second rather than losing the batch', async () => {
     const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
     const api = seedApi({ songs: three })
@@ -125,7 +114,6 @@ describe('useDurationBackfill', () => {
     ])
   })
 
-  /** A first launch has thousands of these, and none of them should wait for the last one. */
   it('flushes a full batch early rather than holding every measurement to the end', async () => {
     const nine = Array.from({ length: 9 }, (_, index) => song(`s${index}`, `Song ${index}`))
     const api = seedApi({ songs: nine })
@@ -152,16 +140,12 @@ describe('useDurationBackfill', () => {
     expect(second[0]).toEqual([{ id: 's8', durationSec: 108 }])
   })
 
-  /**
-   * StrictMode really double-mounts this hook (main.tsx wraps the app). A probe cut short by the
-   * first unmount must be re-asked on the second mount, and its measurement must be written once.
-   */
+  /** StrictMode really double-mounts this hook: main.tsx wraps the app in it. */
   it('survives a mount, unmount, remount without losing or doubling a measurement', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     const first = backfill([song('a', 'Alpha Mix')])
 
     await waitFor(() => expect(probes).toHaveLength(1))
-    // Aborts the in-flight probe and un-marks the song.
     first.unmount()
     backfill([song('a', 'Alpha Mix')])
 
@@ -174,11 +158,7 @@ describe('useDurationBackfill', () => {
     ])
   })
 
-  /**
-   * The same story with the refs React actually preserves across its development double-mount —
-   * two `renderHook` calls each get their own, so only a StrictMode wrapper puts the second mount
-   * in front of the first one's `attempted` set.
-   */
+  /** Two `renderHook` calls each get their own refs; only a StrictMode wrapper shares them. */
   it('re-asks a song StrictMode cut the probe short on, and writes it once', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     const dispatch = vi.fn()
@@ -186,7 +166,6 @@ describe('useDurationBackfill', () => {
       wrapper: StrictMode
     })
 
-    // One probe per mount: the second only happens because the first un-marked the song.
     await waitFor(() => expect(probes).toHaveLength(2))
     await reportDuration(probes[1], 173)
 
@@ -203,7 +182,6 @@ describe('useDurationBackfill', () => {
       song('b', 'Bravo Beat', { exists: false, sizeBytes: null })
     ])
 
-    // A re-render is a fair chance to have started one; nothing does.
     rerender({ list: [song('a', 'Alpha Mix', { durationSec: 100 })], idle: true })
     await act(async () => {})
 
@@ -255,17 +233,12 @@ describe('useDurationBackfill', () => {
     await waitFor(() => expect(probes).toHaveLength(3))
   })
 
-  /**
-   * The whole point of the `idle` flag: two probes streaming over `media://` are two more requests
-   * on the same four-thread pool the playing song is fetching its own bytes through, and the song
-   * has first claim. Nothing starts while something is playing; the queue survives the pause.
-   */
+  /** Probes share the `media://` fetch pool with the playing song, which has first claim. */
   it('starts no probe while something is playing and picks the queue up when it stops', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix')] })
     const songs = [song('a', 'Alpha Mix')]
     const { rerender } = backfill(songs, false)
 
-    // A fair chance to have started one: the songs are queued and marked, just not read.
     await act(async () => {})
     expect(probes).toHaveLength(0)
 
@@ -280,11 +253,6 @@ describe('useDurationBackfill', () => {
     ])
   })
 
-  /**
-   * Playback starting mid-backfill stops the *next* read, not the one already in flight — cutting
-   * that one short would cost the song its measurement for the session. What is still queued stays
-   * queued and stays marked, so the resume reads it exactly once.
-   */
   it('lets the read in flight finish but starts no new one once playback begins', async () => {
     const three = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
     const api = seedApi({ songs: three })
@@ -293,8 +261,7 @@ describe('useDurationBackfill', () => {
     await waitFor(() => expect(probes).toHaveLength(2))
     rerender({ list: three, idle: false })
 
-    // The reader that owned this one hands its measurement in and then stops, leaving Charlie
-    // queued rather than opening a third file behind the song that just started.
+    // The reader that owned this one hands its measurement in and stops; Charlie stays queued.
     await reportDuration(probes[0], 173)
     await act(async () => {})
     expect(probes).toHaveLength(2)
@@ -323,7 +290,6 @@ describe('useDurationBackfill', () => {
     await reportDuration(probes[0], 120)
     await act(async () => {})
 
-    // Background enrichment nobody asked for: it fails quietly.
     expect(dispatch).not.toHaveBeenCalled()
   })
 })

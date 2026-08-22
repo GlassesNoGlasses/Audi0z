@@ -21,12 +21,10 @@ function makeState(overrides: Partial<PlaybackState> = {}): PlaybackState {
   return { ...initialPlaybackState(), queueId: LIBRARY_QUEUE_ID, ...overrides }
 }
 
-/** Played-flag set for the current queue. */
 function played(...songIds: string[]): PlaybackState['played'] {
   return Object.fromEntries(songIds.map((id) => [id, true]))
 }
 
-/** Reduces with an rng that must not be consulted — the sequential paths never need one. */
 function reduce(state: PlaybackState, action: PlaybackAction): PlaybackState {
   return playbackReducer(state, action, forbiddenRng)
 }
@@ -452,7 +450,6 @@ describe('playbackReducer — queue/selected', () => {
     // `resetPlayed: true`, exactly as a manual click: only the started song counts as played.
     expect(next.played).toEqual({ y: true })
     expect(next.history).toEqual(['y'])
-    // The state it was given is untouched.
     expect(frozen).toEqual(state)
   })
 
@@ -581,10 +578,7 @@ describe('playbackReducer — library/songsRemoved', () => {
 })
 
 describe('playbackReducer — playlists/removed', () => {
-  /**
-   * A deleted playlist must not stay the queue: everything downstream reads `queueId` as a live id
-   * — the toggles write shuffle and repeat back to it — so a dead one is worse than no queue at all.
-   */
+  /** Everything downstream reads `queueId` as a live id, so a dead one is worse than no queue. */
   it('empties the queue when the playlist that owns it is deleted', () => {
     const state = makeState({
       queueId: PLAYLIST_QUEUE_ID,
@@ -605,7 +599,6 @@ describe('playbackReducer — playlists/removed', () => {
     expect(next.played).toEqual({})
   })
 
-  /** Another playlist's deletion is none of playback's business now that flags are current-queue only. */
   it('ignores the deletion of a playlist that is not the queue', () => {
     const state = makeState({
       queueId: PLAYLIST_QUEUE_ID,
@@ -719,7 +712,6 @@ const INVARIANT_BASES: readonly [string, PlaybackState][] = [
     })
   ],
   ['repeating', makeState({ order: ['a'], currentId: 'a', repeat: true, played: played('a') })],
-  // A playlist queue, so the actions keyed by queue id are exercised against the queue they name.
   [
     'playlist queue',
     makeState({

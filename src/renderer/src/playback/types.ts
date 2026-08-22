@@ -1,10 +1,4 @@
-/**
- * Playback contracts.
- *
- * This module — like the rest of `playback/` — is pure: it imports nothing outside
- * `src/shared/types` and its siblings, and knows nothing about React, the DOM, electron, timers or
- * randomness (the rng is injected).
- */
+/** Playback contracts. Pure, like the rest of `playback/`: no React, DOM, electron or timers. */
 
 /** Queue id of the Library view. Playlists use their own ids. */
 export const LIBRARY_QUEUE_ID = 'library'
@@ -16,7 +10,6 @@ export type Rng = (upperExclusive: number) => number
 
 export interface PlaybackState {
   queueId: QueueId | null
-  /** Current queue's song ids, in queue order. */
   order: readonly string[]
   currentId: string | null
   /** Played ids in the CURRENT queue only — cleared on every queue switch. Never persisted. */
@@ -37,14 +30,7 @@ export type PlaybackAction =
       order: readonly string[]
       shuffle: boolean
       repeat: boolean
-      /**
-       * Play this song in the new queue rather than stopping. Set when the switch was caused by
-       * the user playing something (a row click); left out when only the queue itself changed.
-       *
-       * Caller's precondition: the id must be present in the `order` dispatched alongside it. The
-       * engine does not validate it — both callers pick it out of that very list, so it holds by
-       * construction.
-       */
+      /** Play this song in the new queue rather than stopping; must be present in `order`. */
       startSongId?: string
     }
   | { type: 'queue/orderChanged'; order: readonly string[] }

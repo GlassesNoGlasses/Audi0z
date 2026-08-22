@@ -1,14 +1,4 @@
-/**
- * Main IPC structure for app `API` wiring.
- *
- * Parts:
- * - library: main to interact with audio files.
- * - tags: tags and cascading edits.
- * - playlists: playlist + playlist settings (shuffle, repeat).
- * - files: fs `audi0z` path to audio file.
- * - download: main downloader.
- * - settings: settings & user prefs.
- */
+/** Channel and scheme names shared across the main/preload/renderer boundary. */
 
 /** Request/response channels — `ipcRenderer.invoke` / `ipcMain.handle`. */
 export const IPC = {
@@ -53,7 +43,7 @@ export const IPC = {
   }
 } as const
 
-// IPC subscription events
+// Main -> renderer push events, subscribed to in the preload.
 export const IPC_EVENTS = {
   downloadProgress: 'event:downloadProgress',
   libraryChanged: 'event:libraryChanged',

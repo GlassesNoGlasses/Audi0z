@@ -34,10 +34,7 @@ async function addSongWithFile(overrides: Partial<Song> = {}): Promise<Song> {
 
 type Transcode = (opts: { src: string; dst: string }) => Promise<void>
 
-/**
- * A transcode that actually produces an output file, the way ffmpeg would. `bytes` is what it
- * writes, so a test that cares can decide whether the re-encode came out smaller than its source.
- */
+/** A transcode that actually writes `bytes` to its output, the way ffmpeg would. */
 function fakeTranscode(bytes = 'opus bytes'): ReturnType<typeof vi.fn<Transcode>> {
   return vi.fn<Transcode>(async ({ dst }) => {
     await writeFile(dst, bytes)
@@ -79,11 +76,7 @@ describe('compressExisting', () => {
     expect(await readdir(lib.audio)).toEqual([`${song.id}.opus`])
   })
 
-  /**
-   * The tie goes to the original: an equal-sized re-encode is all cost and no gain, so the
-   * comparison is `>=`, not `>`. Nothing is recorded either — the row still says uncompressed, so
-   * the offer comes back and the user has lost nothing but the ffmpeg run.
-   */
+  /** The tie goes to the original: the comparison is `>=`, not `>`. */
   it('keeps the original when the opus re-encode is not smaller', async () => {
     const song = await addSongWithFile({ fileName: 'original.wav' })
     const { size } = await stat(path.join(lib.audio, 'original.wav'))
@@ -99,16 +92,10 @@ describe('compressExisting', () => {
     expect(result.song.compressed).toBe(false)
     expect(result.song.fileName).toBe('original.wav')
     await expect(libraryStore.getSong(song.id)).resolves.toEqual(song)
-    // The staged opus is gone and the original never moved.
     expect(await readdir(lib.audio)).toEqual(['original.wav'])
   })
 
-  /**
-   * An uncompressed `.opus` already named after its id has `src === dst`, so the re-encode is
-   * staged beside the target rather than written onto it — transcoding straight onto the source
-   * would destroy it before the size comparison could save it. The delete afterwards is skipped,
-   * or it would remove the file that was just renamed into place.
-   */
+  /** An uncompressed `.opus` named after its id has `src === dst`, so the re-encode is staged. */
   it('replaces an uncompressed .opus in place without deleting anything', async () => {
     const id = 'already-named'
     const song = await addSongWithFile({ id, fileName: `${id}.opus` })
@@ -207,12 +194,7 @@ describe('compressExisting', () => {
     expect(await readdir(lib.audio)).toEqual(['original.wav'])
   })
 
-  /**
-   * The path the user's "file not found after compressing a download" report lives on, which
-   * nothing covered: a download imports, and the Settings dialog compresses the song it just
-   * created — one store, one audio directory, no restart in between. `compress: false` and
-   * `deleteSource: true` are the downloader's own arguments.
-   */
+  /** `compress: false` and `deleteSource: true` are the downloader's own arguments. */
   it('compresses a song straight after its import, against the same store', async () => {
     const source = path.join(lib.root, 'download.m4a')
     await writeFile(source, 'a downloaded file, rather longer than what the re-encode writes')
@@ -239,8 +221,6 @@ describe('compressExisting', () => {
     expect(song.fileName).toBe(`${added.id}.opus`)
     expect(song.compressed).toBe(true)
     await expect(libraryStore.getSong(added.id)).resolves.toEqual(song)
-    // The swap really happened: the opus is the only file left, and the download's temp copy went
-    // with the import.
     expect(await readdir(lib.audio)).toEqual([`${added.id}.opus`])
     expect(existsSync(source)).toBe(false)
   })
@@ -248,8 +228,7 @@ describe('compressExisting', () => {
   it('still succeeds when the old file refuses to go', async () => {
     const song = await addSongWithFile({ fileName: 'original.wav' })
     const transcode = fakeTranscode()
-    // Only `rm` misbehaves: the sizes still have to be read and the staged file still has to land,
-    // or the run would fail for a reason that has nothing to do with the delete under test.
+    // Only `rm` misbehaves; the sizes still have to be read and the staged file still has to land.
     const fs = {
       access: vi.fn(async () => {}),
       copyFile: vi.fn(async () => {}),

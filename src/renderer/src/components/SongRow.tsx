@@ -11,11 +11,7 @@ import type { Playlist, SongDto, Tag } from '../../../shared/types'
 import { formatBytes, formatDate, formatDuration } from '../lib/format'
 import { TagChip } from './TagChip'
 
-/**
- * The items the keyboard can reach, in the order they are drawn: the tag toggles the Tags submenu
- * adds are in, the disabled empty-registry note is out. Module scope, so the layout effect below
- * can walk the menu without taking a new dependency on every render.
- */
+/** Keyboard-reachable items in draw order; module scope keeps the layout effect free of a dependency. */
 function menuItemsIn(popup: HTMLElement | null): HTMLButtonElement[] {
   return Array.from(
     popup?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not([disabled])') ?? []
@@ -25,15 +21,12 @@ function menuItemsIn(popup: HTMLElement | null): HTMLButtonElement[] {
 export interface SongRowProps {
   song: SongDto
   isCurrent: boolean
-  /** The registry: the colour each chip is drawn in, and everything the menu can put on a song. */
   tags: Tag[]
-  /** The playlist this row is being viewed inside, if any — the only place it can be removed from one. */
   containingPlaylist: Playlist | null
   /** Whether this row may START a reorder drag — Custom Order with nothing filtered away. */
   draggable: boolean
-  /** True while the list is running one of its own drags — the only kind the row receives. */
+  /** True only while the list is running one of its own drags. */
   dragActive: boolean
-  /** The seam to paint on this row, when the drag in flight is hovering it. */
   dropEdge: 'before' | 'after' | null
   onPlay(songId: string): void
   onEdit(songId: string): void
@@ -46,16 +39,7 @@ export interface SongRowProps {
   onDragEnd(): void
 }
 
-/**
- * One row: playing time and title on the left, size and an overflow menu on the right.
- *
- * Everything that is not "play this" lives behind the ⋯ menu — a row that carried a button per
- * action was a wall of controls, and the ones it carried (reveal, add-to-playlist) now have better
- * homes in Settings and the add-to-playlist dialog.
- *
- * Memoised because the list re-renders on every library change while the rows themselves almost
- * never move — which keeps a thousand-song library cheap.
- */
+/** One row. Memoised: the list re-renders on every library change while the rows almost never move. */
 function SongRowView({
   song,
   isCurrent,
@@ -81,10 +65,7 @@ function SongRowView({
   const popupRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  /**
-   * Where the popup hangs, and what the keyboard lands on — both settled before the first paint,
-   * so the menu is never seen in the wrong place or with nothing focused.
-   */
+  /** Where the popup hangs and what the keyboard lands on, both settled before the first paint. */
   useLayoutEffect(() => {
     if (!menuOpen) {
       setFlipUp(false)
@@ -101,28 +82,20 @@ function SongRowView({
       // Flip only when down overflows AND up actually fits — a menu taller than both stays down.
       setFlipUp(anchor.bottom + height > bounds.bottom && anchor.top - height >= bounds.top)
     }
-    // `preventScroll`: the flip class has not been painted yet, so the popup is still sitting at
-    // the geometry the line above just decided is wrong. Scrolling the list to it is never right.
+    // `preventScroll`: the flip class is unpainted, so the popup is still at the wrong geometry.
     menuItemsIn(popupRef.current)[0]?.focus({ preventScroll: true })
   }, [menuOpen])
 
-  /**
-   * Registered only while the menu is up. `useEscapeKey` is deliberately not used: it binds for the
-   * life of the component, and a listener per row — hundreds of them, all calling `preventDefault`
-   * — would swallow the Escape every dialog in the app depends on.
-   */
+  /** Bound only while the menu is up, not via `useEscapeKey`: a listener per row would swallow every dialog's Escape. */
   useEffect(() => {
     if (!menuOpen) return
 
-    // Deliberately does NOT `preventDefault`, unlike the dialogs': a modal's Escape is a claim on
-    // the whole app, a menu's reaches no further than closing itself, and swallowing it would cost
-    // a second press to anything that ever sits behind this menu.
+    // No `preventDefault`, unlike the dialogs': a menu's Escape reaches no further than closing itself.
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       setMenuOpen(false)
       setTagsOpen(false)
-      // Escape only. An outside click has already chosen where the user is going, and dragging
-      // focus back to a button they just left would undo their own gesture.
+      // Escape only: an outside click has already chosen where the user is going.
       triggerRef.current?.focus()
     }
     // `mousedown` rather than `click`: the menu has to be gone before whatever was clicked reacts.
@@ -140,10 +113,7 @@ function SongRowView({
     }
   }, [menuOpen])
 
-  /**
-   * The arrow keys walk the items and wrap round the ends; Home/End jump to them. The items are
-   * out of the tab order, so this is the only way through the menu from the keyboard.
-   */
+  /** The items are out of the tab order, so this is the only way through the menu from the keyboard. */
   function onMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>): void {
     const items = menuItemsIn(popupRef.current)
     if (items.length === 0) return
@@ -176,19 +146,17 @@ function SongRowView({
   return (
     <li
       className={`song-row${isCurrent ? ' is-current' : ''}${dropEdge ? ` drop-${dropEdge}` : ''}`}
-      // An open menu is buttons all the way down, every one a child of this li — none of them may
-      // double as a drag handle, or a drifted press on Delete becomes a reorder.
+      // An open menu is buttons all the way down: none may double as a drag handle, or a drifted
+      // press on Delete becomes a reorder.
       draggable={draggable && !menuOpen}
       onDragStart={(event) => {
         if (!draggable || menuOpen) return
-        // No setData: the drop path reads a ref, and a text/plain payload would only feed the
-        // app's own text inputs when a drag overshoots into them.
+        // No setData: the drop path reads a ref, and a text/plain payload would only feed our own inputs.
         event.dataTransfer.effectAllowed = 'move'
         onDragStart(song.id)
       }}
-      // The `dragActive` guards below leave a drag this list never started completely alone — no
-      // seam, no reorder, nothing cancelled on the way past — exactly as the sidebar's rows do:
-      // a drag is ours only between our own dragStart and dragEnd.
+      // A drag is ours only between our own dragStart and dragEnd; the `dragActive` guards leave
+      // every other drag completely alone.
       onDragOver={(event) => {
         if (!dragActive) return
         event.preventDefault()
@@ -209,12 +177,9 @@ function SongRowView({
       <button
         type="button"
         className="song-title"
-        // A song whose file has gone has nothing to play, so the whole row is inert.
         disabled={!song.exists}
         aria-current={isCurrent ? 'true' : undefined}
-        // The row keeps focus after a click, and space there means pause, not play this again.
-        // `useKeyboardShortcuts` reads the attribute; Enter is untouched, so the row is still
-        // reachable and activatable from the keyboard alone.
+        // The row keeps focus after a click, and space there means pause; `useKeyboardShortcuts` reads this.
         data-space-transport=""
         onClick={() => onPlay(song.id)}
       >
@@ -225,8 +190,7 @@ function SongRowView({
       {song.tags.length === 0 ? null : (
         <span className="song-tags">
           {song.tags.map((name) => {
-            // A song may carry a tag the registry has never heard of (hand-edited JSON, or a tag
-            // deleted between two reads) — it still shows, in the stylesheet's grey.
+            // A song may carry a tag the registry never heard of — it still shows, in the stylesheet's grey.
             const known = tags.find((tag) => tag.name === name)
             return <TagChip key={name} name={name} color={known?.color} className="song-tag" />
           })}
@@ -310,10 +274,7 @@ interface TagItemsProps {
   onToggleTag(songId: string, tagName: string): void
 }
 
-/**
- * The whole registry, ticked where this song carries it. The list is of tags that EXIST — creating
- * one is the Tags dialog's job alone, so an empty registry has nothing to offer but the way there.
- */
+/** The whole registry, ticked where this song carries it; creating tags is the Tags dialog's job alone. */
 function TagItems({ song, tags, onToggleTag }: TagItemsProps): ReactElement {
   if (tags.length === 0) {
     return (
@@ -337,15 +298,9 @@ function TagItems({ song, tags, onToggleTag }: TagItemsProps): ReactElement {
             className="menu-check-item"
             onClick={() => onToggleTag(song.id, tag.name)}
           >
-            {/* Hidden from the name, so the item is addressable by the tag itself. */}
             <span className="menu-check" aria-hidden="true">
               {has ? '✓' : ''}
             </span>
-            {/*
-             * The chip is the item's only visible text, so the button's accessible name is still
-             * the tag name alone. Everything in the registry has a colour, so the menu never draws
-             * the chip's uncoloured fallback.
-             */}
             <TagChip name={tag.name} color={tag.color} className="menu-tag-chip" />
           </button>
         )

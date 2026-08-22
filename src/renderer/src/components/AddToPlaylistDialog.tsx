@@ -9,17 +9,7 @@ export interface AddToPlaylistDialogProps {
   playlistId: string
 }
 
-/**
- * Filling a playlist from the whole library.
- *
- * The search here is the dialog's own, deliberately: the app's search box says what the user is
- * browsing, and a dialog that quietly rewrote it would leave a filtered library behind when it
- * closed. It searches everything the library holds rather than the view underneath, because the
- * point of the dialog is to reach songs the view is not showing.
- *
- * Only songs the playlist lacks are offered — a row disappears the moment its song lands, and a
- * failed add leaves it in place.
- */
+/** Its own search, over the whole library: the point is to reach songs the view is hiding. */
 export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): ReactElement | null {
   const { songs, playlists } = useAppState()
   const dispatch = useAppDispatch()
@@ -32,8 +22,7 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
   useEscapeKey(close)
   const fail = useToastError()
 
-  // Deleted from under the dialog — from the sidebar, or by another window on the same library.
-  // There is nothing left to add to, so it gets out of the way rather than sitting there inert.
+  // Deleted from under the dialog: nothing left to add to, so it gets out of the way.
   useEffect(() => {
     if (playlist === null) dispatch({ type: 'dialog/closed' })
   }, [playlist, dispatch])
@@ -43,8 +32,7 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
   if (!playlist) return null
 
   const held = new Set(playlist.songIds)
-  // Deliberately outside the `matches` memo: `held` turns over on every `playlists/upserted`, and a
-  // memo keyed on the songs and the query would keep offering a song the playlist has just taken.
+  // Outside the `matches` memo on purpose: `held` turns over on every `playlists/upserted`.
   const offered = matches.filter((song) => !held.has(song.id))
 
   function add(songId: string): void {
@@ -79,8 +67,7 @@ export function AddToPlaylistDialog({ playlistId }: AddToPlaylistDialogProps): R
         />
 
         {offered.length === 0 ? (
-          // Four ways to have nothing to offer, and the user is owed the right one: whether the
-          // search or the playlist emptied the list, and whether a search was run at all.
+          // Four ways to have nothing to offer: search vs playlist, and whether a search was run.
           <p className="dialog-hint">
             {matches.length > 0
               ? query.trim() === ''

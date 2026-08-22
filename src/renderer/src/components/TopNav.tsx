@@ -11,10 +11,7 @@ export interface TopNavProps {
   rng?: Rng
 }
 
-/**
- * The bar above the song list: play the view, search it, add to it, and the two dialogs that are
- * not about a single song.
- */
+/** The bar above the song list: play the view, search it, add to it, and the app-wide dialogs. */
 export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   const { songs, playback, playlists, settings, sort, view } = useAppState()
   const dispatch = useAppDispatch()
@@ -30,18 +27,12 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   const sortRef = useRef<HTMLDivElement>(null)
   const sortTriggerRef = useRef<HTMLButtonElement>(null)
 
-  /**
-   * Registered only while the menu is up, exactly as the row menu's is, and deliberately without
-   * `preventDefault`: a modal's Escape is a claim on the whole app, a menu's reaches no further
-   * than closing itself, and swallowing it would cost a second press to whatever sits behind.
-   */
+  /** Bound only while the menu is up, and without `preventDefault`: a menu's Escape only closes itself. */
   useEffect(() => {
     if (!sortOpen) return
 
-    // The keyboard's way in — and load-bearing beyond that: the trigger is a SIBLING of the menu,
-    // so an arrow pressed with focus still on it reads as outside the menu to the global shortcuts
-    // and seeks the song behind it. Focusing an item puts the press inside `[role="menu"]`, which
-    // is where that guard looks. `preventScroll`, as the row menu's is: the bar never scrolls.
+    // Focus an item, not the trigger: the trigger is a SIBLING of the menu, so arrows pressed there
+    // read as outside `[role="menu"]` and the global shortcuts seek instead.
     sortRef.current?.querySelector<HTMLElement>('[role="menuitemradio"]')?.focus({
       preventScroll: true
     })
@@ -49,7 +40,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       setSortOpen(false)
-      // Escape only. An outside click has already chosen where the user is going.
+      // Escape only: an outside click has already chosen where the user is going.
       sortTriggerRef.current?.focus()
     }
     // `mousedown` rather than `click`: the menu has to be gone before whatever was clicked reacts.
@@ -66,24 +57,17 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     }
   }, [sortOpen])
 
-  // A playlist that has just been deleted leaves the view pointing at nothing for a render; the
-  // button is disabled anyway, so the name only has to stay distinct from the transport's own
-  // "Play" and "Pause" — which the view name suffix does.
+  // A just-deleted playlist leaves the view pointing at nothing for a render; the button is
+  // disabled then, so the fallback name only has to stay distinct from the transport's own labels.
   const viewName = view.kind === 'library' ? 'Library' : (containingPlaylist?.name ?? 'playlist')
 
   const viewQueueId = view.kind === 'library' ? LIBRARY_QUEUE_ID : view.id
-  // The button is a toggle exactly when this view's queue is the one loaded in the transport.
   const viewIsCued = playback.queueId === viewQueueId && playback.currentId !== null
   const viewPlaying = viewIsCued && playback.isPlaying
 
   /**
-   * Playing the view hands the queue over to it, exactly as playing one of its rows does — with
-   * the view's own shuffle and repeat, and starting where shuffle says rather than always at the
-   * top. The search is not consulted: it filters what is shown, never what is queued.
-   *
-   * Once the view is the queue, handing it over again would throw away what the listener is in the
-   * middle of — back to song one (or a fresh shuffle pick), history and played flags gone — so the
-   * button becomes the transport's play/pause instead.
+   * Hands the queue over to the view, with the view's own shuffle and repeat and ignoring the search.
+   * Once the view IS the queue, re-handing it would lose the listener's place, so this is play/pause.
    */
   function playView(): void {
     if (viewIsCued) {
@@ -104,11 +88,7 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     })
   }
 
-  /**
-   * A field is asked for ascending the first time — oldest first, shortest first — and the next
-   * press on the one already in force flips it. Custom Order hands the view back to its stored
-   * order. Every choice shuts the menu: it is a radio group, not somewhere to stay.
-   */
+  /** A field sorts ascending first; pressing the one already in force flips it. Every choice shuts the menu. */
   function choose(mode: SortType): void {
     setSortOpen(false)
     setSortOrder((prev) => [mode, ...prev.filter((t) => t !== mode)])
@@ -237,7 +217,6 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
   )
 }
 
-/** Shortening bars: the shape a sorted list makes, and the one every other app draws this with. */
 function SortIcon(): ReactElement {
   return (
     <svg
@@ -258,7 +237,6 @@ function SortIcon(): ReactElement {
   )
 }
 
-/** Inline rather than an emoji: a glyph the button's own `color` can tint. */
 function DownloadIcon(): ReactElement {
   return (
     <svg

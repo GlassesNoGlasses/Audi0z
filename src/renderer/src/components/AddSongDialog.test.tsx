@@ -85,7 +85,6 @@ describe('AddSongDialog — tags', () => {
     expect(api.library.add).toHaveBeenCalledWith(expect.objectContaining({ tags: ['slowed'] }))
   })
 
-  /** Tags are created in one place only. Offering to make one here is what made them a mess. */
   it('sends the user to the Tags button when the registry is empty', async () => {
     const user = userEvent.setup()
     seedApi()
@@ -105,7 +104,6 @@ describe('AddSongDialog — tags', () => {
     await openAddDialog(user)
 
     expect(screen.getByText('Saves ~25%').tagName).toBe('STRONG')
-    // The preference itself is still addressable by exactly the words on it.
     expect(screen.getByRole('checkbox', { name: 'Compress to Opus format' })).toBeInTheDocument()
   })
 })
@@ -204,10 +202,7 @@ describe('AddSongDialog — url source', () => {
     expect(screen.getByText('Saving…')).toBeInTheDocument()
   })
 
-  /**
-   * The bundled yt-dlp is a self-extracting binary: its first run after launch spends half a minute
-   * unpacking itself. Saying so is the difference between a slow probe and a hung dialog.
-   */
+  /** The bundled yt-dlp is self-extracting: its first run after launch spends ~30s unpacking. */
   it('warns that the first probe after launch is slow, while it is running', async () => {
     const user = userEvent.setup()
     const api = seedApi()
@@ -245,11 +240,7 @@ describe('AddSongDialog — url source', () => {
     )
   })
 
-  /**
-   * A probe has no cancel path of its own — `download.cancel()` only reaches a running download —
-   * so swapping the close button out for "Cancel download" while one is in flight left a hung
-   * probe with no way out of the dialog at all.
-   */
+  /** `download.cancel()` only reaches a running download, so a probe has no cancel path at all. */
   it('still offers a way out while a probe is in flight', async () => {
     const user = userEvent.setup()
     const api = seedApi()
@@ -283,10 +274,6 @@ describe('AddSongDialog — url source', () => {
     expect(screen.queryByRole('dialog', { name: 'Add song' })).toBeNull()
   })
 
-  /**
-   * Matching the button it stands in for: a running download is cancelled rather than orphaned,
-   * and the dialog stays up so the user can see what happened and try again.
-   */
   it('cancels the download rather than closing when Escape lands mid-download', async () => {
     const user = userEvent.setup()
     const api = seedApi()
@@ -331,11 +318,7 @@ describe('AddSongDialog — url source', () => {
 })
 
 describe('AddSongDialog — what it accepts', () => {
-  /**
-   * The hint is the shared catalogue read out loud: exactly the formats the media protocol can
-   * label, which is exactly what the picker filter offers. It also has to survive a pick — the
-   * other files-mode hint turns into the chosen path, so the list cannot live inside it.
-   */
+  /** The hint has to survive a pick: the other files-mode hint turns into the chosen path. */
   it('lists the audio types the app can actually play', async () => {
     const user = userEvent.setup()
     const api = seedApi()
@@ -345,7 +328,6 @@ describe('AddSongDialog — what it accepts', () => {
     await openAddDialog(user)
     const supported = `Supported: ${AUDIO_FORMAT_LABELS.join(', ')}.`
     expect(screen.getByText(/^Supported:/)).toHaveTextContent(supported)
-    // Every format the protocol can label is named, and nothing it cannot is.
     for (const ext of Object.keys(MIME_TYPES)) {
       expect(screen.getByText(/^Supported:/)).toHaveTextContent(new RegExp(ext.slice(1), 'i'))
     }
@@ -356,7 +338,6 @@ describe('AddSongDialog — what it accepts', () => {
     expect(screen.getByText(/^Supported:/)).toHaveTextContent(supported)
   })
 
-  /** yt-dlp decides what a URL may be, so the hint is the only place the coverage is spelled out. */
   it('says what urls can come from', async () => {
     const user = userEvent.setup()
     seedApi()

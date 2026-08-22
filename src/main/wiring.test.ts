@@ -32,10 +32,7 @@ describe('fileExists', () => {
   })
 })
 
-/**
- * `library:list` runs one of these per song inside a `Promise.all`, and its result is what decides
- * whether the row renders as present — so a rejection has to be impossible, not merely unlikely.
- */
+/** `library:list` runs one of these per song inside a `Promise.all`: it must never reject. */
 describe('fileSize', () => {
   let dir: string
 
@@ -74,11 +71,7 @@ describe('fileSize', () => {
     await expect(fileSize('')).resolves.toBeNull()
   })
 
-  /**
-   * `stat` succeeds on a directory and reports the inode's own size, which is not the size of any
-   * audio file — so without an `isFile()` check a `fileName` naming a directory would give the DTO
-   * `exists: true` and a nonsense weight.
-   */
+  /** `stat` succeeds on a directory and reports the inode size, hence the `isFile()` check. */
   it('answers null for a directory, which has a stat size but is not a file', async () => {
     await expect(fileSize(dir)).resolves.toBeNull()
   })
@@ -96,13 +89,7 @@ describe('resolveResourcesBinDir', () => {
     ).toBe(path.join('/Applications/mml.app/Contents/Resources', 'bin'))
   })
 
-  /**
-   * Derived from the bundle's own location rather than from `app.getAppPath()`, which is the
-   * directory of whatever script electron was pointed at: `electron .` (what `npm run dev` spawns)
-   * gives the repo root, but `electron out/main/index.js` — how the e2e harness and anyone running
-   * the build directly start the app — gives `<repo>/out/main`, and the old form then looked for
-   * `<repo>/out/main/resources/bin/<platform>`, which does not exist.
-   */
+  /** Derived from the bundle's own location, not `app.getAppPath()`, which follows the entry. */
   it('reads the per-platform checkout directory, however electron was launched', () => {
     expect(
       resolveResourcesBinDir({
@@ -209,11 +196,7 @@ describe('runStartup', () => {
     expect(shell.quit).not.toHaveBeenCalled()
   })
 
-  /**
-   * Everything that can fail before the first window exists — an unwritable library root, a
-   * bogus `AUDI0Z_LIBRARY_DIR`, an unsupported platform's ffmpeg — used to surface as an unhandled
-   * rejection: no window, no message, an app that simply never appeared.
-   */
+  /** Anything failing before the first window otherwise surfaces as an unhandled rejection. */
   it('shows what went wrong and quits when startup throws', async () => {
     const shell = fakeShell()
 
