@@ -435,6 +435,69 @@ describe('SongList drag reorder', () => {
     expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
   })
 
+  /** A reorder reply must ask which queue is playing NOW, not which one was when it was sent. */
+  it('does not push a reorder onto a queue the user has switched away from', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['b', 'c'])] })
+    let release!: () => void
+    vi.mocked(api.playlists.reorderSongs).mockImplementationOnce(
+      (_id, ids) =>
+        new Promise((resolve) => {
+          release = () => resolve(playlist('p1', 'Mixes', ids as string[]))
+        })
+    )
+    await renderApp()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Bravo Beat' }))
+    expect(nowPlaying()).toBe('Bravo Beat')
+
+    // Drag Bravo below Charlie in the playlist; the reply is still in flight...
+    const [bravo, charlie] = rows()
+    stubRect(charlie)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(bravo, { dataTransfer })
+    dragOverAt(charlie, dataTransfer, 55)
+    fireEvent.drop(charlie, { dataTransfer })
+
+    // ...while the user hands the queue to the Library and plays a song the playlist lacks.
+    await user.click(within(sidebar()).getByRole('button', { name: 'Library' }))
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    release()
+    await waitFor(() => expect(api.playlists.reorderSongs).toHaveBeenCalled())
+
+    // The stale reply must not reorder — or stop — the queue it no longer belongs to.
+    expect(nowPlaying()).toBe('Alpha Mix')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Bravo Beat')
+  })
+
+  /** Once the seam is gone, the list's empty region is not a drop target. */
+  it('abandons a release in the empty region after the seam is cleared', async () => {
+    const api = seedApi({ songs })
+    await renderApp()
+
+    const [alpha, bravo] = rows()
+    stubRect(bravo)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(bravo, dataTransfer, 45)
+
+    const list = document.querySelector('.song-list') as HTMLElement
+    fireEvent.dragLeave(list, { dataTransfer })
+
+    // Re-entering the empty region offers no target: the list refuses the dragOver...
+    const over = createEvent.dragOver(list, { dataTransfer })
+    fireEvent(list, over)
+    expect(over.defaultPrevented).toBe(false)
+
+    // ...and a release there commits nothing.
+    fireEvent.drop(list, { dataTransfer })
+    expect(api.library.reorder).not.toHaveBeenCalled()
+  })
+
   /** The rows sit in a gapped list: releasing over the gap must land on the seam last painted. */
   it('commits a drop released over the gap between rows', async () => {
     const api = seedApi({ songs })

@@ -43,6 +43,13 @@ export function SongList(): ReactElement {
   const dragIdRef = useRef<string | null>(null)
   const dropMarkRef = useRef<DropMark | null>(null)
 
+  // Read at reply time, never captured at drop time: the queue can change hands during the IPC
+  // round trip, and a stale reply must not reorder — or stop — a queue it no longer belongs to.
+  const queueIdRef = useRef(playback.queueId)
+  useEffect(() => {
+    queueIdRef.current = playback.queueId
+  }, [playback.queueId])
+
   const onRowDragStart = useCallback((songId: string) => {
     dragIdRef.current = songId
     setDragActive(true)
@@ -117,7 +124,9 @@ export function SongList(): ReactElement {
         .reorderSongs(view.id, mergeReorderedIds(stored, ids, known))
         .then((playlist) => {
           dispatch({ type: 'playlists/upserted', playlist })
-          if (playback.queueId === view.id) dispatch({ type: 'queue/orderChanged', order: ids })
+          if (queueIdRef.current === view.id) {
+            dispatch({ type: 'queue/orderChanged', order: ids })
+          }
         })
         .catch(fail)
         .finally(settle)
@@ -127,13 +136,13 @@ export function SongList(): ReactElement {
       .reorder(ids)
       .then(() => {
         dispatch({ type: 'library/reordered', order: ids })
-        if (playback.queueId === LIBRARY_QUEUE_ID) {
+        if (queueIdRef.current === LIBRARY_QUEUE_ID) {
           dispatch({ type: 'queue/orderChanged', order: ids })
         }
       })
       .catch(fail)
       .finally(settle)
-  }, [endDrag, inView, view, containingPlaylist, playback.queueId, dispatch, fail])
+  }, [endDrag, inView, view, containingPlaylist, dispatch, fail])
 
   /**
    * Playing a row is the one gesture that moves the queue. Inside the queue already playing it is
@@ -231,12 +240,14 @@ export function SongList(): ReactElement {
       className="song-list"
       aria-label="Songs"
       onDragOver={(event) => {
-        if (!dragActive) return
+        // Only while a seam is painted: with no live mark the empty region is not a target, the
+        // cursor says so, and a release there abandons the drag natively.
+        if (!dragActive || dropMarkRef.current === null) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
       }}
       onDrop={(event) => {
-        if (!dragActive) return
+        if (!dragActive || dropMarkRef.current === null) return
         event.preventDefault()
         onRowDrop()
       }}

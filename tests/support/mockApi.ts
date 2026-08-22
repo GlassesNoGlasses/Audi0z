@@ -261,8 +261,8 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         libraryChanged.emit()
       }),
       // Same contract as the store: the whole order at once, every song exactly once. No
-      // `libraryChanged` here — the real channel answers with the new order and emits nothing,
-      // so the renderer redraws from the reply alone.
+      // `libraryChanged` here — the real channel answers nothing and emits nothing, so the
+      // renderer applies the order it sent.
       reorder: vi.fn(async (orderedIds) => {
         const named = new Set(orderedIds)
         if (named.size !== orderedIds.length || orderedIds.length !== state.songs.length) {
@@ -375,8 +375,11 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         if (named.size !== songIds.length || songIds.length !== playlist.songIds.length) {
           throw new Error('Reorder must name every song exactly once.')
         }
-        for (const sid of playlist.songIds) {
-          if (!named.has(sid)) throw new Error(`mockApi: reorder lost song ${sid}`)
+        // Submitted against stored, as the real store validates — the reverse direction lets a
+        // duplicated stored id smuggle an unknown one through.
+        const stored = new Set(playlist.songIds)
+        for (const sid of songIds) {
+          if (!stored.has(sid)) throw new Error(`No song with id "${sid}"`)
         }
         playlist.songIds = [...songIds]
         return clonePlaylist(playlist)

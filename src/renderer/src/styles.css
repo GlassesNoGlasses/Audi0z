@@ -209,7 +209,9 @@ input[type='range'] {
  * The song rows need their own seam: unlike .playlist-item they carry a border and a radius, which
  * clip an inset shadow, and .song-list separates them with a 4px gap. A pseudo-element bar painted
  * IN that gap sits on the row's true edge, survives the radius, and puts "after row N" and
- * "before row N+1" in the same physical place. .song-row is already position: relative.
+ * "before row N+1" in the same physical place. .song-row is already position: relative. The 4px
+ * offset is measured from the PADDING box (absolute positioning ignores the 1px border), so both
+ * bars land centred in the gap: border edge + 1px in from either side.
  */
 .song-row.drop-before::before,
 .song-row.drop-after::after {
@@ -223,11 +225,11 @@ input[type='range'] {
 }
 
 .song-row.drop-before::before {
-  top: -3px;
+  top: -4px;
 }
 
 .song-row.drop-after::after {
-  bottom: -3px;
+  bottom: -4px;
 }
 
 .playlist-row {
