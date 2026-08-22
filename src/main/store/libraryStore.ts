@@ -191,7 +191,6 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       // next unrelated persist would commit an order the caller was told did not save.
       await persist(next)
       current.splice(0, current.length, ...next)
-      return next.map(cloneSong)
     },
 
     // removes in-memory metadata only; IPC will handle the actual file removal

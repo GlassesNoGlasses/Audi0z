@@ -268,8 +268,8 @@ export function createMockApi(seed: MockApiSeed = {}): Api {
         if (named.size !== orderedIds.length || orderedIds.length !== state.songs.length) {
           throw new Error('Reorder must name every song exactly once.')
         }
+        // Answers nothing, as the real channel does — the renderer applies the order it sent.
         state.songs = orderedIds.map(findSong)
-        return state.songs.map(cloneSong)
       }),
       // Always the winning outcome: the kept-the-original path is rarer than the one every test
       // means when it clicks Compress, so a test that wants it says so with `mockResolvedValue`.

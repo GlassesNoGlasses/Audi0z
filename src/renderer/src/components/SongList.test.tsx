@@ -268,4 +268,102 @@ describe('SongList drag reorder', () => {
     // The drag is over either way — the failure must not leave a seam painted on the list.
     expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
   })
+
+  /** DESIGN.md: reordering the view reorders the queue behind the playing song, uninterrupted. */
+  it('applies the reorder to the playing queue at once', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs })
+    await renderApp()
+
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+    expect(nowPlaying()).toBe('Alpha Mix')
+
+    // Drag Bravo below Charlie while Alpha plays: the order becomes a, c, b.
+    const [, bravo, charlie] = rows()
+    stubRect(charlie)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(bravo, { dataTransfer })
+    dragOverAt(charlie, dataTransfer, 55)
+    fireEvent.drop(charlie, { dataTransfer })
+    await waitFor(() =>
+      expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat'])
+    )
+
+    // Nothing was interrupted, and Next follows the order now on screen — not the old one.
+    expect(nowPlaying()).toBe('Alpha Mix')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Charlie Tune')
+  })
+
+  it('applies a playlist reorder to its playing queue at once', async () => {
+    const user = userEvent.setup()
+    seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'b', 'c'])] })
+    await renderApp()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+    await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
+
+    const [, bravo, charlie] = rows()
+    stubRect(charlie)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(bravo, { dataTransfer })
+    dragOverAt(charlie, dataTransfer, 55)
+    fireEvent.drop(charlie, { dataTransfer })
+    await waitFor(() =>
+      expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat'])
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    expect(nowPlaying()).toBe('Charlie Tune')
+  })
+
+  /** A second drag computed from a stale order would silently undo the first. */
+  it('refuses a second drag while a reorder is in flight', async () => {
+    const api = seedApi({ songs })
+    let release!: () => void
+    vi.mocked(api.library.reorder).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = () => resolve(undefined as never)
+        })
+    )
+    await renderApp()
+
+    const [alpha, , charlie] = rows()
+    stubRect(charlie)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(charlie, dataTransfer, 55)
+    fireEvent.drop(charlie, { dataTransfer })
+
+    // Until the store answers, no new drag can start.
+    expect(draggableFlags()).toEqual(['false', 'false', 'false'])
+
+    release()
+    await waitFor(() => expect(draggableFlags()).toEqual(['true', 'true', 'true']))
+    expect(api.library.reorder).toHaveBeenCalledTimes(1)
+  })
+
+  /** One orphaned reference must not wedge a playlist's reorder forever. */
+  it('reorders a playlist around a reference the library cannot resolve', async () => {
+    const user = userEvent.setup()
+    const api = seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'ghost', 'b'])] })
+    await renderApp()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Mixes' }))
+    await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat']))
+
+    const [alpha, bravo] = rows()
+    stubRect(bravo)
+    const dataTransfer = dataTransferStub()
+    fireEvent.dragStart(alpha, { dataTransfer })
+    dragOverAt(bravo, dataTransfer, 55)
+    fireEvent.drop(bravo, { dataTransfer })
+
+    // The payload is the FULL stored order: the ghost keeps its place instead of wedging the drag.
+    await waitFor(() =>
+      expect(api.playlists.reorderSongs).toHaveBeenCalledWith('p1', ['b', 'ghost', 'a'])
+    )
+    expect(songTitles()).toEqual(['Bravo Beat', 'Alpha Mix'])
+  })
 })

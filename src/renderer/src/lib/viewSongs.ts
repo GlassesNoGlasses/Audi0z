@@ -51,6 +51,20 @@ export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
 }
 
 /**
+ * The full stored order after a drag of its resolvable part: known ids take the dragged order,
+ * unknown ids keep their stored positions — so one orphaned reference (a song deleted while a
+ * playlist still names it) cannot wedge every reorder of that playlist.
+ */
+export function mergeReorderedIds(
+  storedIds: readonly string[],
+  reorderedKnownIds: readonly string[],
+  knownIds: ReadonlySet<string>
+): string[] {
+  let cursor = 0
+  return storedIds.map((id) => (knownIds.has(id) ? (reorderedKnownIds[cursor++] ?? id) : id))
+}
+
+/**
  * The songs the current view is about, in the sort's order or — with no sort — the view's own.
  *
  * A playlist may still reference a song that was deleted between two reads, so unknown ids are

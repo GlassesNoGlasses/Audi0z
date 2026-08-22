@@ -476,7 +476,7 @@ describe('reorder', () => {
     const b = await store.add(draft({ title: 'b' }))
     const c = await store.add(draft({ title: 'c' }))
 
-    await store.reorder([c.id, a.id, b.id])
+    await expect(store.reorder([c.id, a.id, b.id])).resolves.toBeUndefined()
 
     expect((await store.list()).map((song) => song.title)).toEqual(['c', 'a', 'b'])
     // A second store over the same dir reads the same order back off disk.

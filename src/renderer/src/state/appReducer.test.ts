@@ -278,3 +278,23 @@ describe('appReducer', () => {
     expect(custom.sort).toEqual({ type: SortType.CUSTOM, direction: SortDirection.ASC })
   })
 })
+
+describe('library/reordered', () => {
+  it('maps the songs it already holds into the given order', () => {
+    const state = seeded()
+
+    const next = reducer(state, { type: 'library/reordered', order: ['c', 'a', 'b'] })
+
+    expect(next.songs.map((entry) => entry.id)).toEqual(['c', 'a', 'b'])
+    // The same objects, in a new order — nothing is refetched or rebuilt.
+    expect(next.songs[0]).toBe(state.songs[2])
+  })
+
+  it('ignores unknown ids and keeps unnamed songs at the end', () => {
+    const state = seeded()
+
+    const next = reducer(state, { type: 'library/reordered', order: ['b', 'ghost'] })
+
+    expect(next.songs.map((entry) => entry.id)).toEqual(['b', 'a', 'c'])
+  })
+})

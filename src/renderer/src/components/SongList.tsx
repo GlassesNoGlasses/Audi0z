@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactElement } from 'react'
 import { useToastError } from '../hooks/useToastError'
 import { filterSongs } from '../lib/search'
-import { songsInView, viewedPlaylist } from '../lib/viewSongs'
+import { mergeReorderedIds, songsInView, viewedPlaylist } from '../lib/viewSongs'
 import { LIBRARY_QUEUE_ID } from '../playback/types'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 import { SortType, type AppState } from '../state/appReducer'
@@ -28,8 +28,12 @@ export function SongList(): ReactElement {
 
   // Dragging rearranges the stored order, so it is only offered when the rows on screen ARE that
   // order: any other sort draws a computed order a drop position says nothing about, and a
-  // filtered list says nothing about where the hidden songs go — the sidebar's own rule.
-  const canDrag = sort.type === SortType.CUSTOM && query.trim() === ''
+  // filtered list says nothing about where the hidden songs go — the sidebar's own rule. A
+  // reorder still in flight blocks the next drag too: its arithmetic would use the stale order,
+  // and the second write would silently undo the first.
+  const [reorderPending, setReorderPending] = useState(false)
+  const pendingRef = useRef(false)
+  const canDrag = !reorderPending && sort.type === SortType.CUSTOM && query.trim() === ''
 
   // State draws the seam; the refs are what the drop reads. Split on purpose: the rows are
   // memoised, and callbacks remade on every pointer move would re-render all of them per row
@@ -60,31 +64,55 @@ export function SongList(): ReactElement {
 
   /**
    * Lands the drag: the dragged id is pulled out of the FULL view order and put back beside the
-   * target, and the store's answer — not the arithmetic here — is what the list is redrawn from.
-   * The write goes to whichever order the view is showing: the playlist's own songIds, or the
-   * library's stored order.
+   * target, and the list is redrawn only once the store accepts that order. The write goes to
+   * whichever order the view is showing: the playlist's own songIds, or the library's stored
+   * order. An authored reorder is a gesture, so when the reordered view IS the playing queue it
+   * reaches the engine at once, behind the current song — unlike a data-driven re-sort, which
+   * App's fence holds back while music plays.
    */
   const onRowDrop = useCallback(() => {
     const dragId = dragIdRef.current
     const mark = dropMarkRef.current
     endDrag()
-    if (dragId === null || mark === null || dragId === mark.id) return
+    if (pendingRef.current || dragId === null || mark === null || dragId === mark.id) return
     const ids = inView.map((song) => song.id).filter((id) => id !== dragId)
     const at = ids.indexOf(mark.id)
     if (at === -1) return
     ids.splice(mark.edge === 'before' ? at : at + 1, 0, dragId)
+
+    pendingRef.current = true
+    setReorderPending(true)
+    const settle = (): void => {
+      pendingRef.current = false
+      setReorderPending(false)
+    }
+
     if (view.kind === 'playlist') {
+      // The payload is the playlist's FULL stored order: an id the library cannot resolve is not
+      // on screen, but it keeps its place rather than wedging the reorder.
+      const known = new Set(inView.map((song) => song.id))
+      const stored = containingPlaylist?.songIds ?? []
       void window.api.playlists
-        .reorderSongs(view.id, ids)
-        .then((playlist) => dispatch({ type: 'playlists/upserted', playlist }))
+        .reorderSongs(view.id, mergeReorderedIds(stored, ids, known))
+        .then((playlist) => {
+          dispatch({ type: 'playlists/upserted', playlist })
+          if (playback.queueId === view.id) dispatch({ type: 'queue/orderChanged', order: ids })
+        })
         .catch(fail)
+        .finally(settle)
       return
     }
     void window.api.library
       .reorder(ids)
-      .then((next) => dispatch({ type: 'library/loaded', songs: next }))
+      .then(() => {
+        dispatch({ type: 'library/reordered', order: ids })
+        if (playback.queueId === LIBRARY_QUEUE_ID) {
+          dispatch({ type: 'queue/orderChanged', order: ids })
+        }
+      })
       .catch(fail)
-  }, [endDrag, inView, view, dispatch, fail])
+      .finally(settle)
+  }, [endDrag, inView, view, containingPlaylist, playback.queueId, dispatch, fail])
 
   /**
    * Playing a row is the one gesture that moves the queue. Inside the queue already playing it is
