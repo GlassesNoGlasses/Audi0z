@@ -176,11 +176,14 @@ function SongRowView({
   return (
     <li
       className={`song-row${isCurrent ? ' is-current' : ''}${dropEdge ? ` drop-${dropEdge}` : ''}`}
-      draggable={draggable}
+      // An open menu is buttons all the way down, every one a child of this li — none of them may
+      // double as a drag handle, or a drifted press on Delete becomes a reorder.
+      draggable={draggable && !menuOpen}
       onDragStart={(event) => {
-        if (!draggable) return
+        if (!draggable || menuOpen) return
+        // No setData: the drop path reads a ref, and a text/plain payload would only feed the
+        // app's own text inputs when a drag overshoots into them.
         event.dataTransfer.effectAllowed = 'move'
-        event.dataTransfer.setData('text/plain', song.id)
         onDragStart(song.id)
       }}
       // The `dragActive` guards below leave a drag this list never started completely alone — no

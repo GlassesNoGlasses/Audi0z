@@ -378,18 +378,20 @@ describe(IPC.library.updateDurations, () => {
 
 describe(IPC.library.reorder, () => {
   /** The library's stored order is the renderer's Custom Order, so this is a write like any other. */
-  it('reorders the library and hands back DTOs in the stored order', async () => {
-    const harness = setup()
+  it('reorders the library and answers nothing — the renderer already holds every DTO', async () => {
+    const fileSize = vi.fn(async (): Promise<number | null> => 4096)
+    const awaitCompression = vi.fn((_id: string) => undefined)
+    const harness = setup({ fileSize, awaitCompression })
     const a = await harness.libraryStore.add(draftSong({ title: 'a' }))
     const b = await harness.libraryStore.add(draftSong({ title: 'b' }))
     const c = await harness.libraryStore.add(draftSong({ title: 'c' }))
 
-    const reordered = await harness.invoke<SongDto[]>(IPC.library.reorder, [c.id, a.id, b.id])
+    await expect(harness.invoke(IPC.library.reorder, [c.id, a.id, b.id])).resolves.toBeUndefined()
 
-    expect(reordered.map((song) => song.title)).toEqual(['c', 'a', 'b'])
-    // Full DTOs, exactly as `library:list` answers — the renderer redraws from this reply alone.
-    expect(reordered[0]).toMatchObject({ url: `media://audio/${c.id}`, sizeBytes: 4096 })
     expect((await harness.libraryStore.list()).map((song) => song.title)).toEqual(['c', 'a', 'b'])
+    // No re-projection for an order-only write: nothing stats a file or waits on a compression.
+    expect(fileSize).not.toHaveBeenCalled()
+    expect(awaitCompression).not.toHaveBeenCalled()
   })
 
   it.each([[undefined], ['solo'], [[1]], [['']]])(

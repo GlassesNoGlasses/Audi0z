@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SortDirection, SortType, type SortMode } from '../state/appReducer'
 import { playlist, song } from '../testing/harness'
-import { songsInView, sortSongs, viewedPlaylist } from './viewSongs'
+import { mergeReorderedIds, songsInView, sortSongs, viewedPlaylist } from './viewSongs'
 
 const songs = [song('a', 'Alpha'), song('b', 'Bravo'), song('c', 'Charlie')]
 const mixes = playlist('p1', 'Mixes', ['c', 'a'])
@@ -146,5 +146,23 @@ describe('sortSongs', () => {
     const before = ids(dated)
     sortSongs(dated, { type: SortType.DURATION, direction: SortDirection.DESC })
     expect(ids(dated)).toEqual(before)
+  })
+})
+
+describe('mergeReorderedIds', () => {
+  it('threads the dragged order through the known ids', () => {
+    expect(mergeReorderedIds(['a', 'b', 'c'], ['c', 'a', 'b'], new Set(['a', 'b', 'c']))).toEqual([
+      'c',
+      'a',
+      'b'
+    ])
+  })
+
+  it('keeps ids the library cannot resolve at their stored positions', () => {
+    expect(mergeReorderedIds(['a', 'ghost', 'b'], ['b', 'a'], new Set(['a', 'b']))).toEqual([
+      'b',
+      'ghost',
+      'a'
+    ])
   })
 })

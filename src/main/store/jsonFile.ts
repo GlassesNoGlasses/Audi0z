@@ -95,6 +95,30 @@ export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
   }
 }
 
+/**
+ * One store mutator at a time: a mutator reads its cache, awaits the disk, then adopts — and a
+ * second mutator entering that await window reads not-yet-adopted state, erasing the first write
+ * in memory, on disk, or both. Wrap every mutator of one store with the same lock; reads stay
+ * unlocked, they only ever see adopted state.
+ */
+export function createMutatorLock(): <A extends unknown[], R>(
+  fn: (...args: A) => Promise<R>
+) => (...args: A) => Promise<R> {
+  let chain: Promise<unknown> = Promise.resolve()
+  return (fn) =>
+    (...args) => {
+      const result = chain.then(
+        () => fn(...args),
+        () => fn(...args)
+      )
+      chain = result.then(
+        () => undefined,
+        () => undefined
+      )
+      return result
+    }
+}
+
 /** One promise chain per resolved path used in `writeJsonFile`. Last caller wins.  */
 const chains = new Map<string, Promise<void>>()
 
@@ -104,8 +128,16 @@ const chains = new Map<string, Promise<void>>()
  * flushing at once cannot interleave; different paths proceed in parallel.
  */
 export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
+  // Serialised at call time: the queue must carry the payload as handed over, not whatever a
+  // caller's live array holds by the time the chain drains.
+  let json: string
+  try {
+    json = `${JSON.stringify(data, null, 2)}\n`
+  } catch (error) {
+    return Promise.reject(error instanceof Error ? error : new Error(String(error)))
+  }
   const key = path.resolve(filePath)
-  const queued = (chains.get(key) ?? Promise.resolve()).then(() => writeNow(filePath, data))
+  const queued = (chains.get(key) ?? Promise.resolve()).then(() => writeNow(filePath, json))
   chains.set(
     key,
     queued.then(
@@ -116,14 +148,13 @@ export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   return queued
 }
 
-/** 
- * Writes to `filePath` JSON data `data`. A temp file is used first, with syncing and renaming 
- * performed on success; temp file is always removed.
-*/
-async function writeNow(filePath: string, data: unknown): Promise<void> {
+/**
+ * Writes to `filePath` the pre-serialised `json`. A temp file is used first, with syncing and
+ * renaming performed on success; temp file is always removed.
+ */
+async function writeNow(filePath: string, json: string): Promise<void> {
   const tmpPath = `${filePath}.tmp-${randomUUID()}`
   try {
-    const json = `${JSON.stringify(data, null, 2)}\n`
     const handle = await open(tmpPath, 'w')
     try {
       await handle.writeFile(json, 'utf8')

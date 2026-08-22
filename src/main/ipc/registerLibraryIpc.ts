@@ -221,10 +221,13 @@ export function registerLibraryIpc(ipc: Pick<IpcMain, 'handle'>, deps: LibraryIp
     await deps.playlistStore.cascadeRemoveSong(song.id)
   })
 
-  /** The library's stored order is the renderer's Custom Order; answers as `library:list` does. */
-  ipc.handle(IPC.library.reorder, async (_event, orderedIds: unknown): Promise<SongDto[]> => {
-    const reordered = await deps.libraryStore.reorder(parseOrderedIds(orderedIds))
-    return Promise.all(reordered.map((song) => toDto(song)))
+  /**
+   * The library's stored order is the renderer's Custom Order. Answers nothing: no file changed,
+   * and the renderer already holds every DTO — it applies the order it sent. Re-projecting here
+   * would stat the whole library and wait behind any in-flight compression for an order-only write.
+   */
+  ipc.handle(IPC.library.reorder, async (_event, orderedIds: unknown): Promise<void> => {
+    await deps.libraryStore.reorder(parseOrderedIds(orderedIds))
   })
 
   ipc.handle(IPC.library.compress, async (_event, id: unknown): Promise<CompressResult> => {

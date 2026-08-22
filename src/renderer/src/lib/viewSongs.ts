@@ -19,8 +19,8 @@ export function viewedPlaylist(view: View, playlists: Playlist[]): Playlist | nu
 }
 
 /**
- * A copy of the songs in the order the sort asks for, or the list itself when there is no sort —
- * the identity is what lets the callers' memos treat "no sort" as costing nothing.
+ * A copy of the songs in the order the sort asks for, or the list itself under Custom Order —
+ * the identity is what lets the callers' memos treat the stored order as costing nothing.
  *
  * `sort` is stable, so songs the comparator cannot separate (two added in the same millisecond)
  * stay in the order they arrived in.
@@ -30,7 +30,7 @@ export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
   if (type === SortType.CUSTOM) return songs
 
   const flip = direction === SortDirection.ASC ? 1 : -1
- return [...songs].sort((a, b) => {
+  return [...songs].sort((a, b) => {
     switch (type) {
       case SortType.DATEADDED:
         return a.addedAt < b.addedAt ? -flip : a.addedAt > b.addedAt ? flip : 0
@@ -51,7 +51,22 @@ export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
 }
 
 /**
- * The songs the current view is about, in the sort's order or — with no sort — the view's own.
+ * The full stored order after a drag of its resolvable part: known ids take the dragged order,
+ * unknown ids keep their stored positions — so one orphaned reference (a song deleted while a
+ * playlist still names it) cannot wedge every reorder of that playlist.
+ */
+export function mergeReorderedIds(
+  storedIds: readonly string[],
+  reorderedKnownIds: readonly string[],
+  knownIds: ReadonlySet<string>
+): string[] {
+  let cursor = 0
+  return storedIds.map((id) => (knownIds.has(id) ? (reorderedKnownIds[cursor++] ?? id) : id))
+}
+
+/**
+ * The songs the current view is about, in the sort's order or — under Custom Order — the view's
+ * own stored order.
  *
  * A playlist may still reference a song that was deleted between two reads, so unknown ids are
  * dropped rather than rendered as holes.

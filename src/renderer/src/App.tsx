@@ -37,7 +37,6 @@ function sameMembers(a: readonly string[], b: readonly string[]): boolean {
 
 /** By value, not identity: "the user just asked for this order" must not hang on allocation. */
 function sameSort(a: SortMode, b: SortMode): boolean {
-  if (a === null || b === null) return a === b
   return a.type === b.type && a.direction === b.direction
 }
 
@@ -104,7 +103,7 @@ function AppShell(): ReactElement {
             songs,
             playlists.find((playlist) => playlist.id === queueId) ?? null,
             { kind: 'playlist', id: queueId },
-            {type: SortType.CUSTOM, direction: SortDirection.ASC}
+            { type: SortType.CUSTOM, direction: SortDirection.ASC }
           )
     return sortSongs(source, sort).map((song) => song.id)
   }, [playback.queueId, songs, playlists, sort])

@@ -20,7 +20,7 @@ export enum SortType {
   TITLE = 'Title',
   DATEADDED = 'Date Added',
   DURATION = 'Duration',
-  SIZE = 'Size',
+  SIZE = 'Size'
 }
 
 export enum SortDirection {
@@ -28,7 +28,7 @@ export enum SortDirection {
   DESC
 }
 
-/** How the view is ordered; null for custom order */
+/** How the view is ordered; CUSTOM is the stored order itself. */
 export type SortMode = {
   type: SortType
   direction: SortDirection
@@ -65,6 +65,7 @@ export interface AppState {
 export type AppAction =
   | PlaybackAction
   | { type: 'library/loaded'; songs: SongDto[] }
+  | { type: 'library/reordered'; order: string[] }
   | { type: 'library/songUpdated'; song: SongDto }
   /** Several songs in one dispatch, so a batched write costs one re-render rather than one each. */
   | { type: 'library/songsUpdated'; songs: SongDto[] }
@@ -104,7 +105,7 @@ export function initialAppState(): AppState {
     settings: { ...FALLBACK_SETTINGS },
     view: { kind: 'library' },
     query: '',
-    sort: {type: SortType.CUSTOM, direction: SortDirection.ASC},
+    sort: { type: SortType.CUSTOM, direction: SortDirection.ASC },
     expandedPlaylists: new Set(),
     dialog: null,
     toasts: [],
@@ -171,6 +172,22 @@ export function createAppReducer(
     switch (action.type) {
       case 'library/loaded':
         return { ...state, songs: action.songs }
+      case 'library/reordered': {
+        // The songs it already holds, in the given order: a reorder moves rows, it changes nothing
+        // in them, so there is nothing to refetch.
+        const byId = new Map(state.songs.map((song) => [song.id, song]))
+        const next: SongDto[] = []
+        for (const id of action.order) {
+          const found = byId.get(id)
+          if (found) {
+            next.push(found)
+            byId.delete(id)
+          }
+        }
+        // Anything the order failed to name keeps a place at the end rather than vanishing.
+        for (const song of state.songs) if (byId.has(song.id)) next.push(song)
+        return { ...state, songs: next }
+      }
       case 'library/songUpdated':
         return {
           ...state,

@@ -375,14 +375,17 @@ describe('TopNav sort menu', () => {
   })
 
   /** The sort in force is named on the bar itself — no need to open the menu to know it. */
-  it('names the sort in force beside the menu button', async () => {
+  it('names the sort and its direction in force beside the menu button', async () => {
     const user = userEvent.setup()
     await renderTopNav({ songs })
     expect(screen.getByText('Custom Order')).toBeInTheDocument()
 
     await sortView(user, /Duration$/)
+    expect(screen.getByText('↓ Duration')).toBeInTheDocument()
 
-    expect(screen.getByText('Duration')).toBeInTheDocument()
+    // The second press flips the direction, and the caption follows the sort actually in force.
+    await sortView(user, /Duration$/)
+    expect(screen.getByText('↑ Duration')).toBeInTheDocument()
     expect(screen.queryByText('Custom Order')).toBeNull()
   })
 

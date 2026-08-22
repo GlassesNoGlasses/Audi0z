@@ -78,18 +78,26 @@ on every queue switch (v3.3) and never persisted.
   plays a song from another view: that song starts in the new queue. A queue switch with no song
   to start still stops playback (no surprise cross-fade between contexts).
 - **Sorting belongs to the view, and the queue follows it.** The top bar's sort menu orders
-  whatever is on screen — Library or playlist — by date added or playing time, ascending on the
-  first press of a mode and flipping on the next. Manual, the default, is the stored order: the
-  library's insertion order, a playlist's own. The sort is a **view-layer, session-only** thing —
-  one field on the renderer's state tree, written to neither `settings.json` nor the playlist, so
-  a relaunch is back to Manual and no stored order is ever rewritten. It is applied in exactly one
-  place (`songsInView`/`sortSongs`), which is what keeps the list, the top bar's play button and
-  the queue re-sync agreeing: reordering the view reorders the queue behind the song that is
-  playing, without interrupting it. The mode itself is global rather than per-view, so the reorder
-  reaches the **playing** queue even when a different view is on screen — sorting from the Library
-  while a playlist plays reorders that playlist's queue too, and returning to it shows the same
-  order. Songs the duration backfill has not reached yet have no playing time to sort by, so they
-  sink to the end in both directions.
+  whatever is on screen — Library or playlist — by title, date added, playing time, or file size,
+  ascending on the first press of a mode and flipping on the next; the bar names the sort in
+  force. Custom Order, the default, is the stored order: the library's insertion order, a
+  playlist's own. The sort is a **view-layer, session-only** thing — one field on the renderer's
+  state tree, written to neither `settings.json` nor the playlist, so a relaunch is back to
+  Custom Order and sorting never rewrites the stored order. It is applied in exactly one place
+  (`songsInView`/`sortSongs`), which is what keeps the list, the top bar's play button and the
+  queue re-sync agreeing: a sort **gesture** reorders the queue behind the song that is playing,
+  without interrupting it. The mode itself is global rather than per-view, so the reorder reaches
+  the **playing** queue even when a different view is on screen. What does NOT move a playing
+  queue is a **data change under a mutable sort key** — renaming a song under a Title sort, a
+  duration landing from the backfill — that reorder is held until playback stops or the queue's
+  membership changes. Songs the duration backfill has not reached yet have no playing time to
+  sort by, so they sink to the end in both directions.
+- **Custom Order is authored by dragging.** Under Custom Order with no search narrowing the list,
+  dragging a song up or down the view is a write to the stored order itself: the whole new order
+  crosses `library:reorder` (or `playlists:reorderSongs`) in one call, the store refuses any
+  order that does not name every song exactly once, and the reply carries nothing — the renderer
+  applies the order it sent. Like a sort gesture and unlike a data change, an authored reorder
+  reaches a playing queue at once, behind the current song.
 - **The sidebar's order IS the stored order.** `playlists.json` holds an array and the sidebar
   lists it as it stands, so dragging a playlist up or down the sidebar is a write: the whole new
   order crosses `playlists:reorder` in one call, and the store refuses any order that does not name

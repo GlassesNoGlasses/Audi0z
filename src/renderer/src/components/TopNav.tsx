@@ -106,8 +106,8 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
   /**
    * A field is asked for ascending the first time — oldest first, shortest first — and the next
-   * press on the one already in force flips it. Manual hands the view back to its stored order.
-   * Every choice shuts the menu: it is a radio group, not somewhere to stay.
+   * press on the one already in force flips it. Custom Order hands the view back to its stored
+   * order. Every choice shuts the menu: it is a radio group, not somewhere to stay.
    */
   function choose(mode: SortType): void {
     setSortOpen(false)
@@ -131,6 +131,9 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     }
     return sort.direction === SortDirection.ASC ? '↓' : '↑'
   }
+
+  /** What the bar names: the active sort with its direction, e.g. "↓ Duration". */
+  const sortCaption = `${chosenSortVisual(sort.type)} ${sort.type.valueOf()}`.trim()
 
   const SortElement = (targetType: SortType): ReactElement => {
     return (
@@ -178,7 +181,10 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
       <span className="topnav-spacer" />
 
-      <span className="sort-caption">{sortOrder[0].valueOf()}</span>
+      {/* Read from the sort in force, never from the menu's MRU head — one source of truth. */}
+      <span className="sort-caption" title={sortCaption}>
+        {sortCaption}
+      </span>
 
       <div className="sort-menu-anchor" ref={sortRef}>
         <button

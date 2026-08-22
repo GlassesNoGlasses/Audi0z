@@ -2,8 +2,8 @@ import { randomUUID } from 'node:crypto'
 import type { LibraryFile, Song } from '../../shared/types'
 import { libraryJsonPath } from '../paths'
 import { ConflictError, NotFoundError } from './errors'
-import { loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
-import type { CreateLibraryStore } from './storeTypes'
+import { createMutatorLock, loadOnce, readJsonFile, writeJsonFile } from './jsonFile'
+import type { CreateLibraryStore, LibraryStore } from './storeTypes'
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
@@ -62,7 +62,7 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
     await writeJsonFile(filePath, file)
   }
 
-  return {
+  const store: LibraryStore = {
     async list() {
       return (await load()).map(cloneSong)
     },
@@ -187,9 +187,10 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
         if (found === undefined) throw new NotFoundError(`No song with id "${id}"`)
         return found
       })
-      current.splice(0, current.length, ...next) // in-memory edit
-      await persist(current)
-      return current.map(cloneSong)
+      // Disk first, cache after: a failed write must leave the served order untouched, or the
+      // next unrelated persist would commit an order the caller was told did not save.
+      await persist(next)
+      current.splice(0, current.length, ...next)
     },
 
     // removes in-memory metadata only; IPC will handle the actual file removal
@@ -200,5 +201,20 @@ export const createLibraryStore: CreateLibraryStore = (dir) => {
       current.splice(index, 1)
       await persist(current)
     }
+  }
+
+  // See `createMutatorLock`: mutators serialise so none reads the cache mid-way through another's
+  // disk round-trip. `list`/`getSong` stay unlocked.
+  const locked = createMutatorLock()
+  return {
+    ...store,
+    add: locked(store.add),
+    update: locked(store.update),
+    updateDurations: locked(store.updateDurations),
+    renameTag: locked(store.renameTag),
+    removeTag: locked(store.removeTag),
+    replaceFile: locked(store.replaceFile),
+    reorder: locked(store.reorder),
+    remove: locked(store.remove)
   }
 }

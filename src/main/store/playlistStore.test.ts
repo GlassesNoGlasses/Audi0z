@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createTmpLibrary, type TmpLibrary } from '../../../tests/support/tmpLibrary'
 import { playlistsJsonPath } from '../paths'
@@ -276,10 +276,95 @@ describe('reorderSongs', () => {
     expect((await store.list())[0]?.songIds).toEqual(['a', 'b'])
   })
 
+  it('names the submitted unknown id, never a stored one', async () => {
+    const store = createPlaylistStore(lib.root)
+    const playlist = await store.create('P')
+    await store.addSong(playlist.id, 'a')
+    await store.addSong(playlist.id, 'b')
+
+    await expect(store.reorderSongs(playlist.id, ['a', 'nope'])).rejects.toThrow(
+      'No song with id "nope"'
+    )
+  })
+
+  it('rejects an order that smuggles an unknown id past a duplicated stored id', async () => {
+    // A duplicate can only arrive from outside the app — the validator accepts any string array.
+    const stored: PlaylistsFile = {
+      version: 1,
+      playlists: [
+        {
+          id: 'p1',
+          name: 'Dup',
+          songIds: ['a', 'a', 'b'],
+          shuffle: false,
+          repeat: false,
+          createdAt: new Date().toISOString()
+        }
+      ]
+    }
+    await writeFile(playlistsJsonPath(lib.root), JSON.stringify(stored), 'utf8')
+    const store = createPlaylistStore(lib.root)
+
+    await expect(store.reorderSongs('p1', ['a', 'b', 'zzz'])).rejects.toBeInstanceOf(NotFoundError)
+
+    const file = JSON.parse(await readFile(playlistsJsonPath(lib.root), 'utf8')) as PlaylistsFile
+    expect(file.playlists[0]?.songIds).toEqual(['a', 'a', 'b'])
+  })
+
   it('throws NotFound for an unknown playlist', async () => {
     await expect(createPlaylistStore(lib.root).reorderSongs('missing', [])).rejects.toBeInstanceOf(
       NotFoundError
     )
+  })
+})
+
+describe('concurrent mutators', () => {
+  it('composes two quick adds — both songs land', async () => {
+    const store = createPlaylistStore(lib.root)
+    const created = await store.create('P')
+
+    await Promise.all([store.addSong(created.id, 's1'), store.addSong(created.id, 's2')])
+
+    expect((await store.list())[0]?.songIds).toEqual(['s1', 's2'])
+    expect((await createPlaylistStore(lib.root).list())[0]?.songIds).toEqual(['s1', 's2'])
+  })
+
+  it('composes a reorder with a create landing mid-write', async () => {
+    const store = createPlaylistStore(lib.root)
+    const a = await store.create('A')
+    const b = await store.create('B')
+
+    await Promise.all([store.reorder([b.id, a.id]), store.create('C')])
+
+    expect((await store.list()).map((p) => p.name)).toEqual(['B', 'A', 'C'])
+    expect((await createPlaylistStore(lib.root).list()).map((p) => p.name)).toEqual(['B', 'A', 'C'])
+  })
+})
+
+describe('failed writes', () => {
+  /** Makes the next persist fail: the atomic rename cannot land on a directory. */
+  async function blockWrites(): Promise<void> {
+    await rm(playlistsJsonPath(lib.root), { force: true })
+    await mkdir(playlistsJsonPath(lib.root))
+  }
+
+  it('a failed persist leaves the cached playlist unchanged', async () => {
+    const store = createPlaylistStore(lib.root)
+    const created = await store.create('Before')
+    await blockWrites()
+
+    await expect(store.rename(created.id, 'After')).rejects.toThrow()
+    expect((await store.list())[0]?.name).toBe('Before')
+  })
+
+  it('a failed persist leaves the cached order alone', async () => {
+    const store = createPlaylistStore(lib.root)
+    const a = await store.create('Alpha')
+    const b = await store.create('Bravo')
+    await blockWrites()
+
+    await expect(store.reorder([b.id, a.id])).rejects.toThrow()
+    expect((await store.list()).map((p) => p.id)).toEqual([a.id, b.id])
   })
 })
 

@@ -6,7 +6,7 @@ export interface LibraryStore {
   add(song: Song): Promise<Song>
   update(id: string, patch: Partial<Pick<Song, 'title' | 'tags'>>): Promise<Song>
   updateDurations(entries: ReadonlyArray<{ id: string; durationSec: number }>): Promise<Song[]>
-  reorder(orderedIds: string[]): Promise<Song[]>
+  reorder(orderedIds: string[]): Promise<void>
   remove(id: string): Promise<void>
   renameTag(oldName: string, newName: string): Promise<void>
   removeTag(name: string): Promise<void>
