@@ -20,31 +20,25 @@ export function SongList(): ReactElement {
     () => songsInView(songs, containingPlaylist, view, sort),
     [songs, containingPlaylist, view, sort]
   )
-  // The search filters what is SHOWN, never the queue: clicking a filtered row still plays inside
-  // the full queue order.
+  // The search filters what is SHOWN, never the queue.
   const visible = useMemo(() => filterSongs(inView, query), [inView, query])
 
   const fail = useToastError()
 
-  // Dragging rearranges the stored order, so it is only offered when the rows on screen ARE that
-  // order: any other sort draws a computed order a drop position says nothing about, and a
-  // filtered list says nothing about where the hidden songs go — the sidebar's own rule. A
-  // reorder still in flight blocks the next drag too: its arithmetic would use the stale order,
-  // and the second write would silently undo the first.
+  // Drag only when the rows on screen ARE the stored order. A reorder still in flight blocks the
+  // next: its arithmetic would use the stale order and the second write would undo the first.
   const [reorderPending, setReorderPending] = useState(false)
   const pendingRef = useRef(false)
   const canDrag = !reorderPending && sort.type === SortType.CUSTOM && query.trim() === ''
 
-  // State draws the seam; the refs are what the drop reads. Split on purpose: the rows are
-  // memoised, and callbacks remade on every pointer move would re-render all of them per row
-  // crossed, so the callbacks below depend on nothing the drag itself changes.
+  // State draws the seam, the refs are what the drop reads: the callbacks below depend on nothing
+  // the drag changes, or every memoised row would re-render per row crossed.
   const [dragActive, setDragActive] = useState(false)
   const [dropMark, setDropMark] = useState<DropMark | null>(null)
   const dragIdRef = useRef<string | null>(null)
   const dropMarkRef = useRef<DropMark | null>(null)
 
-  // Read at reply time, never captured at drop time: the queue can change hands during the IPC
-  // round trip, and a stale reply must not reorder — or stop — a queue it no longer belongs to.
+  // Read at reply time, not captured at drop time: the queue can change hands during the IPC trip.
   const queueIdRef = useRef(playback.queueId)
   useEffect(() => {
     queueIdRef.current = playback.queueId
@@ -69,9 +63,7 @@ export function SongList(): ReactElement {
     setDropMark(null)
   }, [])
 
-  // A source row that unmounts mid-drag (a refresh, a delete, the search filtering it away) can
-  // never deliver its dragEnd — without this the list stays armed forever and captures every
-  // foreign drag that follows.
+  // A source row that unmounts mid-drag never delivers its dragEnd, and the list would stay armed.
   useEffect(() => {
     if (!dragActive) return
     const dragId = dragIdRef.current
@@ -91,12 +83,8 @@ export function SongList(): ReactElement {
   }, [dragActive, endDrag])
 
   /**
-   * Lands the drag: the dragged id is pulled out of the FULL view order and put back beside the
-   * target, and the list is redrawn only once the store accepts that order. The write goes to
-   * whichever order the view is showing: the playlist's own songIds, or the library's stored
-   * order. An authored reorder is a gesture, so when the reordered view IS the playing queue it
-   * reaches the engine at once, behind the current song — unlike a data-driven re-sort, which
-   * App's fence holds back while music plays.
+   * Lands the drag against the FULL view order; the list is redrawn only once the store accepts it.
+   * When the reordered view IS the playing queue it reaches the engine at once, unlike a re-sort.
    */
   const onRowDrop = useCallback(() => {
     const dragId = dragIdRef.current
@@ -116,8 +104,8 @@ export function SongList(): ReactElement {
     }
 
     if (view.kind === 'playlist') {
-      // The payload is the playlist's FULL stored order: an id the library cannot resolve is not
-      // on screen, but it keeps its place rather than wedging the reorder.
+      // The payload is the playlist's FULL stored order: an id the library cannot resolve keeps
+      // its place rather than wedging the reorder.
       const known = new Set(inView.map((song) => song.id))
       const stored = containingPlaylist?.songIds ?? []
       void window.api.playlists
@@ -144,11 +132,7 @@ export function SongList(): ReactElement {
       .finally(settle)
   }, [endDrag, inView, view, containingPlaylist, dispatch, fail])
 
-  /**
-   * Playing a row is the one gesture that moves the queue. Inside the queue already playing it is
-   * a plain song change; anywhere else it hands the queue over to the view first — with the
-   * view's FULL order, since the search filters what is shown and never what is queued.
-   */
+  /** The one gesture that moves the queue: outside the playing queue it hands it over, with the view's FULL order. */
   const onPlay = useCallback(
     (songId: string) => {
       const viewQueueId = view.kind === 'library' ? LIBRARY_QUEUE_ID : view.id
@@ -165,8 +149,7 @@ export function SongList(): ReactElement {
         startSongId: songId
       })
     },
-    // The two fields, not the whole `settings`: dragging the volume slider must not invalidate
-    // this callback and re-render every memoised row with it.
+    // The two fields, not the whole `settings`: the volume slider must not re-render every memoised row.
     [
       dispatch,
       view,
@@ -199,10 +182,7 @@ export function SongList(): ReactElement {
     [dispatch, songs]
   )
 
-  /**
-   * Tag membership is a whole-list write: `library.update` replaces `tags`, so the next list is
-   * computed here from what the song carries rather than sent as a delta.
-   */
+  /** `library.update` replaces `tags` wholesale, so the next list is computed here, not sent as a delta. */
   const onToggleTag = useCallback(
     (songId: string, tagName: string) => {
       const song = songs.find((entry) => entry.id === songId)
@@ -232,16 +212,13 @@ export function SongList(): ReactElement {
   }
 
   return (
-    // The list's own handlers cover the 4px gaps between rows — without them the cursor flips to
-    // no-drop crossing each gap and a release there is lost. All three are ours-only (`dragActive`
-    // gates), so a foreign drag passes untouched; the rows stopPropagation, so a drop on a row
-    // never double-fires here.
+    // The list's own handlers cover the 4px gaps between rows, where a release would otherwise be
+    // lost; all three are ours-only, and the rows stopPropagation so a drop never double-fires.
     <ul
       className="song-list"
       aria-label="Songs"
       onDragOver={(event) => {
-        // Only while a seam is painted: with no live mark the empty region is not a target, the
-        // cursor says so, and a release there abandons the drag natively.
+        // Only while a seam is painted: with no live mark the empty region is not a target.
         if (!dragActive || dropMarkRef.current === null) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'

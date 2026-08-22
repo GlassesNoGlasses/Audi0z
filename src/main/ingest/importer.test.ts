@@ -7,7 +7,7 @@ import type { Song } from '../../shared/types'
 import type { LibraryStore } from '../store/storeTypes'
 import { importFile } from './importer'
 
-/** WP2 owns the real store; here it is a mock that records what the importer asked it to add. */
+/** A mock store that records what the importer asked it to add. */
 function mockLibraryStore(): LibraryStore {
   return {
     list: vi.fn(async () => []),
@@ -110,12 +110,7 @@ describe('importFile', () => {
     expect(libraryStore.add).toHaveBeenCalledTimes(1)
   })
 
-  /**
-   * Opus is not guaranteed to win: a lean lossy source can re-encode to the same size or bigger,
-   * and an equal-sized re-encode is all cost and no gain, so the comparison is `<`, not `<=`. The
-   * import still has to land a song, so it falls back to the plain copy it would have made with
-   * compression switched off — and records the song as uncompressed, which is what it is.
-   */
+  /** Opus is not guaranteed to win, and a tie is all cost: the comparison is `<`, not `<=`. */
   it('falls back to a plain copy when the opus re-encode is not smaller', async () => {
     const { size } = await stat(sourcePath)
     const transcode = vi.fn(async ({ dst }: { src: string; dst: string }) => {
@@ -133,13 +128,11 @@ describe('importFile', () => {
     })
     expect(song.compressed).toBe(false)
     expect(song.fileName).toBe(`${song.id}.mp3`)
-    // The staged opus is gone, and what landed is the source byte for byte.
     expect(await readdir(audioDir)).toEqual([song.fileName])
     expect(await readFile(path.join(audioDir, song.fileName), 'utf8')).toBe('source bytes')
     expect(vi.mocked(libraryStore.add).mock.calls[0][0]).toEqual(song)
   })
 
-  /** The staged opus is residue too: a failure after it is written must not leave it behind. */
   it('leaves no staged opus behind when the store rejects a compressed import', async () => {
     vi.mocked(libraryStore.add).mockRejectedValueOnce(new Error('library.json is locked'))
     const transcode = vi.fn(async ({ dst }: { src: string; dst: string }) => {

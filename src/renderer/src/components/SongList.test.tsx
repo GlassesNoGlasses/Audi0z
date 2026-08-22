@@ -17,10 +17,7 @@ stubMediaElement()
 
 const songs = [song('a', 'Alpha Mix'), song('b', 'Bravo Beat'), song('c', 'Charlie Tune')]
 
-/**
- * jsdom implements no drag pipeline, so the `DataTransfer` the handlers write to is hand-rolled —
- * only the two methods and two properties the rows touch. Same stub the sidebar's drag tests use.
- */
+/** jsdom implements no drag pipeline, so the `DataTransfer` is hand-rolled. */
 function dataTransferStub(): DataTransfer {
   const store: Record<string, string> = {}
   return {
@@ -33,10 +30,7 @@ function dataTransferStub(): DataTransfer {
   } as unknown as DataTransfer
 }
 
-/**
- * jsdom has no `DragEvent` constructor either, so testing-library builds a plain `Event` — which
- * drops `clientY`, the one coordinate the drop edge is decided from. Put it back by hand.
- */
+/** jsdom has no `DragEvent`, so the plain `Event` built instead needs its `clientY` put back. */
 function dragOverAt(target: HTMLElement, dataTransfer: DataTransfer, clientY: number): void {
   const event = createEvent.dragOver(target, { dataTransfer })
   Object.defineProperty(event, 'clientY', { value: clientY })
@@ -90,8 +84,7 @@ describe('SongList', () => {
     await user.click(screen.getByRole('button', { name: 'Charlie Tune' }))
 
     expect(nowPlaying()).toBe('Charlie Tune')
-    // The playlist's order is the queue now: after its head comes its second song, not the
-    // library's wrap-around to Alpha Mix.
+    // The playlist's order is the queue now: after its head comes its second song, not Alpha Mix.
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Bravo Beat')
   })
@@ -113,10 +106,7 @@ describe('SongList', () => {
     expect(songTitles()).toEqual(['Charlie Tune', 'Bravo Beat', 'Alpha Mix'])
   })
 
-  /**
-   * The backfill measures songs behind the list, so a library being sorted by playing time will
-   * routinely hold some that have none yet. They go to the end rather than leading with a blank.
-   */
+  /** The backfill measures behind the list, so a duration sort routinely holds songs with none. */
   it('sinks a song with no playing time to the end of a duration sort', async () => {
     const user = userEvent.setup()
     seedApi({
@@ -144,11 +134,9 @@ describe('SongList', () => {
 
     await user.click(screen.getByRole('button', { name: 'Charlie Tune' }))
     expect(nowPlaying()).toBe('Charlie Tune')
-    // The playlist really is the queue now — it brought its own repeat flag along.
     expect(screen.getByRole('button', { name: 'Repeat' })).toHaveAttribute('aria-pressed', 'true')
 
-    // One row is on screen, three are in the queue: next wraps round the whole playlist rather
-    // than restarting the only visible song.
+    // One row on screen, three in the queue: Next wraps the playlist rather than restarting.
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Alpha Mix')
   })
@@ -164,8 +152,7 @@ describe('SongList drag reorder', () => {
     stubRect(charlie)
     const dataTransfer = dataTransferStub()
     fireEvent.dragStart(alpha, { dataTransfer })
-    // Either side of the row's own midpoint: above it the seam is the row's top edge, below it
-    // the bottom one, and the same pointer position must not mean both.
+    // Either side of the row's midpoint: above it the seam is the top edge, below it the bottom.
     dragOverAt(charlie, dataTransfer, 45)
     expect(charlie.className).toContain('drop-before')
     dragOverAt(charlie, dataTransfer, 55)
@@ -173,7 +160,6 @@ describe('SongList drag reorder', () => {
     fireEvent.drop(charlie, { dataTransfer })
 
     expect(api.library.reorder).toHaveBeenCalledWith(['b', 'c', 'a'])
-    // The list is the store's answer, not the guess the drag made — nothing moves until it lands.
     await waitFor(() => expect(songTitles()).toEqual(['Bravo Beat', 'Charlie Tune', 'Alpha Mix']))
     expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
   })
@@ -223,11 +209,7 @@ describe('SongList drag reorder', () => {
     expect(draggableFlags()).toEqual(['false'])
   })
 
-  /**
-   * A file dragged in from the OS never went through the list's own `dragStart`, so every handler
-   * on the row has to leave the event completely alone: no seam, no reorder, and neither
-   * `preventDefault` nor `stopPropagation` on the way past.
-   */
+  /** A drag from the OS never hit the list's own `dragStart`, so the handlers leave it alone. */
   it('leaves a drag it never started completely alone', async () => {
     const api = seedApi({ songs })
     await renderApp()
@@ -238,19 +220,16 @@ describe('SongList drag reorder', () => {
 
     dragOverAt(alpha, dataTransfer, 45)
 
-    // No seam drawn: the row is not offering to receive anything.
     expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
 
     const dropped = createEvent.drop(alpha, { dataTransfer })
     fireEvent(alpha, dropped)
 
-    // Untouched: a row that had taken this drag would have cancelled the event here.
     expect(dropped.defaultPrevented).toBe(false)
     expect(api.library.reorder).not.toHaveBeenCalled()
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune'])
   })
 
-  /** The store is the order of record, so a reorder it refused must leave the list where it was. */
   it('says so and keeps the old order when the reorder will not save', async () => {
     const api = seedApi({ songs })
     vi.mocked(api.library.reorder).mockRejectedValue(new Error('library.json is read-only'))
@@ -265,7 +244,6 @@ describe('SongList drag reorder', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('library.json is read-only')
     expect(songTitles()).toEqual(['Alpha Mix', 'Bravo Beat', 'Charlie Tune'])
-    // The drag is over either way — the failure must not leave a seam painted on the list.
     expect(rows().some((li) => li.className.includes('drop-'))).toBe(false)
   })
 
@@ -278,7 +256,6 @@ describe('SongList drag reorder', () => {
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
     expect(nowPlaying()).toBe('Alpha Mix')
 
-    // Drag Bravo below Charlie while Alpha plays: the order becomes a, c, b.
     const [, bravo, charlie] = rows()
     stubRect(charlie)
     const dataTransfer = dataTransferStub()
@@ -287,7 +264,6 @@ describe('SongList drag reorder', () => {
     fireEvent.drop(charlie, { dataTransfer })
     await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat']))
 
-    // Nothing was interrupted, and Next follows the order now on screen — not the old one.
     expect(nowPlaying()).toBe('Alpha Mix')
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Charlie Tune')
@@ -332,7 +308,6 @@ describe('SongList drag reorder', () => {
     dragOverAt(charlie, dataTransfer, 55)
     fireEvent.drop(charlie, { dataTransfer })
 
-    // Until the store answers, no new drag can start.
     expect(draggableFlags()).toEqual(['false', 'false', 'false'])
 
     release()
@@ -402,7 +377,6 @@ describe('SongList drag reorder', () => {
     dragOverAt(bravo, dataTransfer, 45)
     expect(bravo.className).toContain('drop-before')
 
-    // The search filters Alpha out from under its own drag — the row unmounts, dragEnd never fires.
     await user.type(screen.getByRole('searchbox', { name: 'Search songs' }), 'bravo')
     await waitFor(() => expect(songTitles()).toEqual(['Bravo Beat']))
 
@@ -452,7 +426,6 @@ describe('SongList drag reorder', () => {
     await user.click(screen.getByRole('button', { name: 'Bravo Beat' }))
     expect(nowPlaying()).toBe('Bravo Beat')
 
-    // Drag Bravo below Charlie in the playlist; the reply is still in flight...
     const [bravo, charlie] = rows()
     stubRect(charlie)
     const dataTransfer = dataTransferStub()
@@ -460,7 +433,6 @@ describe('SongList drag reorder', () => {
     dragOverAt(charlie, dataTransfer, 55)
     fireEvent.drop(charlie, { dataTransfer })
 
-    // ...while the user hands the queue to the Library and plays a song the playlist lacks.
     await user.click(within(sidebar()).getByRole('button', { name: 'Library' }))
     await user.click(screen.getByRole('button', { name: 'Alpha Mix' }))
     expect(nowPlaying()).toBe('Alpha Mix')
@@ -474,7 +446,6 @@ describe('SongList drag reorder', () => {
     expect(nowPlaying()).toBe('Bravo Beat')
   })
 
-  /** Once the seam is gone, the list's empty region is not a drop target. */
   it('abandons a release in the empty region after the seam is cleared', async () => {
     const api = seedApi({ songs })
     await renderApp()
@@ -488,12 +459,10 @@ describe('SongList drag reorder', () => {
     const list = document.querySelector('.song-list') as HTMLElement
     fireEvent.dragLeave(list, { dataTransfer })
 
-    // Re-entering the empty region offers no target: the list refuses the dragOver...
     const over = createEvent.dragOver(list, { dataTransfer })
     fireEvent(list, over)
     expect(over.defaultPrevented).toBe(false)
 
-    // ...and a release there commits nothing.
     fireEvent.drop(list, { dataTransfer })
     expect(api.library.reorder).not.toHaveBeenCalled()
   })

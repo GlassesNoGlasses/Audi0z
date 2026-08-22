@@ -1,19 +1,9 @@
 import childProcess from 'node:child_process'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
-/**
- * Covers the electron-builder afterPack hook at build/adhocSign.js.
- *
- * It sits under tests/support because vitest.config.ts's node project globs only `src/main`,
- * `src/shared` and `tests/support` — nothing reaches build/, and the vitest config is not widened
- * for a single build hook.
- *
- * `vi.mock('node:child_process')` does not work here: the hook is CommonJS and its `require` of a
- * builtin resolves natively, past vitest's mock registry. Spying on the builtin's (mutable) exports
- * object does work, as long as the spy is installed before the hook is imported and destructures
- * `execFileSync` — hence the dynamic import in `beforeAll`.
- */
+/** Covers the electron-builder afterPack hook at build/adhocSign.js. */
 
+// Spied before the dynamic import below: the hook is CommonJS, past vitest's mock registry.
 const execFileSync = vi
   .spyOn(childProcess, 'execFileSync')
   .mockImplementation(() => Buffer.alloc(0))

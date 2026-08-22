@@ -2,11 +2,7 @@ import { renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { useKeyboardShortcuts, type KeyboardShortcutsOptions } from './useKeyboardShortcuts'
 
-/**
- * The hook talks to `document` and nothing else, so these tests drive it directly rather than
- * through the app: every case here is about which events it must ignore, and the app-level tests
- * in `App.test.tsx` cover what the shortcuts actually do.
- */
+/** Driven straight at `document`; what the shortcuts actually do is covered in `App.test.tsx`. */
 
 interface Harness {
   onTogglePlay: Mock
@@ -145,7 +141,6 @@ describe('useKeyboardShortcuts — space', () => {
 
     press(' ', attach(tag))
 
-    // Handling it here too would fire the button AND the transport off one press.
     expect(onTogglePlay).not.toHaveBeenCalled()
   })
 
@@ -155,15 +150,10 @@ describe('useKeyboardShortcuts — space', () => {
     const event = press(' ', optedIn('button'))
 
     expect(onTogglePlay).toHaveBeenCalledTimes(1)
-    // Load-bearing beyond the scroll: preventing the keydown is what cancels the button's own
-    // keyup click, and that click is what used to replay the song from the top.
+    // Preventing the keydown cancels the button's keyup click, which used to replay the song.
     expect(event.defaultPrevented).toBe(true)
   })
 
-  /**
-   * The opt-in claims space only when there is something to toggle. With a cold queue the guard
-   * falls through un-prevented, so the row keeps its native activation and space starts it.
-   */
   it('hands an opted-in control its space back when no song is cued', () => {
     const { onTogglePlay } = setup({ hasCurrentSong: false })
 
@@ -192,7 +182,6 @@ describe('useKeyboardShortcuts — arrows', () => {
     const event = press(key)
 
     expect(onSeekBy).toHaveBeenCalledWith(delta)
-    // Swallowed so the page does not scroll sideways under the skip.
     expect(event.defaultPrevented).toBe(true)
   })
 
@@ -205,11 +194,7 @@ describe('useKeyboardShortcuts — arrows', () => {
     expect(event.defaultPrevented).toBe(false)
   })
 
-  /**
-   * The row menu's own arrow navigation is a React handler, so it runs before this document
-   * listener and marks the event; either mark — the menu around the target or the prevented
-   * default — is enough to keep the song behind the menu where it was.
-   */
+  /** The menu's own arrow handler is a React one, so it runs first and marks the event. */
   it('leaves the arrows to an open menu', () => {
     const { onSeekBy } = setup()
 
@@ -249,7 +234,6 @@ describe('useKeyboardShortcuts — arrows', () => {
     expect(onSeekBy).not.toHaveBeenCalled()
   })
 
-  /** Held down it would fire dozens of skips a second; one press is one jump. */
   it('ignores a key held down', () => {
     const { onSeekBy } = setup()
 
@@ -258,7 +242,6 @@ describe('useKeyboardShortcuts — arrows', () => {
     expect(onSeekBy).not.toHaveBeenCalled()
   })
 
-  /** ⌘← is Back, ⌥← is a word left: a combination is never the transport's. */
   it.each(['metaKey', 'ctrlKey', 'altKey'] as const)('leaves %s combinations alone', (modifier) => {
     const { onSeekBy } = setup()
 
@@ -311,11 +294,7 @@ describe('useKeyboardShortcuts — m', () => {
   })
 })
 
-/**
- * A combination belongs to the OS or to the app chrome, never to the transport: on macOS ⌘M is
- * Minimize, and answering it here would silently mute the player — and persist that mute — as the
- * window went down.
- */
+/** ⌘M is Minimize on macOS: answering it here would silently mute the player, and persist it. */
 describe('useKeyboardShortcuts — modifiers', () => {
   it.each(['metaKey', 'ctrlKey', 'altKey'] as const)('leaves %s combinations alone', (modifier) => {
     const { onTogglePlay, onToggleMute } = setup()
@@ -325,7 +304,6 @@ describe('useKeyboardShortcuts — modifiers', () => {
 
     expect(onTogglePlay).not.toHaveBeenCalled()
     expect(onToggleMute).not.toHaveBeenCalled()
-    // Not swallowed either: the combination is somebody else's to handle.
     expect(space.defaultPrevented).toBe(false)
   })
 

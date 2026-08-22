@@ -1,9 +1,4 @@
-/**
- * Generates a real, playable WAV file in memory so tests never need a committed binary fixture.
- *
- * 8 kHz mono 8-bit PCM is the smallest thing ffmpeg and Chromium both accept without complaint —
- * half a second of it is ~4 KB.
- */
+/** A real, playable WAV in memory: 8 kHz mono 8-bit PCM, what ffmpeg and Chromium both accept. */
 
 export const WAV_SAMPLE_RATE = 8000
 export const WAV_CHANNELS = 1
@@ -11,10 +6,7 @@ export const WAV_BITS_PER_SAMPLE = 8
 
 const TONE_HZ = 440
 
-/**
- * @param durationSec length of the tone; defaults to 0.5s.
- * @returns a complete RIFF/WAVE buffer (44-byte header + PCM data).
- */
+/** @returns a complete RIFF/WAVE buffer (44-byte header + PCM data). */
 export function makeWav(durationSec = 0.5): Buffer {
   const blockAlign = (WAV_CHANNELS * WAV_BITS_PER_SAMPLE) / 8
   const byteRate = WAV_SAMPLE_RATE * blockAlign

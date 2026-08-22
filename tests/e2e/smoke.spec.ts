@@ -11,12 +11,7 @@ import path from 'node:path'
 import type { LibraryFile, PlaylistsFile, Song } from '../../src/shared/types'
 import { makeWav } from '../support/makeWav'
 
-/**
- * The real thing: the built main process, the real `media://` protocol, real files on disk.
- *
- * Every test gets its OWN `AUDI0Z_LIBRARY_DIR` and its own app instance — without that the suite
- * would write into the developer's actual `~/Music/audi0z`.
- */
+/** Built main process, real `media://`, real files; each test gets its own `AUDI0Z_LIBRARY_DIR`. */
 
 /** Long enough that a seek to the middle still has seconds of audio left to play. */
 const CLIP_SECONDS = 30
@@ -63,10 +58,7 @@ async function seedLibrary(): Promise<Fixture> {
   return { root, audio }
 }
 
-/**
- * This spec is type-checked with the main process, which has no DOM lib — so the one browser
- * global the evaluated snippet below touches is declared here rather than pulled in wholesale.
- */
+/** Type-checked with the main process, which has no DOM lib, so the one global is declared here. */
 declare const document: {
   querySelector(selector: 'audio'): {
     paused: boolean
@@ -75,7 +67,6 @@ declare const document: {
   } | null
 }
 
-/** What the one `<audio>` element is doing right now. */
 function audioState(page: Page): Promise<{ paused: boolean; readyState: number; time: number }> {
   return page.evaluate(() => {
     const audio = document.querySelector('audio')
@@ -118,22 +109,16 @@ test('plays a song over the media:// protocol', async () => {
   const alpha = page.getByRole('button', { name: 'Alpha Mix', exact: true })
   await expect(alpha).toBeVisible()
 
-  // The clock starts on the click, not on launch: what is being budgeted below is the song
-  // starting, not the window opening.
+  // The clock starts on the click, not on launch.
   const before = Date.now()
   await alpha.click()
 
-  // A clock past zero is the whole path: bytes fetched over the custom protocol, decoded, playing.
   await expect
     .poll(async () => (await audioState(page)).time, { intervals: [50] })
     .toBeGreaterThan(0)
-  // Pins the v2.1 regression class: a song in a quiet library must start well under a second. The
-  // duration backfill probes through this same handler, and while it did not yield to playback its
-  // two streams sat in front of this one on the main process's four-thread pool.
+  // Latency-sensitive: a song in a quiet library must start well under a second.
   expect(Date.now() - before).toBeLessThan(1200)
 
-  // readyState >= HAVE_CURRENT_DATA is decoded bytes off the custom protocol, and unpaused is the
-  // transport actually running rather than one nudge of `currentTime`.
   const state = await audioState(page)
   expect(state.readyState).toBeGreaterThanOrEqual(2)
   expect(state.paused).toBe(false)
@@ -146,7 +131,6 @@ test('seeks into the middle of a song', async () => {
 
   await seek.fill('15')
 
-  // Past the seek point and still moving: the range request was served and playback resumed.
   await expect.poll(async () => (await audioState(page)).time).toBeGreaterThan(15)
 })
 
@@ -168,11 +152,7 @@ test('creates a playlist that lands in playlists.json', async () => {
     .toEqual(['Late night'])
 })
 
-/**
- * Also only provable here: jsdom has no box model, so the unit test can see that the button sits
- * outside the scrolling list but not that it stays on the panel's bottom edge. Anything above the
- * list that grows into the free space pushes the footer off — which a stray `flex: 1` did.
- */
+/** Only provable here: jsdom has no box model. */
 test('keeps the new playlist button on the bottom edge of the sidebar', async () => {
   const sidebar = await page.locator('.sidebar').boundingBox()
   const list = await page.locator('.playlist-list').boundingBox()
@@ -181,9 +161,7 @@ test('keeps the new playlist button on the bottom edge of the sidebar', async ()
   const library = await page.getByRole('button', { name: 'Library', exact: true }).boundingBox()
   if (!sidebar || !list || !create || !library) throw new Error('the sidebar rendered no boxes')
 
-  // Within the panel's own padding of the bottom, and below the list that scrolls under it. The
-  // lower bound is the half that catches a footer pushed off: a negative gap is the button hanging
-  // below the panel, which "close to the bottom edge" alone would happily pass.
+  // The lower bound catches a footer pushed off: a negative gap hangs below the panel.
   const gapBelowCreate = sidebar.y + sidebar.height - (create.y + create.height)
   expect(gapBelowCreate).toBeLessThan(30)
   expect(gapBelowCreate).toBeGreaterThanOrEqual(0)
@@ -192,10 +170,7 @@ test('keeps the new playlist button on the bottom edge of the sidebar', async ()
   expect(library.height).toBeLessThan(40)
 })
 
-/**
- * The one part of the app that cannot be proved anywhere but here: the renderer measures playing
- * times off real decoded audio, and jsdom has no decoder to do it with.
- */
+/** Only provable here: the times come off real decoded audio, and jsdom has no decoder. */
 test('measures the playing times of the library and keeps them', async () => {
   await expect(page.locator('.song-list .song-duration')).toHaveText([
     `0:${CLIP_SECONDS}`,

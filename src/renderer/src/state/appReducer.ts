@@ -49,10 +49,7 @@ export interface AppState {
   settings: Settings
   view: View
   query: string
-  /**
-   * Global and session-only, like the query: it belongs to the window rather than to a view, and
-   * nothing persists it — the next launch is back to the stored order.
-   */
+  /** Global and session-only, like the query: never persisted. */
   sort: SortMode
   expandedPlaylists: ReadonlySet<string>
   dialog: Dialog | null
@@ -84,11 +81,7 @@ export type AppAction =
   | { type: 'toast/pushed'; message: string }
   | { type: 'toast/dismissed'; id: number }
 
-/**
- * Renderer-side defaults, kept in step with `settingsStore`'s. Duplicated rather than imported:
- * the renderer must not reach into the main process, and this is only what is shown for the
- * handful of milliseconds before `settings.get()` answers.
- */
+/** Renderer-side mirror of `settingsStore`'s defaults, shown until `settings.get()` answers. */
 export const FALLBACK_SETTINGS: Settings = {
   version: 1,
   compressByDefault: false,
@@ -173,8 +166,6 @@ export function createAppReducer(
       case 'library/loaded':
         return { ...state, songs: action.songs }
       case 'library/reordered': {
-        // The songs it already holds, in the given order: a reorder moves rows, it changes nothing
-        // in them, so there is nothing to refetch.
         const byId = new Map(state.songs.map((song) => [song.id, song]))
         const next: SongDto[] = []
         for (const id of action.order) {
@@ -201,8 +192,7 @@ export function createAppReducer(
         return {
           ...state,
           songs: state.songs.map((song) =>
-            // `sizeBytes` goes with `exists`: the DTO promises it is null exactly when the file is
-            // gone, and a stale size left behind here would be the one place that is not true.
+            // DTO invariant: `sizeBytes` is null exactly when the file is gone.
             song.id === action.songId ? { ...song, exists: false, sizeBytes: null } : song
           )
         }
@@ -233,19 +223,7 @@ export function createAppReducer(
         return { ...state, dialog: action.dialog }
       case 'dialog/closed':
         return state.dialog === null ? state : { ...state, dialog: null }
-      /**
-       * Every report that says something new gets its own line. A failure often produces two —
-       * main's own on the error channel and the rejected `invoke`, which the renderer may have
-       * added context to — and only the caller knows which one carries the useful half, so
-       * neither is thrown away.
-       *
-       * An *exact* duplicate is the exception. Both paths normalise through `errorMessage`, so a
-       * failure the renderer had nothing to add to arrives as the same string twice; a second
-       * identical line adds no information and pushes the ones that do off the top of the stack
-       * (multi-line ffmpeg stderr fills it fast). The comparison is against what is on screen,
-       * not a history: once a toast is dismissed the same failure can say so again, so a retry
-       * that fails the same way is never silent.
-       */
+      // A message identical to one still on screen is dropped; dismissed ones can say it again.
       case 'toast/pushed':
         if (state.toasts.some((toast) => toast.message === action.message)) return state
         return {

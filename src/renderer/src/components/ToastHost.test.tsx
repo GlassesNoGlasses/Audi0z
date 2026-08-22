@@ -18,8 +18,7 @@ describe('ToastHost', () => {
     })
     expect(screen.getByRole('alert')).toHaveTextContent('Failed to move item to trash')
 
-    // The shape `withErrorReport` really forwards: yt-dlp's own `ERROR:` line is part of the
-    // stderr tail, below the summary, never the start of the message.
+    // The shape `withErrorReport` forwards: yt-dlp's `ERROR:` line sits in the stderr tail.
     act(() => {
       controls.emitError({
         source: 'ytdlp',
@@ -34,12 +33,7 @@ describe('ToastHost', () => {
     expect(remaining[0]).toHaveTextContent('ERROR: Unsupported URL')
   })
 
-  /**
-   * One fs failure fires both channels (withErrorReport re-throws after reporting). Their spellings
-   * must agree exactly, or the reducer's duplicate collapse sees two different toasts. The two
-   * channels' normalisations are shown to agree on this exact errno in `errors.test.ts`; what is
-   * pinned here is that the agreed-on string reaches the corner once, errno prefix intact.
-   */
+  /** One fs failure fires both channels, and only identical spellings collapse into one toast. */
   it('collapses the push and invoke tellings of one failure into a single toast', async () => {
     const api = seedApi()
     const controls = mockApiControls(api)
@@ -76,11 +70,7 @@ describe('ToastHost', () => {
   })
 })
 
-/**
- * A toast that never leaves is a toast the user ends up ignoring — and the stack is capped, so
- * yesterday's failure eventually hides today's. Ten seconds is long enough to read a line of
- * ffmpeg stderr and short enough that the corner clears itself.
- */
+/** Ten seconds: long enough to read a line of ffmpeg stderr, short enough to clear the corner. */
 describe('ToastHost expiry', () => {
   beforeEach(() => {
     vi.useFakeTimers()

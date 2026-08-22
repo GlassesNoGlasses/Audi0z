@@ -14,7 +14,6 @@ function settings(): HTMLElement {
   return screen.getByRole('dialog', { name: 'Settings' })
 }
 
-/** Titles in the file list, in the order it lists them. */
 function fileTitles(): string[] {
   return [...settings().querySelectorAll('.file-title')].map((el) => el.textContent ?? '')
 }
@@ -54,11 +53,7 @@ describe('SettingsDialog', () => {
     expect(screen.queryByRole('dialog', { name: 'Settings' })).toBeNull()
   })
 
-  /**
-   * Every control in here persists the moment it is used, so the footer has nothing to submit and
-   * nothing to take back — dismissal is its whole job. The one button in it pins that. The body
-   * offers no yt-dlp update either: the app runs the pinned bundled binary, full stop (v3.2).
-   */
+  /** Everything here persists the moment it is used, so the footer has nothing to submit. */
   it('closes from the ok button', async () => {
     seedApi()
     const user = await openSettings()
@@ -80,7 +75,6 @@ describe('SettingsDialog', () => {
 
     const estimate = screen.getByText('Saves ~25%')
     expect(estimate.tagName).toBe('STRONG')
-    // The preference itself is still addressable by exactly the words on it.
     expect(
       screen.getByRole('checkbox', { name: 'Compress new audios option by default' })
     ).toBeVisible()
@@ -168,11 +162,7 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
   })
 
-  /**
-   * A re-encode that came out no smaller resolves exactly like one that worked, so `shrank` is the
-   * only thing telling them apart — and the user has to be told the file was left as it was, or a
-   * "Compressed" toast over an unchanged size reads as the app losing track of itself.
-   */
+  /** A re-encode that came out no smaller resolves like one that worked — only `shrank` differs. */
   it('says it kept the original when the re-encode would not have been smaller', async () => {
     const unchanged = song('a', 'Alpha Mix', { sizeBytes: 4 * MB })
     const api = seedApi({ songs: [unchanged] })
@@ -208,8 +198,7 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeDisabled()
 
     await act(async () => {
-      // The settle is followed by a re-read of the library, so the store has to have been through
-      // the compression too — this stubbed `compress` resolves without touching it.
+      // The settle re-reads the library, so the stubbed store has to be moved on too.
       mockApiControls(api).state.songs = [compressed]
       finish({ song: compressed, shrank: true })
     })
@@ -218,11 +207,7 @@ describe('SettingsDialog storage', () => {
     expect(within(settings()).queryByRole('button', { name: 'Compress Alpha Mix' })).toBeNull()
   })
 
-  /**
-   * ffmpeg replaces the file in place. Doing that to the song the `<audio>` element is streaming
-   * makes its next Range request fail, and the app reads that failure as a missing file — so the
-   * user is told compression lost their song. The row simply does not offer it meanwhile.
-   */
+  /** ffmpeg replaces the file in place, which breaks the `<audio>` element's next Range request. */
   it('does not offer to compress the song the player is holding', async () => {
     const user = userEvent.setup()
     seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
@@ -237,15 +222,9 @@ describe('SettingsDialog storage', () => {
     const held = within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })
     expect(held).toBeDisabled()
     expect(held).toHaveAccessibleDescription(/currently playing/i)
-    // Every other row is untouched: only the one file is under the player.
     expect(within(settings()).getByRole('button', { name: 'Compress Bravo Beat' })).toBeEnabled()
   })
 
-  /**
-   * The reason used to live in a `title` attribute on a disabled button: never announced by a
-   * screen reader, unreachable by keyboard, and unhovered by most browsers on a disabled control.
-   * A guard nobody can read is a button that looks broken, so the reason is on the page.
-   */
   it('says out loud why the playing song cannot be compressed', async () => {
     const user = userEvent.setup()
     seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
@@ -259,13 +238,11 @@ describe('SettingsDialog storage', () => {
 
     const held = within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })
     expect(held).toBeDisabled()
-    // A `title` computes an accessible description too, so pin its absence: the description has to
-    // come from the text on the page, which is the only version of it anyone can actually read.
+    // A `title` computes an accessible description too, so pin its absence.
     expect(held).not.toHaveAttribute('title')
     expect(held).toHaveAccessibleDescription('Cannot compress file currently playing.')
     expect(within(settings()).getByText('Cannot compress file currently playing.')).toBeVisible()
-    // The reason takes the savings quote's slot: a figure for a file you cannot compress right
-    // now is noise. Two are left — the preference's, and the row the player is not holding.
+    // The reason takes the savings quote's slot, leaving the preference's and the free row's.
     expect(screen.getAllByText('Saves ~25%')).toHaveLength(2)
   })
 
@@ -296,20 +273,13 @@ describe('SettingsDialog storage', () => {
     await user.click(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('already compressed')
-    // The row is still offering it, so the failure can be retried.
     expect(within(settings()).getByRole('button', { name: 'Compress Alpha Mix' })).toBeEnabled()
   })
 
-  /**
-   * `exists` is derived on the main process's side of an IPC call and nowhere else — nothing in the
-   * app ever re-derives it. A dto that raced the compressor's file swap comes back `exists: false`,
-   * and that verdict would sit on the row as "File missing" until the next restart. Re-reading the
-   * library once the dust settles is what heals it.
-   */
+  /** `exists` is derived on the main process's side only, so a raced dto sticks until a re-read. */
   it('re-reads the library after a compression settles', async () => {
     const api = seedApi({ songs: [song('a', 'Alpha Mix', { sizeBytes: 4 * MB })] })
-    // Answered the way the main process answers it: nothing is pushed back on `libraryChanged`
-    // (main never emits it), so the dialog's own re-read is the only thing that can heal a row.
+    // Main never emits `libraryChanged`, so the dialog's own re-read is all that can heal a row.
     vi.mocked(api.library.compress).mockResolvedValue({
       song: song('a', 'Alpha Mix', { compressed: true, sizeBytes: 3 * MB }),
       shrank: true
@@ -347,10 +317,7 @@ describe('SettingsDialog storage', () => {
     expect(fileTitles()).toEqual(['Alpha Mix'])
   })
 
-  /**
-   * ffmpeg needs a file to read. Offering the button on a row whose file is gone can only spend a
-   * click on a `source file not found` toast, so the row does not offer it.
-   */
+  /** ffmpeg needs a file to read, so the offer could only spend a click on a failure toast. */
   it('does not offer to compress a file that is not there', async () => {
     seedApi({ songs: [song('b', 'Bravo Beat', { exists: false, sizeBytes: null })] })
     const user = await openSettings()
@@ -394,15 +361,10 @@ describe('SettingsDialog storage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Failed to move item a.wav to trash — the song is still in your library.'
     )
-    // And it really is: the list never lost the row.
     expect(fileTitles()).toEqual(['Alpha Mix'])
   })
 
-  /**
-   * A deleted song has to leave the transport, not just the list. Re-reading the library only
-   * reshapes the queue's ORDER — the history and the played flags are the engine's, and a song
-   * left in the history is one the Prev button will happily cue a missing file from.
-   */
+  /** Re-reading the library reshapes only the queue's ORDER; the history is the engine's own. */
   it('takes the deleted song out of the transport, not just out of the list', async () => {
     const user = userEvent.setup()
     seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
@@ -421,18 +383,12 @@ describe('SettingsDialog storage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Previous' }))
 
-    // Nothing behind it in the history any more, so Prev restarts what is playing rather than
-    // cueing a song that is gone and killing the transport.
+    // Nothing behind it in the history, so Prev restarts rather than cueing a song that is gone.
     expect(nowPlaying()).toBe('Bravo Beat')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })
 
-  /**
-   * The other half of that invariant: the scrub is dispatched inside the delete's `.then()` on
-   * purpose. A delete the OS refused moved nothing to the trash, so the song is still playable and
-   * the transport has to be left exactly as it was — scrubbing it here would stop the music over a
-   * deletion that never happened.
-   */
+  /** The scrub rides the delete's `.then()`: a delete the OS refused must stop nothing. */
   it('leaves the transport untouched when the OS refuses the delete', async () => {
     const user = userEvent.setup()
     const api = seedApi({ songs: [song('a', 'Alpha Mix'), song('b', 'Bravo Beat')] })
@@ -449,7 +405,6 @@ describe('SettingsDialog storage', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('still in your library')
     expect(fileTitles()).toEqual(['Alpha Mix', 'Bravo Beat'])
-    // Still cued, still playing: the refusal changed nothing on disk and nothing in the transport.
     expect(nowPlaying()).toBe('Alpha Mix')
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument()
   })

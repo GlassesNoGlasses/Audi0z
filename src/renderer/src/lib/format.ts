@@ -1,8 +1,8 @@
 /**
  * Turning numbers into the short strings the UI shows.
  *
- * Everything here is pure and total: these are read by render functions, so a value that is
- * missing, NaN or malformed has to come back as a placeholder rather than as an exception.
+ * Pure and total: these run inside render, so a missing, NaN or malformed value has to come back
+ * as a placeholder rather than as an exception.
  */
 
 /** Powers of 1024, labelled the way a file manager labels them. */
@@ -17,22 +17,13 @@ const NO_DURATION = '–:––'
 /** Shown wherever an added-date is unknown — shaped like the MM/DD/YYYY it stands in for. */
 const NO_DATE = '––/––/––––'
 
-/**
- * Compressing is quoted as this much when there is nothing to compute a real estimate from —
- * roughly what 96k Opus takes off the ~128k downloads that make up most of a library. Quoting the
- * old half-the-file figure promised a saving the encoder was never going to deliver.
- */
+/** ~what 96k Opus takes off a ~128k download when there's no real estimate. */
 export const GENERIC_SAVINGS_PERCENT = 25
 
 /** What a second of the Opus 96 kbit/s the importer transcodes to costs on disk. */
 export const OPUS_BYTES_PER_SEC = 12_000
 
-/**
- * `4194304` -> `'4.0 MB'`, `512` -> `'512 B'`, `null` -> `'—'`.
- *
- * Whole bytes below a kilobyte (a decimal on 512 bytes says nothing), one decimal above it, and no
- * unit past GB — a music library that needs terabytes is not the case worth code.
- */
+/** `4194304` -> `'4.0 MB'`, `512` -> `'512 B'`, `null` -> `'—'`; whole bytes under a KB, caps at GB. */
 export function formatBytes(bytes: number | null): string {
   if (bytes === null || !Number.isFinite(bytes)) return NO_SIZE
 
@@ -45,13 +36,7 @@ export function formatBytes(bytes: number | null): string {
   return unit === 0 ? `${Math.round(value)} B` : `${value.toFixed(1)} ${BYTE_UNITS[unit]}`
 }
 
-/**
- * `173` -> `'2:53'`. Minutes keep counting past an hour rather than growing a third field.
- *
- * `fallback` is what a missing, NaN or negative duration reads as. A list of songs wants the
- * placeholder, which is the default; the transport passes `'0:00'`, because a clock that has not
- * been told a time yet is sitting at the start rather than at an unknown point.
- */
+/** `173` -> `'2:53'`, minutes counting past an hour; `fallback` covers missing/NaN/negative. */
 export function formatDuration(seconds: number | undefined, fallback = NO_DURATION): string {
   if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return fallback
   const whole = Math.floor(seconds)
@@ -59,12 +44,7 @@ export function formatDuration(seconds: number | undefined, fallback = NO_DURATI
   return `${minutes}:${String(whole % 60).padStart(2, '0')}`
 }
 
-/**
- * The day the song was added, in the user's own clock: MM/DD/YYYY.
- *
- * The stamp is stored as UTC, so a song added late in the evening west of Greenwich belongs to the
- * day the user remembers adding it, not the day it was in London — hence the local getters.
- */
+/** The added-date as MM/DD/YYYY in the user's own clock — the stamp itself is stored UTC. */
 export function formatDate(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return NO_DATE
@@ -73,14 +53,7 @@ export function formatDate(iso: string): string {
   return `${month}/${day}/${date.getFullYear()}`
 }
 
-/**
- * What compressing this song would save: `'~3.6 MB save'` when the size and the playing time make
- * a real estimate, and the generic `'Saves ~25%'` whenever they do not.
- *
- * The estimate is what the file weighs now minus what Opus 96k would weigh for the same playing
- * time. A song already at or below that — an Opus file imported uncompressed, say — has no saving
- * to promise, so it falls back rather than quoting a negative one.
- */
+/** `'~3.6 MB save'` from size minus Opus 96k, or the generic `'Saves ~25%'` when that is unknown or ≤ 0. */
 export function formatCompressionSaving(
   sizeBytes: number | null,
   durationSec: number | undefined
@@ -93,13 +66,7 @@ export function formatCompressionSaving(
 
 const HEX_COLOR = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i
 
-/**
- * Black or white ink, whichever a tag's own colour can be read against.
- *
- * WCAG relative luminance, thresholded where black and white contrast equally (L ≈ 0.179) — the
- * point above which black wins. Colours are persisted JSON a user can hand-edit, so anything that
- * is not a `#rrggbb` triplet is treated as dark and gets white.
- */
+/** Black or white ink by WCAG relative luminance, thresholded at L ≈ 0.179; non-`#rrggbb` gets white. */
 export function readableTextColor(hex: string): string {
   const match = HEX_COLOR.exec(hex)
   if (!match) return '#ffffff'

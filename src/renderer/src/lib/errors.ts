@@ -1,11 +1,7 @@
 /**
- * Recognising main-process failures from the renderer.
- *
- * `ipcMain.handle` serialises a rejection into a plain `Error`: the custom `name` and `code` the
- * main process set are gone by the time the renderer sees it, and the message arrives wrapped as
- * `Error invoking remote method '<channel>': <Name>: <message>`. So every check here is a
- * substring match on the message, and it lives in one place rather than being re-derived at each
- * call site.
+ * Recognising main-process failures. `ipcMain.handle` drops the custom `name`/`code` and wraps the
+ * message as `Error invoking remote method '<channel>': <Name>: <message>`, so every check here is
+ * a substring match.
  */
 
 import type { Dispatch } from 'react'
@@ -13,10 +9,8 @@ import type { AppAction } from '../state/appReducer'
 
 const INVOKE_PREFIX = /^Error invoking remote method '[^']*':\s*/
 /**
- * The error's class name, which electron pastes in front of the message it serialises
- * (`YtDlpError: …`, `BUSY: …`). It is an implementation detail of the main process, and dropping
- * it leaves the sentence the user is meant to read. Only ever applied behind `INVOKE_PREFIX`: the
- * shape is indistinguishable from an errno, so off the wrapper this would eat real words.
+ * Electron's serialised class-name prefix (`YtDlpError: …`). Only ever applied behind
+ * `INVOKE_PREFIX`: the shape is indistinguishable from an errno, so off the wrapper it eats words.
  */
 const NAME_PREFIX = /^[A-Z][A-Za-z0-9_]*:[ \t]+/
 
@@ -24,9 +18,7 @@ const NAME_PREFIX = /^[A-Z][A-Za-z0-9_]*:[ \t]+/
 export function errorMessage(error: unknown): string {
   const raw =
     error instanceof Error ? error.message : typeof error === 'string' ? error : String(error ?? '')
-  // The class name is a serialisation artifact of the invoke wrapper; without the wrapper there
-  // was no serialisation, and a leading `ENOENT: ` is the message itself. The error channel pushes
-  // `error.message` raw, so eating that prefix there spelled one failure two ways.
+  // No wrapper means no serialisation, so a leading `ENOENT: ` there is the message itself.
   const unwrapped = INVOKE_PREFIX.test(raw)
     ? raw.replace(INVOKE_PREFIX, '').replace(NAME_PREFIX, '').trim()
     : raw.trim()
@@ -44,20 +36,8 @@ export function isCancelled(error: unknown): boolean {
 }
 
 /**
- * The OS refused to move the file to the trash, so the song is still in the library.
- *
- * The match is broad on purpose, and it is worth being honest about what that costs. There is no
- * structured signal to test: `shell.trashItem` rejects with whatever text the platform produced
- * ("Failed to move item … to trash" on macOS, different wording on Windows and on each Linux
- * desktop), and IPC has already flattened the error to a message by the time this runs. Matching
- * the one word all of them share is the only thing that works everywhere.
- *
- * The cost is a false positive: an unrelated failure during a delete whose message happens to
- * mention "trash" — a path with `Trash` in it, say — gets the same "the song is still in your
- * library" suffix. That suffix is true for *every* failed delete, since `library:remove` only
- * touches the stores after the trash step, so a false positive appends a sentence that is
- * accurate anyway. Being wrong the other way (missing a real trash failure) is what would
- * actually mislead, which is why this errs wide.
+ * The OS refused to trash the file, so the song is still in the library. Errs wide: `trashItem`'s
+ * wording is per-platform, and the suffix it gates is true of any failed delete anyway.
  */
 export function isTrashFailure(error: unknown): boolean {
   return /trash/i.test(errorMessage(error))

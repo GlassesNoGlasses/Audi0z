@@ -28,14 +28,14 @@ function sameOrder(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index])
 }
 
-/** The same songs, in any order — what separates a reorder from a song joining or leaving. */
+/** The same songs, in any order — a reorder, not a song joining or leaving. */
 function sameMembers(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false
   const members = new Set(b)
   return a.every((id) => members.has(id))
 }
 
-/** By value, not identity: "the user just asked for this order" must not hang on allocation. */
+/** By value, not identity — a fresh object with the same keys is the same sort. */
 function sameSort(a: SortMode, b: SortMode): boolean {
   return a.type === b.type && a.direction === b.direction
 }
@@ -48,10 +48,7 @@ export function App(): ReactElement {
   )
 }
 
-/**
- * Layout, start-up, and the handful of effects that keep the store in step with the outside world.
- * Everything with a decision in it lives in a component, a hook or the reducer.
- */
+/** Layout, start-up, and the effects that keep the store in step with the outside world. */
 function AppShell(): ReactElement {
   const state = useAppState()
   const dispatch = useAppDispatch()
@@ -111,23 +108,8 @@ function AppShell(): ReactElement {
   /** The sort the queue was last built with; a differing value means the user just asked. */
   const lastAppliedSort = useRef(sort)
 
-  /**
-   * Keeps the queue in step with the view — with one thing held back.
-   *
-   * INVARIANT: a MUTABLE sort key must not let a data change reorder a queue that is playing.
-   * `title` is one (the Edit dialog writes it), so renaming any song under a Title sort recomputes
-   * the memo above and moves the order out from under the engine mid-song: `chooseSequential`
-   * reads the current song's index against the new order, and a rename that lands the playing song
-   * last turns the next press into a wrap that resets the played set. Nobody asked for that — they
-   * asked to rename a song. It is the same fence `useDurationBackfill(…, !playback.isPlaying)`
-   * puts around the other mutable key, `durationSec`.
-   *
-   * So: a sort gesture applies at once, whatever is playing — the gate compares the sort by
-   * value, so it cannot be fooled by how the object was allocated. Songs joining or leaving apply
-   * at once too, since the queue must not hold ids the library no longer has — and that
-   * application carries the whole fresh order, any deferred rename included: the hold lasts only
-   * until membership changes or playback stops.
-   */
+  // INVARIANT: under a MUTABLE sort key (`title`, `durationSec`) a data change must not reorder a
+  // queue that is playing — it defers; sort gestures and membership changes apply at once.
   useEffect(() => {
     if (queueOrder === null) return
     if (sameOrder(queueOrder, playback.order)) {
@@ -207,8 +189,8 @@ function AppShell(): ReactElement {
       .catch((error: unknown) => toastError(dispatch, error))
   }, [dispatch, settings])
 
-  // Every mouse click hands the keyboard back: without this the shortcuts below reach a focused
-  // button or slider instead of the transport, and the click leaves a focus ring behind.
+  // Every click hands the keyboard back, so the shortcuts below reach the transport rather than a
+  // focused button or slider.
   useClickFocusReset()
 
   useKeyboardShortcuts({
@@ -244,11 +226,7 @@ function AppShell(): ReactElement {
       .catch((error: unknown) => toastError(dispatch, error))
   }
 
-  /**
-   * The open dialog, if any. Closing over `dialog` rather than taking it as a parameter, and with
-   * no `default` arm: the switch is then exhaustive by construction, so a seventh `Dialog` kind
-   * fails to compile here instead of rendering nothing at all.
-   */
+  /** No `default` arm on purpose: a new `Dialog` kind fails to compile instead of rendering nothing. */
   const dialogSwitch = (): ReactElement => {
     if (dialog === null) return <></>
 

@@ -1,15 +1,8 @@
 import { useEffect, useRef, type RefObject } from 'react'
 
 /**
- * Drives the app's one `<audio>` element from playback state.
- *
- * The load effect is keyed on `[songId, src, playToken]` and is deliberately picky about `src`:
- * assigning it restarts the network fetch, so it is only written when the song actually changed.
- * `currentTime = 0` plus `play()` runs on EVERY play-token bump, which is what makes replaying the
- * song that is already loaded (repeat, or clicking the current row again) audible.
- *
- * Seeking is the other half: it moves the element and nothing else. The store never hears about it,
- * so `isPlaying` — and with it the ⏸ glyph — stays honest while the user skips around.
+ * Drives the app's one `<audio>` element: `src` is written only when the song changed (assigning
+ * it restarts the fetch), `currentTime = 0` + `play()` on every play-token bump, seeks stay local.
  */
 
 /** How long after the last keyboard seek the audio stays silent before resuming on its own. */
@@ -18,7 +11,6 @@ const SEEK_RESUME_MS = 300
 const END_GUARD_SEC = 0.25
 
 export interface UseAudioElementOptions {
-  /** The cued song's id, or null when nothing is cued. */
   songId: string | null
   /** `media://audio/<id>` for the cued song. Null exactly when `songId` is. */
   src: string | null
@@ -33,12 +25,8 @@ export interface UseAudioElementOptions {
 
 export interface AudioController {
   ref: RefObject<HTMLAudioElement>
-  /**
-   * Seek by `delta` seconds, clamped to [0, ~duration); the audio stays silent until the scrub
-   * settles a moment after the last press.
-   */
+  /** Seek by `delta` seconds, clamped to [0, ~duration); silent until the scrub settles. */
   seekBy(delta: number): void
-  /** Pointer-scrub bracket: silence on press, resume (if the store says playing) on release. */
   beginScrub(): void
   endScrub(): void
 }
@@ -74,8 +62,6 @@ export function useAudioElement({
     start(audio)
   }, [songId, src, playToken])
 
-  // A new song ends whatever scrub was in flight: the effect above has already decided what the
-  // element is doing, and a resume owed to the song before it has no say in that.
   useEffect(() => {
     if (resumeTimer.current !== null) {
       clearTimeout(resumeTimer.current)

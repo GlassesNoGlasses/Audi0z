@@ -18,7 +18,6 @@ export interface DownloaderDeps {
   importFile(req: ImportRequest): Promise<Song>
   download(job: DownloadJob): Promise<string>
   probe(url: string, signal: AbortSignal): Promise<ProbeResult>
-  // A download that finished, but not as intended — told to the user the way an error is.
   onWarning?: (message: string) => void
 }
 
@@ -40,7 +39,6 @@ function codedError(code: string, message: string): CodedError {
   return error
 }
 
-/** Main downloader used by `yt-dlp` and called by ipcRenderer */
 export function createDownloader(deps: DownloaderDeps): Downloader {
   const listeners = new Set<(progress: DownloadProgress) => void>()
   const emit = (progress: DownloadProgress): void => {
@@ -89,7 +87,6 @@ export function createDownloader(deps: DownloaderDeps): Downloader {
         // An aborted run fails in whatever way the runner chose; callers only care that it was us.
         throw controller.signal.aborted ? codedError('Cancelled', 'download cancelled') : error
       } finally {
-        // cleanup temp dirs and files
         await rm(jobDir, { recursive: true, force: true }).catch(() => undefined)
         running = null
       }
@@ -101,18 +98,14 @@ export function createDownloader(deps: DownloaderDeps): Downloader {
       try {
         return await deps.probe(url, controller.signal)
       } catch (error) {
-        // Same bargain as `start`: however the runner reports an abort, the caller only cares that
-        // the cancel was ours.
         throw controller.signal.aborted ? codedError('Cancelled', 'probe cancelled') : error
       } finally {
-        // The dialog serialises probes (Fetch disables while one runs), so one slot is enough;
-        // clearing only its own keeps a stale finally from wiping a successor's controller.
+        // Clearing only its own controller keeps a stale finally from wiping a successor's.
         if (probing === controller) probing = null
       }
     },
 
-    // `before-quit` calls this, and a probe's child is detached too — leaving one running outlives
-    // the app.
+    // `before-quit` calls this: a probe's child is detached too, so one left running outlives us.
     cancel() {
       running?.abort()
       probing?.abort()

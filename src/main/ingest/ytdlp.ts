@@ -3,7 +3,6 @@ import path from 'node:path'
 import type { DownloadProgress, ProbeResult } from '../../shared/types'
 import { processError, type RunLines } from './spawnLines'
 
-// Release asset names
 const ASSETS: Partial<Record<NodeJS.Platform, string>> = {
   darwin: 'yt-dlp_macos',
   win32: 'yt-dlp.exe',
@@ -35,19 +34,9 @@ export interface YtDlpRuntime {
   envOverrides?: Record<string, string>
 }
 
-/**
- * yt-dlp requires a JS runtime path -> fetch from Electron app itself. `--js-runtimes
- * node:<path>` names the app's own Electron binary, and ELECTRON_RUN_AS_NODE — inherited by the
- * runtime child yt-dlp spawns — is what makes that binary start as plain Node rather than opening
- * a second copy of the app. The two halves are one decision, so one call returns both: args
- * without the env var launch the GUI. `probe` and `download` each make that one call and hand the
- * args half to their builder.
- *
- * `--no-js-runtimes` comes first because the runtime must be deterministic: only deno is enabled
- * by default and it outranks node, so a deno on the user's PATH — of unknown version, possibly
- * broken — would otherwise preempt the known-good runtime this app ships with. yt-dlp's own help
- * prescribes exactly this flag order for using a lower-priority runtime.
- */
+// `--no-js-runtimes` must precede `--js-runtimes node:`, or a deno on PATH preempts the pin.
+// ELECTRON_RUN_AS_NODE pairs with the args: args alone open a second app, env alone finds none.
+/** yt-dlp requires a JS runtime path -> fetch from Electron app itself, run as plain Node. */
 export function ytDlpRuntime(jsRuntimePath: string | undefined): YtDlpRuntime {
   if (jsRuntimePath === undefined) return { args: [] }
   return {
@@ -56,7 +45,6 @@ export function ytDlpRuntime(jsRuntimePath: string | undefined): YtDlpRuntime {
   }
 }
 
-// Probe URL for info. `runtimeArgs` is `ytDlpRuntime(...).args`, when a runtime is wired.
 export function buildProbeArgs(url: string, runtimeArgs: string[] = []): string[] {
   return [
     ...runtimeArgs,
@@ -76,8 +64,7 @@ function parseDump(stdout: string[]): Record<string, unknown> {
   ]
   for (const candidate of candidates) {
     if (candidate.trim() === '') continue
-    // A candidate that will not parse is the reason the next one exists — the whole of stdout is
-    // unparseable the moment yt-dlp prints a warning above the dump.
+    // The whole of stdout stops parsing the moment yt-dlp prints a warning above the dump.
     try {
       const parsed: unknown = JSON.parse(candidate)
       if (parsed !== null && typeof parsed === 'object') return parsed as Record<string, unknown>
@@ -109,9 +96,7 @@ export async function probe({
   const { args: runtimeArgs, envOverrides } = ytDlpRuntime(jsRuntimePath)
   const controller = new AbortController()
 
-  // The child answers to one signal, so the caller's cancel is folded into it. `timedOut` rather
-  // than `controller.signal.aborted` is what separates the two afterwards: a cancel must not be
-  // told as a timeout, which names a budget nobody spent.
+  // One signal carries both the timeout and the caller's cancel; `timedOut` separates them after.
   let timedOut = false
   const timer = setTimeout(() => {
     timedOut = true
@@ -188,7 +173,6 @@ export function buildDownloadArgs({
 
 const PROGRESS_PREFIX = 'PROGRESS:'
 
-// Download progress
 export function parseProgressLine(line: string): DownloadProgress | null {
   if (!line.startsWith(PROGRESS_PREFIX)) return null
   const [rawBytes, rawTotal] = line.slice(PROGRESS_PREFIX.length).split('/')
@@ -210,12 +194,7 @@ export function parseProgressLine(line: string): DownloadProgress | null {
   return progress
 }
 
-/**
- * yt-dlp exits 0 when it cannot solve YouTube's JS challenge: it falls back to a throttled format
- * and reports the failure on stderr alone. The exit code says the download worked, so stderr is
- * the only place a broken JS runtime is visible at all.
- */
-// All three spellings captured from live runs of the pinned 2026.07.04 binary.
+// yt-dlp exits 0 on a failed JS challenge and reports it on stderr only.
 const CHALLENGE_FAILURE =
   /challenge solving failed|error solving \d+ challenge|No supported JavaScript runtime/i
 
@@ -271,12 +250,10 @@ export async function download({
   const filePath = printed.at(-1)
   if (!filePath) throw new Error('yt-dlp finished without printing an output path')
 
-  // Only worth saying once the file is actually here: a run that failed says it louder itself.
   if (challengeFailed) onWarning?.(CHALLENGE_WARNING)
   return filePath
 }
 
-// The one fs call the startup cleanup needs
 export interface CleanupFs {
   rm(p: string, opts: { force: boolean }): Promise<void>
 }
@@ -287,11 +264,7 @@ export interface RemoveSelfUpdatedYtDlpOptions {
   fs?: CleanupFs
 }
 
-/**
- * Deletes the self-updated copy an older build may have left behind, so the pinned bundled binary
- * is the one that actually runs. Best-effort by design: a failure here must never break startup,
- * and `force: true` already makes a missing file a non-event.
- */
+/** Deletes a self-updated copy an older build left, so the pinned binary runs. Best-effort. */
 export async function removeSelfUpdatedYtDlp({
   userDataBinDir,
   platform,

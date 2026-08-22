@@ -71,11 +71,7 @@ describe('ytDlpRuntime', () => {
     expect(ytDlpRuntime(undefined)).toEqual({ args: [] })
   })
 
-  /**
-   * The flags and the env var are one decision, not two: half of it — args without
-   * ELECTRON_RUN_AS_NODE — launches the packaged app's GUI instead of a Node runtime, so they are
-   * only ever produced together.
-   */
+  /** Args without ELECTRON_RUN_AS_NODE launch the packaged app's GUI instead of a Node runtime. */
   it('pairs the runtime flags with the env var that makes Electron behave as node', () => {
     expect(ytDlpRuntime('/opt/app/Electron')).toEqual({
       args: ['--no-js-runtimes', '--js-runtimes', 'node:/opt/app/Electron'],
@@ -137,11 +133,7 @@ describe('probe', () => {
     expect(call.envOverrides).toBeUndefined()
   })
 
-  /**
-   * `--dump-single-json` is not alone on stdout as often as its name suggests: a warning printed
-   * above the dump makes the whole of stdout unparseable, and the dump is still there on its own
-   * line. Reading only the joined form is what made the per-line fallback unreachable.
-   */
+  /** A warning printed above the dump makes the joined stdout unparseable, so the per-line fallback runs. */
   it('finds the dump on its own line when something was printed above it', async () => {
     const run = fakeRun([
       'WARNING: Falling back on generic information extractor',
@@ -166,10 +158,6 @@ describe('probe', () => {
     await expect(probe({ url, run, binPath: '/bin/yt-dlp' })).rejects.toThrow(/Unsupported URL/)
   })
 
-  /**
-   * A probe has no cancel button behind it — `download:cancel` only reaches a running download —
-   * so an extractor that hangs would otherwise leave the Add dialog waiting forever.
-   */
   it('aborts and rejects when yt-dlp outlives the timeout', async () => {
     const run: RunLines = vi.fn(
       ({ signal }) =>
@@ -187,21 +175,11 @@ describe('probe', () => {
     )
   })
 
-  /**
-   * The default budget is dominated by process startup, not the network: the bundled PyInstaller
-   * onefile binary needs ~25s just to reach `--version`, and real probes measured 26.4s and 28.9s.
-   * A 30s default failed a release gate; this pins the floor so it cannot be tightened back into
-   * coin-flip territory without the measurements being revisited.
-   */
+  /** Real probes measured 26.4s and 28.9s against the bundled PyInstaller binary, and a 30s default failed a release gate. */
   it('defaults to a budget well clear of the measured cold-start cost', () => {
     expect(PROBE_TIMEOUT_MS).toBeGreaterThanOrEqual(60_000)
   })
 
-  /**
-   * `before-quit` cancels the downloader, and a probe stuck on a hanging extractor is exactly what
-   * would otherwise outlive the app. A cancel is not a timeout: the timeout sentence names a
-   * budget nobody spent, so it must stay on the timeout path alone.
-   */
   it('lets the caller cancel a running probe without calling it a timeout', async () => {
     const controller = new AbortController()
     const run: RunLines = vi.fn(
@@ -245,8 +223,7 @@ describe('probe', () => {
     await expect(probe({ url, run, binPath: '/bin/yt-dlp', timeoutMs: 5 })).resolves.toMatchObject({
       title: 'Quick'
     })
-    // Long enough that a timer left running would have fired by now — and the abort it triggers
-    // would surface as an unhandled rejection rather than a passing test.
+    // Long enough that a timer left running would have fired by now, as an unhandled rejection.
     await new Promise((resolve) => setTimeout(resolve, 20))
   })
 })
@@ -278,12 +255,7 @@ describe('buildDownloadArgs', () => {
     ])
   })
 
-  /**
-   * `--print` implies `--quiet`, which silences `--progress-template` — without `--progress` the
-   * real binary emits zero PROGRESS lines and the renderer's progress bar never moves. The mocked
-   * `download` tests cannot catch that (they inject PROGRESS lines at the `runLines` seam), so the
-   * pairing is pinned here against future edits to this arg list.
-   */
+  /** `--print` implies `--quiet`, which silences `--progress-template` unless `--progress` is there too. */
   it('keeps --progress paired with --print so the progress template survives --quiet', () => {
     const args = buildDownloadArgs({
       url: 'https://example.test/v/1',
@@ -372,13 +344,9 @@ describe('download', () => {
     await expect(download({ ...base, run })).rejects.toThrow(/HTTP Error 403/)
   })
 
-  /**
-   * yt-dlp exits 0 when it cannot solve YouTube's JS challenge: it falls back to a throttled
-   * format and says so on stderr alone. Judging the run by its exit code is what made every
-   * regression in the runtime wiring invisible — the file arrives, just slowly and sometimes short.
-   */
+  /** yt-dlp exits 0 when it cannot solve YouTube's JS challenge: it falls back to a throttled format and says so on stderr alone. */
   it.each([
-    // All three captured verbatim from live runs of the pinned 2026.07.04 binary.
+    // All three captured verbatim from live yt-dlp 2026.07.04 runs (pin has since moved).
     ['WARNING: [youtube] jNQXAC9IVRw: n challenge solving failed: Some formats may be missing'],
     ['ERROR: [jsc] Unexpected error solving 2 challenge request(s) using "node" provider'],
     ['WARNING: [youtube] No supported JavaScript runtime could be found. Only deno is enabled']

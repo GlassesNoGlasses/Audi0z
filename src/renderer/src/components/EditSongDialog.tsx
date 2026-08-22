@@ -7,13 +7,7 @@ export interface EditSongDialogProps {
   songId: string
 }
 
-/**
- * The title, and nothing else.
- *
- * Tags used to be edited here as a comma-separated string, which quietly made this a second place
- * a tag could be brought into existence. They are now a registry: which tags EXIST is the Tags
- * dialog's business, and which of them a song carries is ticked off in the row's own menu.
- */
+/** Title only — tags are a registry, owned by the Tags dialog and the row's own menu. */
 export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | null {
   const { songs } = useAppState()
   const dispatch = useAppDispatch()
@@ -27,12 +21,8 @@ export function EditSongDialog({ songId }: EditSongDialogProps): ReactElement | 
   useEscapeKey(close)
   const fail = useToastError()
 
-  // Deleted from under the dialog. Both delete paths — the row menu's confirmation and the Settings
-  // file list — dismiss their own dialog and then await `library.remove`, so Edit can be opened on a
-  // doomed song in the window before `library/songsRemoved` lands. (A refresh that finds the file
-  // gone is not one of these: it dispatches `library/songMissing`, which keeps the song with
-  // `exists: false`.) There is nothing left to edit, and the early return alone would leave the
-  // dialog slot occupied: an empty screen with the global shortcuts still gated on it.
+  // Deleted from under the dialog: both delete paths dismiss, then await `library.remove`.
+  // Closing frees the dialog slot — the early return alone would leave it occupied.
   useEffect(() => {
     if (!song) dispatch({ type: 'dialog/closed' })
   }, [song, dispatch])

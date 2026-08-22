@@ -28,10 +28,7 @@ import {
   withErrorReport
 } from './wiring'
 
-/**
- * Custom protocol for renderer to stream audio from `media://audio/<id>`.
- * Required for Chromium <audio> stream fetch requests + security.
- */
+// Privileged so Chromium's <audio> can stream+fetch `media://audio/<id>` from the renderer.
 protocol.registerSchemesAsPrivileged([
   {
     scheme: MEDIA_SCHEME,
@@ -45,7 +42,6 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-// the window; left out for channel push requests
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): BrowserWindow {
@@ -95,7 +91,6 @@ function startup(): void {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // set-up paths + in-memory stores
   const libraryRoot = resolveLibraryRoot()
   ensureDirs(libraryRoot)
   const audio = audioDir(libraryRoot)
@@ -108,10 +103,8 @@ function startup(): void {
   const sendToWindow = createWindowSender(() => mainWindow) // window channel
   const reportError = (error: AppError): void => sendToWindow(IPC_EVENTS.error, error)
 
-  // song compression write jobs
   const compressionJobs = createCompressionJobs()
 
-  // register `media://*` scheme
   protocol.handle(
     MEDIA_SCHEME,
     createMediaHandler({
@@ -121,7 +114,6 @@ function startup(): void {
     })
   )
 
-  // ffmpeg binary check
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ffmpegStaticPath = require('ffmpeg-static') as string | null
   const ffmpegPath = resolveFfmpegPath({ ffmpegStaticPath, isPackaged: app.isPackaged })
@@ -132,7 +124,6 @@ function startup(): void {
     transcode: ({ src, dst }) => transcode({ src, dst, ffmpegPath })
   }
 
-  // error wrapping
   const importSong = withErrorReport('import', reportError, (request: ImportRequest) =>
     importFile(request, importDeps)
   )
@@ -173,7 +164,6 @@ function startup(): void {
     resourcesBinDir,
     platform: process.platform
   })
-  // remove older versions of yt-delp
   void removeSelfUpdatedYtDlp({ userDataBinDir, platform: process.platform })
 
   const downloader = createDownloader({
@@ -194,8 +184,7 @@ function startup(): void {
       }),
     probe: (url, signal) =>
       probe({ url, run: runLines, binPath: ytDlpPath, jsRuntimePath: process.execPath, signal }),
-    // A download that finished but not as intended: same toast as a failure, minus the rejection —
-    // the invoke still resolves, because the song is in the library.
+    // Finished but not as intended: same toast as a failure, minus the rejection.
     onWarning: (message) => reportError({ source: 'ytdlp', message })
   })
 

@@ -7,14 +7,7 @@ import { trashFailureMessage } from '../lib/errors'
 import { formatBytes, formatCompressionSaving } from '../lib/format'
 import { useAppDispatch, useAppState } from '../state/AppContext'
 
-/**
- * Why the player's own song cannot be compressed.
- *
- * ffmpeg replaces the file in place, and the `<audio>` element streams it by Range request for as
- * long as the song is cued — paused included. Swapping the file underneath makes the next request
- * fail, and the app reads that failure as a file gone missing: the user would be told compression
- * lost the song. Not offering it is the cheap, deterministic way out.
- */
+/** ffmpeg rewrites the file in place, so the cued `<audio>`'s next Range request would fail. */
 const HELD_BY_PLAYER = 'Cannot compress file currently playing.'
 
 /** Heaviest first; a file whose size could not be read has nothing to sort by, so it sinks. */
@@ -54,11 +47,7 @@ export function SettingsDialog(): ReactElement {
     })
   }
 
-  /**
-   * Resolving is not the same as having compressed. A re-encode that came out no smaller is thrown
-   * away and the original kept — a real outcome with nothing to show for it, so the toast is the
-   * only place the user can learn the file did not change and the row is still offering Compress.
-   */
+  /** A re-encode that came out no smaller is discarded — the toast is the only sign of that. */
   function compress(song: SongDto): void {
     markCompressing(song.id, true)
     void window.api.library
@@ -75,23 +64,12 @@ export function SettingsDialog(): ReactElement {
       .catch(fail)
       .finally(() => {
         markCompressing(song.id, false)
-        // Disk truth once the dust settles, on both outcomes. `exists` is derived on the main
-        // process's side of an IPC call and nowhere else, so a dto that raced the file swap and
-        // came back "File missing" would sit on the row until the next restart — this is what
-        // heals it, and a failed run is exactly when a row is most likely to need it.
+        // `exists` is derived only main-side, so re-read to heal a row whose dto raced the swap.
         void refreshLibrary(dispatch)
       })
   }
 
-  /**
-   * `library/songsRemoved` first, then the re-read — the same order the song rows delete in.
-   * Re-reading the library only reshapes the queue's ORDER; the history and the played flags are
-   * the engine's, and only this action clears the deleted song out of them. Left there, Prev would
-   * cue a song that no longer exists and quietly kill the transport.
-   *
-   * The failure is enriched exactly as `App.confirmIntent` enriches the song row's own delete: the
-   * same refusal from the OS has to tell the user the same story from both places.
-   */
+  /** `library/songsRemoved` first — only that clears the song from history and the played set. */
   function remove(songId: string): void {
     setConfirmingId(null)
     void window.api.library
@@ -137,11 +115,6 @@ export function SettingsDialog(): ReactElement {
                 <li key={song.id} className="file-row">
                   <span className="file-size">{formatBytes(song.sizeBytes)}</span>
                   <span className="file-title">{song.title}</span>
-                  {/*
-                    Nothing to offer on a file that is already compressed, and nothing to offer on
-                    one that is gone: ffmpeg needs a file to read, so that click could only ever
-                    end in `source file not found`.
-                  */}
                   {song.compressed || !song.exists ? null : (
                     <>
                       <button
@@ -156,11 +129,7 @@ export function SettingsDialog(): ReactElement {
                       >
                         Compress
                       </button>
-                      {/*
-                        The reason is on the page rather than in a `title`, which a disabled button
-                        never announces and mostly never shows. It takes the estimate's slot: a
-                        saving quoted for a file you cannot compress right now was noise anyway.
-                      */}
+                      {/* On the page, not in a `title`: a disabled button never announces one. */}
                       {song.id === playback.currentId ? (
                         <span className="compress-note" id={`compress-hint-${song.id}`}>
                           {HELD_BY_PLAYER}
@@ -180,11 +149,7 @@ export function SettingsDialog(): ReactElement {
                   >
                     Delete
                   </button>
-                  {/*
-                    Confirmed here rather than through the global confirm dialog: there is one
-                    dialog slot, so that one would close this one and lose the list the user was
-                    working down.
-                  */}
+                  {/* Inline: there is one dialog slot, so the global confirm would close this. */}
                   {confirmingId === song.id ? (
                     <div className="confirm-strip">
                       <span>Move {song.title} to the trash?</span>
@@ -202,10 +167,7 @@ export function SettingsDialog(): ReactElement {
           ) : null}
         </div>
 
-        {/*
-          The estimate sits beside the label rather than inside it: the checkbox is named by its
-          label, and a saving figure in there would rename the preference itself.
-        */}
+        {/* Beside the label, not inside it: a figure in there would rename the preference. */}
         <div className="checkbox-row">
           <label className="checkbox">
             <input

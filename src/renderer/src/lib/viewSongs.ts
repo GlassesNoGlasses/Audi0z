@@ -2,14 +2,8 @@ import type { Playlist, SongDto } from '../../../shared/types'
 import { SortDirection, SortType, type SortMode, type View } from '../state/appReducer'
 
 /**
- * What the current view is about, and in what order.
- *
- * Shared rather than owned by `SongList`: the top bar's play button has to queue exactly the songs
- * the list is showing, and two answers to "which songs are in view" would eventually disagree.
- *
- * The order is part of that answer, which is why the sort lives here too: the list, the play
- * button and `App`'s queue re-sync all order through `songsInView` or `sortSongs` and nowhere
- * else, so a sorted view is a sorted queue rather than a list that disagrees with what plays next.
+ * What the current view is about, and in what order — one answer, so the list, the top bar's play
+ * button and `App`'s queue re-sync cannot disagree about what is in view or what plays next.
  */
 
 /** The playlist being viewed, or null in the Library view. */
@@ -19,11 +13,8 @@ export function viewedPlaylist(view: View, playlists: Playlist[]): Playlist | nu
 }
 
 /**
- * A copy of the songs in the order the sort asks for, or the list itself under Custom Order —
- * the identity is what lets the callers' memos treat the stored order as costing nothing.
- *
- * `sort` is stable, so songs the comparator cannot separate (two added in the same millisecond)
- * stay in the order they arrived in.
+ * A copy in the sort's order, or the list itself under Custom Order — that identity is what keeps
+ * the callers' memos cheap. `sort` is stable, so ties keep the order they arrived in.
  */
 export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
   const { type, direction } = sort
@@ -50,11 +41,7 @@ export function sortSongs(songs: SongDto[], sort: SortMode): SongDto[] {
   })
 }
 
-/**
- * The full stored order after a drag of its resolvable part: known ids take the dragged order,
- * unknown ids keep their stored positions — so one orphaned reference (a song deleted while a
- * playlist still names it) cannot wedge every reorder of that playlist.
- */
+/** Known ids take the dragged order, unknown ids keep their slots, so an orphan can't wedge reorders. */
 export function mergeReorderedIds(
   storedIds: readonly string[],
   reorderedKnownIds: readonly string[],
@@ -64,13 +51,7 @@ export function mergeReorderedIds(
   return storedIds.map((id) => (knownIds.has(id) ? (reorderedKnownIds[cursor++] ?? id) : id))
 }
 
-/**
- * The songs the current view is about, in the sort's order or — under Custom Order — the view's
- * own stored order.
- *
- * A playlist may still reference a song that was deleted between two reads, so unknown ids are
- * dropped rather than rendered as holes.
- */
+/** The view's songs in the sort's order; ids a playlist still names but the library lost are dropped. */
 export function songsInView(
   songs: SongDto[],
   playlist: Playlist | null,

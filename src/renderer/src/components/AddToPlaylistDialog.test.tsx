@@ -31,10 +31,7 @@ function offered(): string[] {
   return [...dialog().querySelectorAll('.add-title')].map((el) => el.textContent ?? '')
 }
 
-/**
- * Opens the dialog the way the app does: move to the playlist, then ask the top bar for it.
- * Everything downstream needs the app around it — the sidebar and the row list are half the point.
- */
+/** Opens the dialog the way the app does: move to the playlist, then ask the top bar for it. */
 async function openDialog(): Promise<ReturnType<typeof userEvent.setup>> {
   const user = userEvent.setup()
   await renderApp()
@@ -50,7 +47,6 @@ describe('AddToPlaylistDialog', () => {
 
     // Everything the library holds except Bravo Beat, which Mixes already has.
     expect(offered()).toEqual(['Alpha Mix', 'Charlie Tune'])
-    // The playing time is the only thing beside the title, and it is the one the song knows.
     expect(within(dialog()).getByText('2:53')).toBeInTheDocument()
   })
 
@@ -61,7 +57,6 @@ describe('AddToPlaylistDialog', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Search songs to add' }), 'charlie')
 
     await waitFor(() => expect(offered()).toEqual(['Charlie Tune']))
-    // The list behind the dialog is the playlist, unfiltered, and the app's own box is still empty.
     expect(songTitles()).toEqual(['Bravo Beat'])
     expect(screen.getByRole('searchbox', { name: 'Search songs' })).toHaveValue('')
   })
@@ -75,7 +70,6 @@ describe('AddToPlaylistDialog', () => {
     expect(await within(dialog()).findByText('No songs match your search.')).toBeInTheDocument()
   })
 
-  /** Nothing was searched for, so "nothing matched" would be a report on a search never made. */
   it('says the library is empty rather than blaming a search nobody ran', async () => {
     seedApi({ songs: [], playlists: [playlist('p1', 'Mixes', [])] })
     await openDialog()
@@ -84,7 +78,6 @@ describe('AddToPlaylistDialog', () => {
     expect(within(dialog()).queryByText('No songs match your search.')).toBeNull()
   })
 
-  /** An empty list with a full library is a different fact, and gets a different sentence. */
   it('says so when every song is already in the playlist', async () => {
     seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'b', 'c'])] })
     await openDialog()
@@ -95,7 +88,6 @@ describe('AddToPlaylistDialog', () => {
     expect(within(dialog()).queryByText('No songs in your library yet.')).toBeNull()
   })
 
-  /** Same again one level down: the search found songs, the playlist just has all of them. */
   it('says so when every match is already in the playlist', async () => {
     seedApi({ songs, playlists: [mixes] })
     const user = await openDialog()
@@ -108,11 +100,7 @@ describe('AddToPlaylistDialog', () => {
     expect(within(dialog()).queryByText('No songs match your search.')).toBeNull()
   })
 
-  /**
-   * The fourth quadrant, and the one the other three can hide: a full playlist AND a search that
-   * matched nothing. "Every match" would be a report on matches there were none of, so the search
-   * gets the blame it has earned.
-   */
+  /** The fourth quadrant the other three hide: a full playlist AND a search that matched none. */
   it('blames the search, not the playlist, when a full playlist is searched for nothing', async () => {
     seedApi({ songs, playlists: [playlist('p1', 'Mixes', ['a', 'b', 'c'])] })
     const user = await openDialog()
@@ -135,7 +123,6 @@ describe('AddToPlaylistDialog', () => {
     expect(api.playlists.addSong).toHaveBeenCalledWith('p1', 'a')
     await waitFor(() => expect(within(dialog()).queryByText('Alpha Mix')).toBeNull())
     expect(offered()).toEqual(['Charlie Tune'])
-    // The playlist really took it: the sidebar and the list behind the dialog both say so.
     expect(within(sidebar()).getByText('Alpha Mix')).toBeInTheDocument()
     expect(songTitles()).toEqual(['Bravo Beat', 'Alpha Mix'])
   })
@@ -179,7 +166,6 @@ describe('AddToPlaylistDialog', () => {
     expect(screen.queryByRole('dialog', { name: 'Add to Mixes' })).toBeNull()
   })
 
-  /** Nothing left to add to: a dialog about a playlist that is gone has to get out of the way. */
   it('closes itself when the playlist it is about disappears', async () => {
     const api = seedApi({ songs, playlists: [mixes] })
     const controls = mockApiControls(api)

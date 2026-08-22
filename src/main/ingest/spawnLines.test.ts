@@ -4,12 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { killProcessTree, processError, runLines, type KillableChild } from './spawnLines'
 
-/**
- * A child whose stdio this file drives by hand — the only way to stage output arriving *after* the
- * run has settled, which no real child can do (its streams are closed by then). `vi.hoisted`
- * because `vi.mock` is lifted above the imports; a null `fake` leaves the real `spawn` in place, so
- * every other test in this file still runs an actual process.
- */
+/** A hand-driven child, for staging output *after* the run settles; a null `fake` leaves the real `spawn` in place. */
 interface FakeChild extends EventEmitter {
   pid: number | undefined
   stdout: EventEmitter & { setEncoding(encoding: string): void }
@@ -38,22 +33,13 @@ function fakeChildProcess(): FakeChild {
   })
 }
 
-/**
- * The only place in the repo that spawns a real child process — and the child is always `node`
- * itself (`process.execPath`), never an external binary, so these tests need nothing installed.
- */
+/** The spawned child is always `node` itself, never an external binary, so these tests need nothing installed. */
 const NODE = process.execPath
 
-/**
- * Process groups and negative-pid signals are POSIX concepts; on Windows `runLines` deliberately
- * keeps its old single-process kill, so the tests that assert group behaviour simply don't apply.
- */
+/** Process groups and negative-pid signals are POSIX-only; win32 keeps the single-process kill. */
 const POSIX = process.platform !== 'win32'
 
-/**
- * Resolves with the first stdout line the child writes — how these tests learn a pid only the child
- * knows (its own, or the one it just spawned). Later lines are ignored: a promise settles once.
- */
+/** Resolves with the first stdout line — how these tests learn a pid only the child knows. */
 function firstLine(): { onStdout: (line: string) => void; line: Promise<string> } {
   let emit: (line: string) => void = () => {}
   const line = new Promise<string>((resolve) => {
@@ -62,11 +48,7 @@ function firstLine(): { onStdout: (line: string) => void; line: Promise<string> 
   return { onStdout: (value) => emit(value), line }
 }
 
-/**
- * Polls until `pid` is unsignallable, i.e. really gone. Signal `0` performs the permission and
- * existence checks without delivering anything. Returns `false` on timeout so a failing assertion
- * reads as "still alive" rather than as a hung test.
- */
+/** Polls with signal `0` (an existence check that delivers nothing) until `pid` is gone; `false` on timeout. */
 async function awaitGone(pid: number, timeoutMs = 3000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -144,11 +126,6 @@ describe('runLines', () => {
     expect(onStderr).toHaveBeenCalledWith('boom')
   })
 
-  /**
-   * Both settle paths owe the caller the same two things, and the failing path is the one that
-   * used to skip them: the buffered partial line is lost, and a chunk arriving after the rejection
-   * still reaches `onStdout` — a PROGRESS line landing on a renderer that already reset.
-   */
   it('flushes the buffered partials and stops listening the moment it settles', async () => {
     const child = fakeChildProcess()
     spawnState.fake = child
@@ -181,11 +158,7 @@ describe('runLines', () => {
     ).rejects.toThrow(/ENOENT/)
   })
 
-  /**
-   * yt-dlp's JS-runtime child needs ELECTRON_RUN_AS_NODE, and the caller names only that. Anything
-   * it does *not* name has to survive: the bundled PyInstaller binary unpacks itself into TMPDIR,
-   * and a win32 spawn without SystemRoot fails outright — so overrides merge, never replace.
-   */
+  /** What the caller does not name has to survive: PyInstaller needs TMPDIR, win32 needs SystemRoot. */
   it('merges the overrides over the inherited environment', async () => {
     const lines: string[] = []
     const result = await runLines({
@@ -214,11 +187,6 @@ describe('runLines', () => {
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
   })
 
-  /**
-   * The whole point of the escalation: a child that swallows SIGTERM would otherwise never fire
-   * `close`, this promise would never settle, and the downloader's `running` slot would stay
-   * occupied — every later start rejecting with BUSY for the life of the main process.
-   */
   it('escalates to SIGKILL when the child ignores SIGTERM', async () => {
     const controller = new AbortController()
     let markReady = (): void => {}
@@ -246,8 +214,7 @@ describe('runLines', () => {
   })
 
   it('clears the grace timer as soon as the child settles', async () => {
-    // Only the two clocks `runLines` itself uses are faked — faking `setImmediate` as well would
-    // stall the child's stdio streams, which this test needs to be real.
+    // Only the clocks `runLines` uses are faked; faking `setImmediate` would stall the child's stdio.
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
       const controller = new AbortController()
@@ -309,8 +276,7 @@ describe('runLines', () => {
     const pid = Number(await line)
 
     try {
-      // A group id equal to the child's pid only exists if the child leads one. Undetached, the
-      // child joins this test runner's group and signal 0 against `-pid` throws ESRCH.
+      // A group id equal to the child's pid only exists if the child leads one; undetached, `-pid` throws ESRCH.
       expect(() => process.kill(-pid, 0)).not.toThrow()
 
       controller.abort()
@@ -320,12 +286,7 @@ describe('runLines', () => {
     }
   })
 
-  /**
-   * The bug this whole change exists for: yt-dlp spawns ffmpeg, so the process that must die on a
-   * cancel is a *grandchild*. The stand-in grandchild uses `stdio: 'ignore'` on purpose — it
-   * isolates "the grandchild survived" from the separate symptom of an inherited pipe holding
-   * `close` open.
-   */
+  /** The grandchild stands in for yt-dlp's ffmpeg; `stdio: 'ignore'` keeps an inherited pipe holding `close` open out of it. */
   it.skipIf(!POSIX)('kills the grandchild the child spawned, not just the child', async () => {
     const controller = new AbortController()
     const { onStdout, line } = firstLine()
@@ -378,8 +339,6 @@ describe('runLines', () => {
       try {
         controller.abort()
         await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
-        // Nothing but the SIGKILL escalation can settle this one, and only a *group* SIGKILL
-        // reaches the generation yt-dlp's ffmpeg stands in for.
         expect(await awaitGone(grandchildPid)).toBe(true)
       } finally {
         forceKill(grandchildPid)
@@ -388,10 +347,7 @@ describe('runLines', () => {
   )
 
   it.skipIf(!POSIX)('is inert when the signal aborts after the child already exited', async () => {
-    // A cancel that lands too late is the production shape of the ESRCH race. `settle` already
-    // removed the listener, so nothing is signalled at all; in the narrower exit-to-close gap where
-    // the listener is still armed, `killProcessTree`'s catch is what keeps the dead group's ESRCH
-    // from escaping this listener as an `uncaughtException` that would take the main process down.
+    // `settle` already removed the listener, so a cancel landing this late signals nothing at all.
     const controller = new AbortController()
 
     const result = await runLines({
@@ -405,10 +361,7 @@ describe('runLines', () => {
   })
 })
 
-/**
- * The renderer never sees the error object — `lib/errors.ts` matches the serialised
- * `<Name>: <message>` text — so both halves are pinned here for the two callers that share them.
- */
+/** The renderer never sees the error object: `lib/errors.ts` matches the serialised `<Name>: <message>` text. */
 describe('processError', () => {
   it('names the error as the caller asked and hangs the stderr tail under the message', () => {
     const error = processError('YtDlpError', 'yt-dlp download failed (exit 1)', [
@@ -430,11 +383,7 @@ describe('processError', () => {
   })
 })
 
-/**
- * Pure unit tests: no process is spawned and `process.kill` is always a spy, so nothing here can
- * signal a real pid. The spy is restored in `afterEach` — the real-process tests above genuinely
- * signal pids, and a `process.kill` stub leaking into them would quietly defeat every assertion.
- */
+/** `process.kill` is always a spy here, restored in `afterEach` so it cannot leak into the real-process tests above. */
 describe('killProcessTree', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -468,9 +417,7 @@ describe('killProcessTree', () => {
   })
 
   it('swallows a dead group and falls back to the direct kill', () => {
-    // The real trigger in production: the child exited on its own between `exit` and `close`, so
-    // the group is already gone. An exception here escapes the abort listener as an
-    // `uncaughtException` and takes the main process down — it must not propagate.
+    // The group is already gone when the child exits between `exit` and `close`; an exception here would escape the abort listener as an `uncaughtException`.
     vi.spyOn(process, 'kill').mockImplementation(() => {
       throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' })
     })

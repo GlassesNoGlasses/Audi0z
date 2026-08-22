@@ -10,13 +10,7 @@ import type { Api } from '../../../shared/api'
 import type { Playlist, SongDto } from '../../../shared/types'
 import { App } from '../App'
 
-/**
- * Shared scaffolding for the renderer tests: a seeded `window.api`, a jsdom-safe `<audio>`, and
- * readers for the few bits of markup the tests care about.
- *
- * It lives under `src/renderer` rather than in `tests/support` because it renders the app — a JSX
- * module belongs to the web typecheck program, and `tests/support` is shared with the node one.
- */
+/** Renderer-test scaffolding: a seeded `window.api`, a jsdom-safe `<audio>`, markup readers. */
 
 /** Installs a fresh mock api on `window` and returns it (replacing the setup file's default). */
 export function seedApi(seed: MockApiSeed = {}): Api {
@@ -25,12 +19,7 @@ export function seedApi(seed: MockApiSeed = {}): Api {
   return api
 }
 
-/**
- * jsdom implements no media pipeline: `play()`/`pause()` are `notImplemented` stubs that print to
- * the console, and `paused` is a constant `true` nothing ever flips. The stubs below stand in for
- * the pipeline and keep `paused` in step with them, which is what lets a test see the element go
- * quiet. Call at the top level of any test file whose UI reaches the `<audio>` element.
- */
+/** Stubs jsdom's absent media pipeline (play/pause plus a tracking `paused`). Call at top level. */
 export function stubMediaElement(): void {
   beforeEach(() => {
     const paused = new WeakMap<HTMLMediaElement, boolean>()
@@ -75,7 +64,6 @@ export async function renderApp(): Promise<RenderResult> {
   return result
 }
 
-/** The single `<audio>` element the app renders. */
 export function audioElement(): HTMLAudioElement {
   const audio = document.querySelector('audio')
   if (!audio) throw new Error('harness: the app rendered no <audio> element')
@@ -86,10 +74,7 @@ export function sidebar(): HTMLElement {
   return screen.getByRole('complementary')
 }
 
-/**
- * Chooses a mode from the top bar's sort menu, which closes behind every choice — so `presses`
- * is how many times to open it and click the same item, and a descending sort is two.
- */
+/** Chooses a sort mode; the menu closes behind each choice, so a descending sort is two presses. */
 export async function sortView(
   user: ReturnType<typeof userEvent.setup>,
   item: string | RegExp,
@@ -106,7 +91,6 @@ export function songTitles(): string[] {
   return [...document.querySelectorAll('.song-list .song-title')].map((el) => el.textContent ?? '')
 }
 
-/** What the player bar says is playing. */
 export function nowPlaying(): string {
   return document.querySelector('.player-title')?.textContent ?? ''
 }
@@ -124,8 +108,7 @@ export function song(id: string, title: string, extra: Partial<SongDto> = {}): S
     sizeBytes: DEFAULT_MOCK_SIZE_BYTES,
     ...extra
   }
-  // The DTO invariant, applied after the override: `sizeBytes` is null exactly when `exists` is
-  // false, so `{ exists: false }` on its own gets the null rather than the default weight.
+  // DTO invariant, applied after the override: `sizeBytes` is null exactly when `exists` is false.
   return dto.exists ? dto : { ...dto, sizeBytes: null }
 }
 

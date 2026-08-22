@@ -16,12 +16,7 @@ export interface PlayerBarProps {
   endScrub(): void
 }
 
-/**
- * Transport, toggles and the two sliders.
- *
- * Position is read straight off the `<audio>` element rather than from the store: it changes four
- * times a second and nothing else in the app cares about it.
- */
+/** Position is read off the `<audio>` element, not the store: it changes four times a second. */
 export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): ReactElement {
   const { songs, playback, settings } = useAppState()
   const dispatch = useAppDispatch()
@@ -60,10 +55,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
 
   const fail = useToastError()
 
-  /**
-   * Shuffle and repeat are dual-writes: the engine gets them now, and whichever store owns the
-   * current queue gets them too, so they survive a restart.
-   */
+  /** Dual-write: the engine now, and whichever store owns the queue, so they survive a restart. */
   function persistToggle(patch: { shuffle: boolean } | { repeat: boolean }): void {
     const { queueId } = playback
     if (queueId === null) return
@@ -123,8 +115,7 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
         <button
           type="button"
           className="player-play"
-          // `transport/togglePlay` covers both cases: it starts the queue when nothing is cued yet,
-          // which `transport/play` would not (it would leave `isPlaying` on with no current song).
+          // `togglePlay`, not `play`: it also starts the queue when nothing is cued yet.
           aria-label={playback.isPlaying && playback.currentId !== null ? 'Pause' : 'Play'}
           disabled={!canPlay}
           onClick={() => dispatch({ type: 'transport/togglePlay' })}
@@ -153,14 +144,12 @@ export function PlayerBar({ audioRef, beginScrub, endScrub }: PlayerBarProps): R
             step={0.1}
             value={Math.min(position, duration)}
             disabled={current === null || duration === 0}
-            // The seek itself stays on `change` — the element has to move with the thumb — while
-            // the pointer brackets it in silence, so a drag does not garble every value it crosses.
+            // Seek stays on `change`; the pointer brackets it in silence so a drag stays quiet.
             onChange={(event) => seek(Number(event.target.value))}
             onPointerDown={beginScrub}
             onPointerUp={endScrub}
             onPointerCancel={endScrub}
-            // Insurance: a release that never retargets the input fires neither of the two above,
-            // and the scrub silence would outlive the drag — element paused, store still playing.
+            // Insurance: a release that never retargets the input fires neither handler above.
             onLostPointerCapture={endScrub}
           />
           <span className="player-time">{formatDuration(duration, '0:00')}</span>

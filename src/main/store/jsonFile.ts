@@ -36,10 +36,7 @@ export async function renameWithRetry(
   }
 }
 
-/**
- * Reads, validates and returns a JSON document. Errors are quarantined in a `<filePath>.bak` file,
- * with `makeDefault()` being returned.
- */
+/** Reads and validates JSON; bad bytes go to `<filePath>.bak` and `makeDefault()` is returned. */
 export async function readJsonFile<T>(
   filePath: string,
   validate: (value: unknown) => value is T,
@@ -68,15 +65,12 @@ export async function readJsonFile<T>(
   return parsed
 }
 
-/**
- * Puts the unreadable bytes aside from a failed read. File is stored as `<filePath>.bak`, and
- * is overwritten in each failed read to the same file path. Use for potential restore and backup.
- */
+/** Puts unreadable bytes aside as `<filePath>.bak`, overwritten on each failed read. */
 async function quarantine(filePath: string, raw: Buffer): Promise<void> {
   await writeFile(`${filePath}.bak`, raw)
 }
 
-/** Reads a file and loads the content into memory. Call using await on the promise. */
+/** Memoises the first successful `read()` in memory; a rejection is not cached. */
 export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
   let value: T | null = null
   let pending: Promise<T> | null = null
@@ -95,12 +89,7 @@ export function loadOnce<T>(read: () => Promise<T>): () => Promise<T> {
   }
 }
 
-/**
- * One store mutator at a time: a mutator reads its cache, awaits the disk, then adopts — and a
- * second mutator entering that await window reads not-yet-adopted state, erasing the first write
- * in memory, on disk, or both. Wrap every mutator of one store with the same lock; reads stay
- * unlocked, they only ever see adopted state.
- */
+/** Serialises store mutators: one entering another's disk-await window reads unadopted state. */
 export function createMutatorLock(): <A extends unknown[], R>(
   fn: (...args: A) => Promise<R>
 ) => (...args: A) => Promise<R> {
@@ -119,17 +108,12 @@ export function createMutatorLock(): <A extends unknown[], R>(
     }
 }
 
-/** One promise chain per resolved path used in `writeJsonFile`. Last caller wins.  */
+/** One promise chain per resolved path. Last caller wins. */
 const chains = new Map<string, Promise<void>>()
 
-/**
- * Serialises `data` and replaces `filePath` atomically.
- * Concurrent calls for the same path queue behind each other (last caller wins) so two stores
- * flushing at once cannot interleave; different paths proceed in parallel.
- */
+/** Serialises `data` and atomically replaces `filePath`; same-path writes queue up. */
 export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
-  // Serialised at call time: the queue must carry the payload as handed over, not whatever a
-  // caller's live array holds by the time the chain drains.
+  // Stringified at enqueue: later mutation of a caller's live array can't rewrite a queued payload.
   let json: string
   try {
     json = `${JSON.stringify(data, null, 2)}\n`
@@ -148,10 +132,7 @@ export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
   return queued
 }
 
-/**
- * Writes to `filePath` the pre-serialised `json`. A temp file is used first, with syncing and
- * renaming performed on success; temp file is always removed.
- */
+/** Writes `json` to a temp file, syncs, then renames it over `filePath`; temp always removed. */
 async function writeNow(filePath: string, json: string): Promise<void> {
   const tmpPath = `${filePath}.tmp-${randomUUID()}`
   try {
@@ -164,7 +145,7 @@ async function writeNow(filePath: string, json: string): Promise<void> {
     }
     await renameWithRetry(tmpPath, filePath)
   } catch (error) {
-    await rm(tmpPath, { force: true }) // remove temp file
+    await rm(tmpPath, { force: true })
     throw error
   }
 }
