@@ -285,9 +285,7 @@ describe('SongList drag reorder', () => {
     fireEvent.dragStart(bravo, { dataTransfer })
     dragOverAt(charlie, dataTransfer, 55)
     fireEvent.drop(charlie, { dataTransfer })
-    await waitFor(() =>
-      expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat'])
-    )
+    await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat']))
 
     // Nothing was interrupted, and Next follows the order now on screen — not the old one.
     expect(nowPlaying()).toBe('Alpha Mix')
@@ -309,9 +307,7 @@ describe('SongList drag reorder', () => {
     fireEvent.dragStart(bravo, { dataTransfer })
     dragOverAt(charlie, dataTransfer, 55)
     fireEvent.drop(charlie, { dataTransfer })
-    await waitFor(() =>
-      expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat'])
-    )
+    await waitFor(() => expect(songTitles()).toEqual(['Alpha Mix', 'Charlie Tune', 'Bravo Beat']))
 
     await user.click(screen.getByRole('button', { name: 'Next' }))
     expect(nowPlaying()).toBe('Charlie Tune')

@@ -106,8 +106,8 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
   /**
    * A field is asked for ascending the first time — oldest first, shortest first — and the next
-   * press on the one already in force flips it. Manual hands the view back to its stored order.
-   * Every choice shuts the menu: it is a radio group, not somewhere to stay.
+   * press on the one already in force flips it. Custom Order hands the view back to its stored
+   * order. Every choice shuts the menu: it is a radio group, not somewhere to stay.
    */
   function choose(mode: SortType): void {
     setSortOpen(false)

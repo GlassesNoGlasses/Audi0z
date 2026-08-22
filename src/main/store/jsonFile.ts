@@ -127,7 +127,7 @@ export function writeJsonFile(filePath: string, data: unknown): Promise<void> {
 /**
  * Writes to `filePath` the pre-serialised `json`. A temp file is used first, with syncing and
  * renaming performed on success; temp file is always removed.
-*/
+ */
 async function writeNow(filePath: string, json: string): Promise<void> {
   const tmpPath = `${filePath}.tmp-${randomUUID()}`
   try {

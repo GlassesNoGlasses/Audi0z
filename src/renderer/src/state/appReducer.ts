@@ -20,7 +20,7 @@ export enum SortType {
   TITLE = 'Title',
   DATEADDED = 'Date Added',
   DURATION = 'Duration',
-  SIZE = 'Size',
+  SIZE = 'Size'
 }
 
 export enum SortDirection {
@@ -28,7 +28,7 @@ export enum SortDirection {
   DESC
 }
 
-/** How the view is ordered; null for custom order */
+/** How the view is ordered; CUSTOM is the stored order itself. */
 export type SortMode = {
   type: SortType
   direction: SortDirection
@@ -105,7 +105,7 @@ export function initialAppState(): AppState {
     settings: { ...FALLBACK_SETTINGS },
     view: { kind: 'library' },
     query: '',
-    sort: {type: SortType.CUSTOM, direction: SortDirection.ASC},
+    sort: { type: SortType.CUSTOM, direction: SortDirection.ASC },
     expandedPlaylists: new Set(),
     dialog: null,
     toasts: [],
