@@ -197,14 +197,37 @@ input[type='range'] {
  * rather than a border, because a border would take up space and shove the whole list down by two
  * pixels every time the pointer crosses a row.
  */
-.playlist-item.drop-before,
-.song-row.drop-before {
+.playlist-item.drop-before {
   box-shadow: inset 0 2px 0 var(--accent);
 }
 
-.playlist-item.drop-after,
-.song-row.drop-after {
+.playlist-item.drop-after {
   box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+/*
+ * The song rows need their own seam: unlike .playlist-item they carry a border and a radius, which
+ * clip an inset shadow, and .song-list separates them with a 4px gap. A pseudo-element bar painted
+ * IN that gap sits on the row's true edge, survives the radius, and puts "after row N" and
+ * "before row N+1" in the same physical place. .song-row is already position: relative.
+ */
+.song-row.drop-before::before,
+.song-row.drop-after::after {
+  background: var(--accent);
+  border-radius: 1px;
+  content: '';
+  height: 2px;
+  left: 6px;
+  position: absolute;
+  right: 6px;
+}
+
+.song-row.drop-before::before {
+  top: -3px;
+}
+
+.song-row.drop-after::after {
+  bottom: -3px;
 }
 
 .playlist-row {

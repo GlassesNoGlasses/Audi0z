@@ -132,6 +132,9 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
     return sort.direction === SortDirection.ASC ? '↓' : '↑'
   }
 
+  /** What the bar names: the active sort with its direction, e.g. "↓ Duration". */
+  const sortCaption = `${chosenSortVisual(sort.type)} ${sort.type.valueOf()}`.trim()
+
   const SortElement = (targetType: SortType): ReactElement => {
     return (
       <button
@@ -178,7 +181,10 @@ export function TopNav({ rng = defaultRng }: TopNavProps): ReactElement {
 
       <span className="topnav-spacer" />
 
-      <span className="sort-caption">{sortOrder[0].valueOf()}</span>
+      {/* Read from the sort in force, never from the menu's MRU head — one source of truth. */}
+      <span className="sort-caption" title={sortCaption}>
+        {sortCaption}
+      </span>
 
       <div className="sort-menu-anchor" ref={sortRef}>
         <button
