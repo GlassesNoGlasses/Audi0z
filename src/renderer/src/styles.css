@@ -1,12 +1,12 @@
 :root {
   color-scheme: dark;
-  --bg: #16161a;
-  --panel: #1d1d22;
-  --panel-2: #24242b;
+  --bg: #000000;
+  --panel: #000000;
+  --panel-2: #000000;
   --line: #363642;
   --fg: #ececed;
   --muted: #9a9aa2;
-  --accent: #7c8cff;
+  --accent: #ffffff;
   --danger: #ff6b6b;
   --radius: 6px;
 }
